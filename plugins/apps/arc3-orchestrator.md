@@ -1,7 +1,7 @@
 ---
 name: arc3-orchestrator
 kind: app
-version: 1.7.0
+version: 1.8.0
 description: Delegate each ARC-3 level to a child agent, accumulate game knowledge across levels
 author: sl
 tags: [arc, arc3, delegation, orchestrator]
@@ -74,33 +74,38 @@ let summary = "";
 // === MANDATORY DELEGATION BLOCK — DO NOT MODIFY ===
 __level_task = { level, knowledge: __knowledge };
 
-if (__levelAttempts[level] > 2) {
-  // Exploration-only: gather knowledge without expecting completion
-  summary = await rlm(
-    `Explore level ${level}/7 of an interactive grid game. ` +
-    `Read __level_task.knowledge for discoveries from prior levels. ` +
-    `Do NOT try to complete the level. Focus on mapping the environment ` +
-    `and interacting with objects you have not seen before. ` +
-    `CRITICAL: Start EVERY code block with: if (__guard()) return(__guard.msg); ` +
-    `Return a JSON string with your observations. Minimize actions.`,
-    { app: "arc3-player", model: "intelligent" }
-  );
-} else {
-  summary = await rlm(
-    `Play level ${level}/7 of an interactive grid game. ` +
-    `Read __level_task.knowledge for discoveries from prior levels. ` +
-    `Learn mechanics through experimentation, then complete the level efficiently. ` +
-    `CRITICAL: Start EVERY code block with: if (__guard()) return(__guard.msg); ` +
-    `Return a JSON string with {knowledge, actions, completed}. ` +
-    `Minimize actions — you are scored on efficiency.`,
-    { app: "arc3-player", model: "intelligent" }
-  );
+try {
+  if (__levelAttempts[level] > 2) {
+    // Exploration-only: gather knowledge without expecting completion
+    summary = await rlm(
+      `Explore level ${level}/7 of an interactive grid game. ` +
+      `Read __level_task.knowledge for discoveries from prior levels. ` +
+      `Do NOT try to complete the level. Focus on mapping the environment ` +
+      `and interacting with objects you have not seen before. ` +
+      `CRITICAL: Start EVERY code block with: if (__guard()) return(__guard.msg); ` +
+      `Return a JSON string with your observations. Minimize actions.`,
+      { app: "arc3-player", model: "intelligent" }
+    );
+  } else {
+    summary = await rlm(
+      `Play level ${level}/7 of an interactive grid game. ` +
+      `Read __level_task.knowledge for discoveries from prior levels. ` +
+      `Learn mechanics through experimentation, then complete the level efficiently. ` +
+      `CRITICAL: Start EVERY code block with: if (__guard()) return(__guard.msg); ` +
+      `Return a JSON string with {knowledge, actions, completed}. ` +
+      `Minimize actions — you are scored on efficiency.`,
+      { app: "arc3-player", model: "intelligent" }
+    );
+  }
+} catch(e) {
+  console.log(`CHILD ERROR: ${e.message || e}`);
+  summary = "";
 }
 // === END MANDATORY BLOCK ===
 
-// Timeout diagnostic: empty summary = child timed out without returning
+// Diagnostic + knowledge curation (ALWAYS executes, even after child timeout)
 if (!summary || summary.length === 0) {
-  console.log(`CHILD TIMEOUT: Level ${level} attempt ${__levelAttempts[level]} — child used all iterations without returning.`);
+  console.log(`CHILD TIMEOUT: Level ${level} attempt ${__levelAttempts[level]} — no return value.`);
 } else {
   console.log(`Level ${level} (attempt ${__levelAttempts[level]}): ${summary.slice(0, 300)}`);
 }
@@ -135,6 +140,7 @@ if (childResult?.knowledge) {
   console.log(`Stored free-text report as rule. ${__knowledge.rules.length} rules total.`);
 }
 
+// State check INLINE (no wasted iteration)
 const post = arc3.observe();
 console.log(`Post: state=${post.state}, levels=${post.levels_completed}, ~${__totalActions} est. actions`);
 if (post.state === "WIN" || post.state === "GAME_OVER") {

@@ -1,7 +1,7 @@
 ---
 name: arc3-player
 kind: app
-version: 1.7.0
+version: 1.8.0
 description: Play one ARC-3 level — learn mechanics by experimenting, then execute strategically
 author: sl
 tags: [arc, arc3, exploration, learning]
@@ -20,7 +20,7 @@ You play ONE level of an interactive 64x64 grid game. The rules are unknown — 
    ```
    This checks the iteration deadline and action budget. It is already defined from setup. Just call it.
 2. NEVER call `arc3.start()`. The game is already running. Calling it resets ALL progress.
-3. Use `step(action)` to take actions. `arc3.step()` has been replaced — both call the same budget-enforced wrapper (25 actions max). There is no way to bypass the action counter.
+3. Use `step(action)` to take actions. `arc3.step()` has been replaced — both call the same budget-enforced wrapper (32 actions max). The wrapper is locked via `Object.defineProperty` — you cannot reassign or bypass it.
 4. Iteration 1: call `await __discover()` to test each direction and get a diff analysis. Do not skip this.
 5. Plan your work: iter 0 = setup, iter 1 = discover, iters 2-8 = play, iter 9 = return results.
 6. Return a result before timeout. Partial knowledge is infinitely better than no return.
@@ -70,13 +70,13 @@ __guard = function() {
 __guard.msg = "";
 
 // === INTERCEPT arc3.step — budget enforcement is UNAVOIDABLE ===
-// IIFE hides the original step function in a closure — no bypass possible
+// IIFE + Object.defineProperty: original hidden in closure, property locked
 __returnPayload = null;
 (function() {
   const _origStep = arc3.step.bind(arc3);
-  arc3.step = async function(action) {
+  const _wrappedStep = async function(action) {
     __actionsThisLevel++;
-    if (__actionsThisLevel > 25) {
+    if (__actionsThisLevel > 32) {
       __done = true;
       __returnPayload = JSON.stringify({ knowledge: __k, actions: __actionsThisLevel, completed: false, reason: 'budget' });
       return { state: 'BUDGET_EXCEEDED', frame: [arc3.observe().frame[0]], levels_completed: arc3.observe().levels_completed, available_actions: [] };
@@ -93,6 +93,7 @@ __returnPayload = null;
     }
     return result;
   };
+  Object.defineProperty(arc3, 'step', { value: _wrappedStep, writable: false, configurable: false });
 })();
 // step() is a convenience alias — both go through the interceptor
 async function step(action) { return arc3.step(action); }
