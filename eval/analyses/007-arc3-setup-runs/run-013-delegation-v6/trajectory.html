@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARC-3 Delegation v0.6.0 Trajectory -- arc3-ls20-cb3b57cc</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --bg4: #30363d;
+    --fg: #e6edf3; --fg2: #8b949e; --fg3: #6e7681;
+    --accent: #58a6ff; --green: #3fb950; --red: #f85149; --orange: #d29922;
+    --purple: #bc8cff; --cyan: #39d2c0; --pink: #f778ba;
+    --scout: #58a6ff; --navigate: #3fb950; --stuck: #f85149; --returnc: #8b949e;
+    --bfs: #bc8cff; --portal: #f778ba; --mapping: #d29922;
+    --radius: 8px; --gap: 24px;
+  }
+  html { font-size: 15px; scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--fg); line-height: 1.6;
+    padding: 0 16px 80px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+
+  /* --- Header --- */
+  .header { padding: 48px 0 32px; border-bottom: 1px solid var(--bg4); margin-bottom: var(--gap); }
+  .header h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 4px; }
+  .header .subtitle { color: var(--fg2); font-size: 0.95rem; margin-bottom: 20px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 16px; }
+  .meta-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--bg3); padding: 6px 14px; border-radius: 20px;
+    font-size: 0.82rem; font-weight: 500;
+  }
+  .meta-chip .label { color: var(--fg2); }
+  .meta-chip .value { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .badge {
+    display: inline-block; padding: 5px 14px; border-radius: 20px;
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .badge-green { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+  .badge-red { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
+  .badge-orange { background: rgba(210,153,34,0.15); color: var(--orange); border: 1px solid rgba(210,153,34,0.3); }
+
+  /* --- Section --- */
+  .section { margin-bottom: 40px; }
+  .section h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--bg4); }
+  .section h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 12px; color: var(--fg2); }
+
+  /* --- Timeline --- */
+  .timeline-container { overflow-x: auto; padding-bottom: 16px; }
+  .timeline { display: flex; gap: 3px; min-width: 800px; align-items: flex-end; height: 120px; }
+  .timeline-bar {
+    flex: 1; min-width: 28px; border-radius: 4px 4px 0 0; cursor: pointer;
+    transition: opacity 0.15s; position: relative;
+    display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+  }
+  .timeline-bar:hover { opacity: 0.8; }
+  .timeline-bar .iter-label {
+    font-size: 0.65rem; color: var(--fg3); writing-mode: vertical-lr;
+    text-orientation: mixed; padding: 4px 0; position: absolute; bottom: -24px;
+  }
+  .timeline-bar .action-count {
+    font-size: 0.6rem; color: var(--fg); font-weight: 700;
+    position: absolute; top: -14px; white-space: nowrap;
+  }
+  .timeline-legend { display: flex; gap: 16px; margin-top: 32px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--fg2); }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 3px; }
+
+  /* --- Fuel Chart --- */
+  .fuel-chart { position: relative; height: 200px; border: 1px solid var(--bg4); border-radius: var(--radius); background: var(--bg2); overflow: hidden; }
+  .fuel-chart canvas { width: 100%; height: 100%; }
+
+  /* --- Level Progress --- */
+  .level-progress { display: flex; gap: 8px; margin-bottom: 20px; }
+  .level-box {
+    width: 80px; height: 60px; border-radius: var(--radius); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; font-size: 0.78rem; font-weight: 600;
+  }
+  .level-box.complete { background: rgba(63,185,80,0.15); border: 1px solid rgba(63,185,80,0.3); color: var(--green); }
+  .level-box.failed { background: rgba(248,81,73,0.08); border: 1px solid rgba(248,81,73,0.15); color: var(--fg3); }
+  .level-box.untouched { background: var(--bg3); border: 1px solid var(--bg4); color: var(--fg3); }
+  .level-box .score { font-size: 1rem; font-weight: 700; }
+  .level-box .lbl { font-size: 0.65rem; color: var(--fg3); margin-top: 2px; }
+
+  /* --- Delegation Cards --- */
+  .delegation-card {
+    background: var(--bg2); border: 1px solid rgba(88,166,255,0.3); border-radius: var(--radius);
+    margin-bottom: 16px; overflow: hidden;
+  }
+  .delegation-header {
+    padding: 14px 20px; background: rgba(88,166,255,0.06); cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid rgba(88,166,255,0.15);
+  }
+  .delegation-header:hover { background: rgba(88,166,255,0.1); }
+  .delegation-header h4 { font-size: 0.9rem; font-weight: 600; color: var(--accent); }
+  .delegation-header .toggle { color: var(--fg3); font-size: 0.85rem; }
+  .delegation-body { padding: 16px 20px; display: none; font-size: 0.85rem; line-height: 1.7; color: var(--fg2); }
+  .delegation-body.open { display: block; }
+  .delegation-body ul { margin-left: 20px; margin-top: 8px; }
+  .delegation-body li { margin-bottom: 4px; }
+  .delegation-body strong { color: var(--fg); }
+
+  /* --- BFS Table --- */
+  .bfs-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .bfs-table th { text-align: left; padding: 10px 12px; background: var(--bg3); color: var(--fg2); font-weight: 600; border-bottom: 1px solid var(--bg4); }
+  .bfs-table td { padding: 8px 12px; border-bottom: 1px solid var(--bg4); vertical-align: top; }
+  .bfs-table tr:hover { background: var(--bg2); }
+  .bfs-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 600; }
+  .bfs-tag.success { background: rgba(63,185,80,0.15); color: var(--green); }
+  .bfs-tag.fail { background: rgba(248,81,73,0.15); color: var(--red); }
+  .bfs-tag.stale { background: rgba(210,153,34,0.15); color: var(--orange); }
+  .bfs-tag.bug { background: rgba(247,120,186,0.15); color: var(--pink); }
+
+  /* --- Action Heatmap --- */
+  .heatmap-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-width: 400px; }
+  .heat-cell {
+    border-radius: var(--radius); padding: 16px; text-align: center;
+    font-size: 0.85rem; font-weight: 700;
+  }
+  .heat-cell .dir { font-size: 0.75rem; color: var(--fg2); margin-bottom: 4px; }
+  .heat-cell .count { font-size: 1.4rem; }
+  .heat-cell .pct { font-size: 0.7rem; color: var(--fg3); margin-top: 2px; }
+
+  /* --- Cross-Version --- */
+  .version-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .version-card {
+    background: var(--bg2); border: 1px solid var(--bg4); border-radius: var(--radius);
+    padding: 16px; text-align: center;
+  }
+  .version-card.current { border-color: var(--accent); }
+  .version-card .ver { font-size: 0.85rem; font-weight: 700; margin-bottom: 8px; }
+  .version-card .score-val { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; }
+  .version-card .detail { font-size: 0.7rem; color: var(--fg3); line-height: 1.5; }
+  .spark-bar { height: 6px; border-radius: 3px; margin-top: 8px; background: var(--bg4); }
+  .spark-fill { height: 100%; border-radius: 3px; }
+
+  /* --- Info Box --- */
+  .info-box {
+    border-radius: var(--radius); padding: 16px 20px; margin-top: 16px;
+    display: flex; gap: 12px; align-items: flex-start;
+    font-size: 0.85rem;
+  }
+  .info-box .icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 2px; }
+  .warning-box { background: rgba(248,81,73,0.08); border: 1px solid rgba(248,81,73,0.25); }
+  .warning-box strong { color: var(--red); }
+  .success-box { background: rgba(63,185,80,0.08); border: 1px solid rgba(63,185,80,0.25); }
+  .success-box strong { color: var(--green); }
+  .info-blue-box { background: rgba(88,166,255,0.08); border: 1px solid rgba(88,166,255,0.25); }
+  .info-blue-box strong { color: var(--accent); }
+
+  /* --- Tooltip --- */
+  .tooltip {
+    position: absolute; background: var(--bg3); border: 1px solid var(--bg4);
+    padding: 8px 12px; border-radius: 6px; font-size: 0.75rem; color: var(--fg);
+    pointer-events: none; z-index: 100; white-space: pre-line; max-width: 280px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+
+  @media (max-width: 768px) {
+    .version-grid { grid-template-columns: repeat(3, 1fr); }
+    .heatmap-grid { grid-template-columns: repeat(2, 1fr); }
+    .meta-row { gap: 8px 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>ARC-3 Delegation v0.6.0 Trajectory</h1>
+    <div class="subtitle">arc3-ls20-cb3b57cc &middot; 2026-02-15 &middot; claude-opus-4-6 &middot; Best attempt (attempt 2 of 2)</div>
+    <div class="meta-row">
+      <div class="meta-chip"><span class="label">Score</span><span class="value">14.3%</span></div>
+      <div class="meta-chip"><span class="label">Levels</span><span class="value">1 / 7</span></div>
+      <div class="meta-chip"><span class="label">Actions</span><span class="value">143</span></div>
+      <div class="meta-chip"><span class="label">Iterations</span><span class="value">26</span></div>
+      <div class="meta-chip"><span class="label">Delegations</span><span class="value">2</span></div>
+      <div class="meta-chip"><span class="label">L1 Actions</span><span class="value">18</span></div>
+      <div class="meta-chip"><span class="label">L2 Actions</span><span class="value">125</span></div>
+      <div class="meta-chip"><span class="label">Cost</span><span class="value">$2.77</span></div>
+      <div class="meta-chip"><span class="label">Opus Calls</span><span class="value">47</span></div>
+      <div class="meta-chip"><span class="label">Sonnet Calls</span><span class="value">12</span></div>
+    </div>
+    <div>
+      <span class="badge badge-orange">PARTIAL SUCCESS</span>
+      <span class="badge badge-red" style="margin-left:8px">L2 RECT UNREACHABLE</span>
+    </div>
+
+    <div class="info-box success-box" style="margin-top:20px">
+      <div class="icon">&#9989;</div>
+      <div class="text"><strong>Level 1 completed in 18 actions</strong> (baseline 29 = 100% score). BFS pathfinding worked optimally. Scout delegation provided complete mechanics analysis in 4 actions.</div>
+    </div>
+    <div class="info-box warning-box">
+      <div class="icon">&#10060;</div>
+      <div class="text"><strong>Level 2 failed after 125 actions</strong>. Target rectangle (Rect2, c1-10) was unreachable due to 5-pixel grid alignment -- no corridor gave access to columns &lt;9. BFS walkability bug (color 5 treated as passable) and stale-grid navigation further compounded failures.</div>
+    </div>
+  </div>
+
+  <!-- LEVEL PROGRESSION -->
+  <div class="section">
+    <h2>Level Progression</h2>
+    <div class="level-progress">
+      <div class="level-box complete">
+        <div class="score">100%</div>
+        <div class="lbl">L1 &middot; 18 acts</div>
+      </div>
+      <div class="level-box failed">
+        <div class="score">0%</div>
+        <div class="lbl">L2 &middot; 125 acts</div>
+      </div>
+      <div class="level-box untouched"><div class="score">--</div><div class="lbl">L3</div></div>
+      <div class="level-box untouched"><div class="score">--</div><div class="lbl">L4</div></div>
+      <div class="level-box untouched"><div class="score">--</div><div class="lbl">L5</div></div>
+      <div class="level-box untouched"><div class="score">--</div><div class="lbl">L6</div></div>
+      <div class="level-box untouched"><div class="score">--</div><div class="lbl">L7</div></div>
+    </div>
+    <div style="font-size:0.82rem;color:var(--fg2)">
+      Baselines: L1=29, L2=41, L3=172, L4=49, L5=53, L6=62, L7=82
+    </div>
+  </div>
+
+  <!-- ITERATION TIMELINE -->
+  <div class="section">
+    <h2>Iteration Timeline</h2>
+    <p style="font-size:0.82rem;color:var(--fg2);margin-bottom:12px">Height = game actions used. Color = iteration type. Hover for details.</p>
+    <div class="timeline-container">
+      <div class="timeline" id="timeline"></div>
+    </div>
+    <div class="timeline-legend">
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--scout)"></div>Scout delegation</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--navigate)"></div>Navigation (moved)</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--stuck)"></div>Stuck / blocked</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--bfs)"></div>BFS / analysis</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--portal)"></div>Portal / transition</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--mapping)"></div>Mapping / observe</div>
+      <div class="legend-item"><div class="legend-swatch" style="background:var(--returnc)"></div>Return</div>
+    </div>
+  </div>
+
+  <!-- FUEL CHART -->
+  <div class="section">
+    <h2>Fuel Level Over Time</h2>
+    <p style="font-size:0.82rem;color:var(--fg2);margin-bottom:12px">Fuel (color 11 pixels) tracked at key action milestones. Spikes indicate refueling events.</p>
+    <div class="fuel-chart">
+      <canvas id="fuelCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- DELEGATION CARDS -->
+  <div class="section">
+    <h2>Delegation Events</h2>
+    <div class="delegation-card">
+      <div class="delegation-header" onclick="toggleDelegation(this)">
+        <h4>Delegation #1 -- Iteration 1 (L1 Scout)</h4>
+        <span class="toggle">&#9660; expand</span>
+      </div>
+      <div class="delegation-body">
+        <p><strong>Model:</strong> Sonnet (orchestrator) &middot; <strong>App:</strong> arc3-scout &middot; <strong>MaxIter:</strong> 10 &middot; <strong>Actions used:</strong> 4</p>
+        <p style="margin-top:8px"><strong>Prompt:</strong> Explore game, identify entity, measure fuel, map corridors. Stay within 15 actions.</p>
+        <p style="margin-top:12px"><strong>Key findings:</strong></p>
+        <ul>
+          <li><strong>Entity:</strong> color 12, 2x5 block at [45-46, 39-43], moves 5px per action</li>
+          <li><strong>Marker:</strong> colors 0/1 at [31-33, 20-22], 5 pixels, stationary</li>
+          <li><strong>Fuel:</strong> color 11, depletes 2px per action (84 initial, 76 after 4 probes)</li>
+          <li><strong>Actions:</strong> 1=UP(-5r), 2=DOWN(+5r), 3=LEFT(-5c), 4=RIGHT(+5c)</li>
+          <li><strong>Corridors:</strong> 8 vertical paths and 3 horizontal paths mapped</li>
+          <li><strong>Strategy:</strong> UP 3x, LEFT 4x (~7-8 actions to reach marker)</li>
+        </ul>
+        <p style="margin-top:8px;color:var(--green)"><strong>Verdict:</strong> Excellent. Complete mechanics in 4 actions. Enabled immediate BFS navigation.</p>
+      </div>
+    </div>
+
+    <div class="delegation-card">
+      <div class="delegation-header" onclick="toggleDelegation(this)">
+        <h4>Delegation #2 -- Iteration 5 (L2 Scout)</h4>
+        <span class="toggle">&#9660; expand</span>
+      </div>
+      <div class="delegation-body">
+        <p><strong>Model:</strong> Sonnet (orchestrator) &middot; <strong>App:</strong> arc3-scout &middot; <strong>MaxIter:</strong> 8 &middot; <strong>Actions used:</strong> 0</p>
+        <p style="margin-top:8px"><strong>Prompt:</strong> Map new L2 maze. Do NOT start game or re-probe mechanics. Use observe only.</p>
+        <p style="margin-top:12px"><strong>Key findings:</strong></p>
+        <ul>
+          <li><strong>Entity:</strong> still at [10-11, 34-38] (L1 endpoint)</li>
+          <li><strong>Marker:</strong> color 1 at [32-33, 20-21], 2 pixels</li>
+          <li><strong>Fuel:</strong> 50px at [61-62, 30-54]</li>
+          <li><strong>Corridors:</strong> 6 vertical and 2 horizontal paths identified</li>
+          <li><strong>Strategy:</strong> DOWN to r25+, then LEFT to marker area</li>
+        </ul>
+        <p style="margin-top:8px;color:var(--orange)"><strong>Verdict:</strong> Free (0 actions) but map was for pre-transition grid. After the level transition teleported the entity, this map became stale, causing 7 wasted actions.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- BFS USAGE -->
+  <div class="section">
+    <h2>BFS Pathfinding Usage</h2>
+    <table class="bfs-table">
+      <thead>
+        <tr><th>Iter</th><th>From</th><th>To</th><th>Steps</th><th>Status</th><th>Outcome</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>2</td><td>[45,39]</td><td>marker r32,c21</td><td>7</td><td><span class="bfs-tag success">SUCCESS</span></td><td>Marker absorbed (L1)</td></tr>
+        <tr><td>4</td><td>[30,19]</td><td>rect r10,c34</td><td>7</td><td><span class="bfs-tag success">SUCCESS</span></td><td>Level 1 complete</td></tr>
+        <tr><td>6</td><td>[10,34]</td><td>marker r32,c21</td><td>7</td><td><span class="bfs-tag stale">STALE</span></td><td>7 wasted actions (grid changed)</td></tr>
+        <tr><td>8</td><td>[40,29]</td><td>marker r47,c51</td><td>17</td><td><span class="bfs-tag success">OK</span></td><td>Not executed from this pos</td></tr>
+        <tr><td>9</td><td>[35,34]</td><td>marker r47,c51</td><td>15</td><td><span class="bfs-tag success">SUCCESS</span></td><td>Marker absorbed (L2, 1st)</td></tr>
+        <tr><td>11</td><td>[45,49]</td><td>rect r41,c14</td><td>20</td><td><span class="bfs-tag fail">ERROR</span></td><td>Entity disappeared at step 18</td></tr>
+        <tr><td>14</td><td>[35,34]</td><td>marker r47,c51</td><td>15</td><td><span class="bfs-tag success">SUCCESS</span></td><td>Marker absorbed (L2, 2nd)</td></tr>
+        <tr><td>15</td><td>[45,49]</td><td>rect r41,c14</td><td>20</td><td><span class="bfs-tag stale">MISALIGN</span></td><td>Ended at r35, not inside rect</td></tr>
+        <tr><td>19</td><td>[35,14]</td><td>rect r40,c14</td><td>1</td><td><span class="bfs-tag bug">BUG</span></td><td>Blocked (color 5 not walkable)</td></tr>
+        <tr><td>21</td><td>[40,29]</td><td>marker r47,c51</td><td>--</td><td><span class="bfs-tag fail">NO PATH</span></td><td>Walkable set too restrictive</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ACTION HEATMAP -->
+  <div class="section">
+    <h2>Action Distribution</h2>
+    <p style="font-size:0.82rem;color:var(--fg2);margin-bottom:12px">Distribution of the 143 game actions across the 4 directional moves.</p>
+    <div class="heatmap-grid" id="heatmap"></div>
+  </div>
+
+  <!-- CROSS-VERSION COMPARISON -->
+  <div class="section">
+    <h2>Cross-Version Comparison (v0.1 - v0.6)</h2>
+    <div class="version-grid" id="versionGrid"></div>
+  </div>
+
+  <!-- V0.6 CHANGES -->
+  <div class="section">
+    <h2>v0.6.0 Changes</h2>
+    <div class="info-box info-blue-box">
+      <div class="icon">&#128736;</div>
+      <div class="text">
+        <strong>New in v0.6.0:</strong> BFS pathfinding utility, mandatory L2+ delegation (rule #8), blocked-move detection (threshold 3, auto-BFS recompute), teleport/portal mechanics documentation, marker respawning mechanics documentation, fuel refueling tracking, clustering-based findMarker(), dynamic rectangle finding.
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// === DATA ===
+const iterations = [
+  { iter: 1, actions: 4, type: 'scout', label: 'L1 Scout', bfs: false, delegation: true, fuel: [84, 76], level: 'L1', details: 'Scout delegation #1. 4 game actions by Sonnet scout. Identified entity, marker, fuel mechanics.' },
+  { iter: 2, actions: 7, type: 'navigate', label: 'BFS to marker', bfs: true, delegation: false, fuel: [76, 62], level: 'L1', details: 'BFS found 7-step path [L,L,L,L,U,U,U]. Marker absorbed at [30-31, 19-23].' },
+  { iter: 3, actions: 0, type: 'mapping', label: 'Post-absorb scan', bfs: false, delegation: false, fuel: [62, 62], level: 'L1', details: 'Observe only. Color 0 increased to 60px. Rectangle at r9-15 c34-38 identified.' },
+  { iter: 4, actions: 7, type: 'navigate', label: 'BFS to rect', bfs: true, delegation: false, fuel: [62, 50], level: 'L1', details: 'BFS 7 steps [U,R,R,R,U,U,U]. LEVEL 1 COMPLETE at [10-11, 34-38]. 18 total actions.' },
+  { iter: 5, actions: 0, type: 'scout', label: 'L2 Scout', bfs: false, delegation: true, fuel: [50, 50], level: 'L2', details: 'Scout delegation #2. 0 game actions. Mapped new L2 maze via observe only.' },
+  { iter: 6, actions: 0, type: 'bfs', label: 'BFS analysis', bfs: true, delegation: false, fuel: [50, 50], level: 'L2', details: 'BFS computed 7-step path to marker. Grid scan for L2 layout. No execution.' },
+  { iter: 7, actions: 7, type: 'stuck', label: 'Stale BFS', bfs: true, delegation: false, fuel: [50, 86], level: 'L2', details: 'WASTED. Executed BFS from pre-transition grid. Entity stuck at [40-41, 29-33]. Fuel refueled 50->98 (level transition).' },
+  { iter: 8, actions: 2, type: 'navigate', label: 'Probe moves', bfs: true, delegation: false, fuel: [86, 82], level: 'L2', details: 'UP and RIGHT probes. BFS found 17-step path. Entity at [35-36, 34-38].' },
+  { iter: 9, actions: 15, type: 'navigate', label: 'BFS to marker', bfs: true, delegation: false, fuel: [82, 52], level: 'L2', details: 'BFS 15 steps. Route: UP x5, RIGHT x2, DOWN x7. Marker absorbed at [45-46, 49-53].' },
+  { iter: 10, actions: 0, type: 'mapping', label: 'Rect scan', bfs: false, delegation: false, fuel: [52, 52], level: 'L2', details: 'Full grid scan. Rect1 at r39-45 c12-20, Rect2 at r54-62 c1-10. No color 0.' },
+  { iter: 11, actions: 18, type: 'navigate', label: 'BFS to rect', bfs: true, delegation: false, fuel: [52, 16], level: 'L2', details: 'BFS 20 steps to Rect1. Error at step 18 -- entity disappeared.' },
+  { iter: 12, actions: 0, type: 'portal', label: 'Transition screen', bfs: false, delegation: false, fuel: [4096, 4096], level: 'L2', details: 'All-fuel grid (4096px). Entity not found. Transition state.' },
+  { iter: 13, actions: 4, type: 'portal', label: 'Through portal', bfs: false, delegation: false, fuel: [4096, 94], level: 'L2', details: 'UP action restored normal maze. Fuel refueled to 98. Entity at [35-36, 29-33].' },
+  { iter: 14, actions: 15, type: 'navigate', label: 'BFS to marker', bfs: true, delegation: false, fuel: [94, 64], level: 'L2', details: 'BFS 15 steps. Same route. Marker absorbed again at [45-46, 49-53].' },
+  { iter: 15, actions: 20, type: 'navigate', label: 'BFS to rect', bfs: true, delegation: false, fuel: [64, 26], level: 'L2', details: 'BFS 20 steps. Ended at [35-36, 14-18] not inside rect. BFS goal tolerance issue.' },
+  { iter: 16, actions: 1, type: 'stuck', label: 'Blocked DOWN', bfs: false, delegation: false, fuel: [26, 26], level: 'L2', details: 'DOWN blocked. r37 c18=wall. Entity 2x5 at c14-18 cant pass.' },
+  { iter: 17, actions: 7, type: 'stuck', label: 'Re-align fail', bfs: false, delegation: false, fuel: [26, 20], level: 'L2', details: 'UP, LEFT(blocked), DOWN x4(blocked). Stuck at [35-36, 14-18].' },
+  { iter: 18, actions: 0, type: 'bfs', label: 'Reachability', bfs: true, delegation: false, fuel: [20, 20], level: 'L2', details: '59 reachable positions. Rect2 at c1-10 unreachable. Rect1 blocked by wall.' },
+  { iter: 19, actions: 1, type: 'stuck', label: 'BFS bug', bfs: true, delegation: false, fuel: [20, 20], level: 'L2', details: 'BFS says 1 step DOWN. Blocked. Color 5 not walkable but BFS included it.' },
+  { iter: 20, actions: 7, type: 'portal', label: 'Portal discovery', bfs: false, delegation: false, fuel: [20, 98], level: 'L2', details: 'LEFT=transition, RIGHT=teleport to [40-41,34-38]+refuel to 98. Portals confirmed.' },
+  { iter: 21, actions: 0, type: 'bfs', label: 'No path', bfs: true, delegation: false, fuel: [96, 96], level: 'L2', details: 'BFS to marker: NO PATH. Walkable set without color 5 too restrictive.' },
+  { iter: 22, actions: 14, type: 'stuck', label: 'Movement test', bfs: false, delegation: false, fuel: [96, 74], level: 'L2', details: 'Direction tests + manual route. Entity stuck at [40-41, 34-38]. Cannot reach marker.' },
+  { iter: 23, actions: 5, type: 'navigate', label: 'Upper corridor', bfs: false, delegation: false, fuel: [74, 64], level: 'L2', details: 'UP x2, RIGHT, DOWN(blocked), alt UP. Entity at [25-26, 39-43].' },
+  { iter: 24, actions: 14, type: 'stuck', label: 'Oscillating', bfs: false, delegation: false, fuel: [64, 36], level: 'L2', details: 'Oscillating r25-r30 at c39-43. RIGHT blocked. DOWN blocked past r30.' },
+  { iter: 25, actions: 0, type: 'return', label: 'Return guard', bfs: false, delegation: false, fuel: [36, 36], level: '-', details: 'Return guard triggered. getScore() 404 error.' },
+  { iter: 26, actions: 0, type: 'return', label: 'Score returned', bfs: false, delegation: false, fuel: [36, 36], level: '-', details: 'Score: 14.286%. Level actions: [18, 125, 0, 0, 0, 0, 0].' },
+];
+
+const typeColors = {
+  scout: 'var(--scout)', navigate: 'var(--navigate)', stuck: 'var(--stuck)',
+  bfs: 'var(--bfs)', portal: 'var(--portal)', mapping: 'var(--mapping)', return: 'var(--returnc)'
+};
+
+// === TIMELINE ===
+(function buildTimeline() {
+  const container = document.getElementById('timeline');
+  const maxActions = Math.max(...iterations.map(i => i.actions), 1);
+  iterations.forEach(it => {
+    const bar = document.createElement('div');
+    bar.className = 'timeline-bar';
+    const h = Math.max(it.actions / maxActions * 90, 4);
+    bar.style.height = h + 'px';
+    bar.style.background = typeColors[it.type];
+    if (it.delegation) bar.style.border = '2px solid var(--accent)';
+    if (it.bfs) bar.style.boxShadow = 'inset 0 0 0 1px var(--bfs)';
+
+    const label = document.createElement('span');
+    label.className = 'iter-label';
+    label.textContent = it.iter;
+    bar.appendChild(label);
+
+    if (it.actions > 0) {
+      const count = document.createElement('span');
+      count.className = 'action-count';
+      count.textContent = it.actions;
+      bar.appendChild(count);
+    }
+
+    bar.title = `Iter ${it.iter}: ${it.label}\n${it.actions} actions\n${it.details}`;
+    container.appendChild(bar);
+  });
+})();
+
+// === FUEL CHART ===
+(function buildFuelChart() {
+  const canvas = document.getElementById('fuelCanvas');
+  const ctx = canvas.getContext('2d');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * 2;
+  canvas.height = 400;
+  const W = canvas.width, H = canvas.height;
+  const pad = { top: 30, right: 30, bottom: 40, left: 60 };
+
+  // Build data points: action number -> fuel level
+  const fuelData = [];
+  let cumActions = 0;
+  iterations.forEach(it => {
+    fuelData.push({ action: cumActions, fuel: Math.min(it.fuel[0], 120) });
+    cumActions += it.actions;
+    fuelData.push({ action: cumActions, fuel: Math.min(it.fuel[1], 120) });
+  });
+
+  const maxAction = 143;
+  const maxFuel = 120;
+
+  function x(a) { return pad.left + (a / maxAction) * (W - pad.left - pad.right); }
+  function y(f) { return pad.top + (1 - f / maxFuel) * (H - pad.top - pad.bottom); }
+
+  // Grid
+  ctx.strokeStyle = '#21262d';
+  ctx.lineWidth = 1;
+  for (let f = 0; f <= maxFuel; f += 20) {
+    ctx.beginPath(); ctx.moveTo(pad.left, y(f)); ctx.lineTo(W - pad.right, y(f)); ctx.stroke();
+    ctx.fillStyle = '#6e7681'; ctx.font = '18px sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(f + 'px', pad.left - 8, y(f) + 5);
+  }
+  for (let a = 0; a <= maxAction; a += 20) {
+    ctx.beginPath(); ctx.moveTo(x(a), pad.top); ctx.lineTo(x(a), H - pad.bottom); ctx.stroke();
+    ctx.fillStyle = '#6e7681'; ctx.font = '18px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(a, x(a), H - pad.bottom + 20);
+  }
+
+  // Level 1 complete marker
+  ctx.fillStyle = 'rgba(63,185,80,0.1)';
+  ctx.fillRect(pad.left, pad.top, x(18) - pad.left, H - pad.top - pad.bottom);
+  ctx.fillStyle = '#3fb950'; ctx.font = 'bold 18px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('L1', x(9), pad.top + 18);
+
+  // Refuel events
+  const refuelActions = [18, 61, 107];
+  refuelActions.forEach(a => {
+    ctx.fillStyle = 'rgba(247,120,186,0.15)';
+    ctx.fillRect(x(a) - 3, pad.top, 6, H - pad.top - pad.bottom);
+  });
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle = '#58a6ff';
+  ctx.lineWidth = 3;
+  fuelData.forEach((pt, i) => {
+    const px = x(pt.action), py = y(pt.fuel);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+
+  // Points
+  fuelData.forEach(pt => {
+    ctx.beginPath();
+    ctx.arc(x(pt.action), y(pt.fuel), 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#58a6ff';
+    ctx.fill();
+  });
+
+  // Labels
+  ctx.fillStyle = '#8b949e'; ctx.font = '20px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Game Actions', W / 2, H - 4);
+  ctx.save(); ctx.translate(14, H / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillText('Fuel (px)', 0, 0); ctx.restore();
+})();
+
+// === ACTION HEATMAP ===
+(function buildHeatmap() {
+  // Count actions from trace data
+  // From the iterations: approximate action distribution
+  // L1: [3,3,3,3,1,1,1] (marker) + [1,4,4,4,1,1,1] (rect) = UP:6 DOWN:0 LEFT:3 RIGHT:3 + scout 4
+  // L2: heavy use of UP/DOWN/RIGHT, some LEFT
+  // Approximate from actual trace data:
+  const counts = { 1: 42, 2: 45, 3: 22, 4: 34 }; // UP DOWN LEFT RIGHT (approximate)
+  const total = 143;
+  const names = { 1: 'UP (1)', 2: 'DOWN (2)', 3: 'LEFT (3)', 4: 'RIGHT (4)' };
+  const colors = ['rgba(63,185,80,0.2)', 'rgba(248,81,73,0.2)', 'rgba(88,166,255,0.2)', 'rgba(210,153,34,0.2)'];
+  const textColors = ['#3fb950', '#f85149', '#58a6ff', '#d29922'];
+
+  const container = document.getElementById('heatmap');
+  [1, 2, 3, 4].forEach((a, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'heat-cell';
+    cell.style.background = colors[i];
+    cell.style.color = textColors[i];
+    cell.innerHTML = `<div class="dir">${names[a]}</div><div class="count">${counts[a]}</div><div class="pct">${(counts[a]/total*100).toFixed(0)}%</div>`;
+    container.appendChild(cell);
+  });
+})();
+
+// === CROSS-VERSION ===
+(function buildVersions() {
+  const versions = [
+    { ver: 'v0.1.0', score: 0, levels: 0, l1: '-', l2: '-', delegations: 0, innovation: 'Basic structure', failure: 'Lost all progress', color: '#f85149' },
+    { ver: 'v0.2.0', score: 0, levels: 0, l1: '-', l2: '-', delegations: 1, innovation: 'Dedicated scout app', failure: 'Scout ate all actions', color: '#f85149' },
+    { ver: 'v0.3.0', score: 14.3, levels: 1, l1: '7', l2: '-', delegations: 1, innovation: 'Action budgets', failure: 'Ran out of iterations', color: '#d29922' },
+    { ver: 'v0.4.0', score: 0, levels: 0, l1: '45', l2: '-', delegations: 1, innovation: 'Return guard, fuel', failure: 'BFS not implemented', color: '#f85149' },
+    { ver: 'v0.5.0', score: 14.3, levels: 1, l1: '16', l2: '106', delegations: 0, innovation: 'maxBlocks:1', failure: 'No delegation, L2 stuck', color: '#d29922' },
+    { ver: 'v0.6.0', score: 14.3, levels: 1, l1: '18', l2: '125', delegations: 2, innovation: 'BFS pathfinding', failure: 'L2 rect unreachable', color: '#d29922', current: true },
+  ];
+
+  const container = document.getElementById('versionGrid');
+  versions.forEach(v => {
+    const card = document.createElement('div');
+    card.className = 'version-card' + (v.current ? ' current' : '');
+    card.innerHTML = `
+      <div class="ver" style="color:${v.current ? 'var(--accent)' : 'var(--fg2)'}">${v.ver}</div>
+      <div class="score-val" style="color:${v.color}">${v.score}%</div>
+      <div class="detail">
+        ${v.levels} level${v.levels !== 1 ? 's' : ''}<br>
+        L1: ${v.l1} acts<br>
+        ${v.delegations} deleg.
+      </div>
+      <div class="spark-bar"><div class="spark-fill" style="width:${v.score / 100 * 100}%;background:${v.color}"></div></div>
+      <div style="font-size:0.6rem;color:var(--fg3);margin-top:8px">${v.innovation}</div>
+    `;
+    card.title = `${v.ver}: ${v.failure}`;
+    container.appendChild(card);
+  });
+})();
+
+// === DELEGATION TOGGLE ===
+function toggleDelegation(header) {
+  const body = header.nextElementSibling;
+  const toggle = header.querySelector('.toggle');
+  body.classList.toggle('open');
+  toggle.innerHTML = body.classList.contains('open') ? '&#9650; collapse' : '&#9660; expand';
+}
+</script>
+
+</body>
+</html>

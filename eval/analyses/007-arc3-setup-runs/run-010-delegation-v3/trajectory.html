@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARC-3 Delegation v0.3.0 Trajectory — arc3-ls20-cb3b57cc</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --bg4: #30363d;
+    --fg: #e6edf3; --fg2: #8b949e; --fg3: #6e7681;
+    --accent: #58a6ff; --green: #3fb950; --red: #f85149; --orange: #d29922;
+    --purple: #bc8cff; --cyan: #39d2c0; --pink: #f778ba;
+    --explore: #58a6ff; --extract: #3fb950; --verify: #d29922;
+    --delegate: #bc8cff; --diagnose: #f85149; --init: #39d2c0;
+    --radius: 8px; --gap: 24px;
+  }
+  html { font-size: 15px; scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--fg); line-height: 1.6;
+    padding: 0 16px 80px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+
+  /* --- Header --- */
+  .header { padding: 48px 0 32px; border-bottom: 1px solid var(--bg4); margin-bottom: var(--gap); }
+  .header h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 4px; }
+  .header .subtitle { color: var(--fg2); font-size: 0.95rem; margin-bottom: 20px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 16px; }
+  .meta-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--bg3); padding: 6px 14px; border-radius: 20px;
+    font-size: 0.82rem; font-weight: 500;
+  }
+  .meta-chip .label { color: var(--fg2); }
+  .meta-chip .value { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .badge {
+    display: inline-block; padding: 5px 14px; border-radius: 20px;
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .badge-green { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+  .badge-red { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
+  .badge-orange { background: rgba(210,153,34,0.15); color: var(--orange); border: 1px solid rgba(210,153,34,0.3); }
+
+  .warning-box {
+    background: rgba(248,81,73,0.08); border: 1px solid rgba(248,81,73,0.25);
+    border-radius: var(--radius); padding: 16px 20px; margin-top: 16px;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .warning-box .icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 2px; }
+  .warning-box .text { font-size: 0.88rem; color: var(--fg); }
+  .warning-box strong { color: var(--red); }
+
+  /* --- Section --- */
+  .section { margin-top: 48px; }
+  .section h2 {
+    font-size: 1.25rem; font-weight: 700; margin-bottom: 20px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--bg4);
+  }
+  .section h3 { font-size: 1rem; font-weight: 600; margin: 20px 0 10px; color: var(--fg); }
+
+  /* --- Comparison Table --- */
+  .comparison-grid {
+    display: grid; grid-template-columns: 180px 1fr 1fr 1fr;
+    gap: 0; border-radius: var(--radius); overflow: hidden;
+    border: 1px solid var(--bg4); font-size: 0.82rem;
+  }
+  .comparison-grid .cell {
+    padding: 10px 14px; border-bottom: 1px solid var(--bg4);
+    border-right: 1px solid var(--bg4);
+  }
+  .comparison-grid .cell:nth-child(4n) { border-right: none; }
+  .comparison-grid .cell.header-cell {
+    background: var(--bg3); font-weight: 700; color: var(--fg2);
+    text-transform: uppercase; letter-spacing: 0.3px; font-size: 0.75rem;
+  }
+  .comparison-grid .cell.metric-label {
+    background: var(--bg2); font-weight: 600; color: var(--fg2);
+  }
+  .comparison-grid .cell.v1 { background: var(--bg2); }
+  .comparison-grid .cell.v2 { background: var(--bg2); }
+  .comparison-grid .cell.v3 { background: rgba(63,185,80,0.04); }
+  .improved { color: var(--green); font-weight: 600; }
+  .regressed { color: var(--red); font-weight: 600; }
+  .neutral { color: var(--fg2); }
+  .same { color: var(--fg3); }
+
+  /* --- Timeline --- */
+  .timeline { position: relative; padding-left: 40px; }
+  .timeline::before {
+    content: ''; position: absolute; left: 15px; top: 0; bottom: 0;
+    width: 2px; background: var(--bg4);
+  }
+  .tl-item {
+    position: relative; margin-bottom: 4px; padding: 6px 12px;
+    border-radius: 6px; font-size: 0.8rem; font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    transition: background 0.15s;
+  }
+  .tl-item:hover { background: var(--bg3); }
+  .tl-item::before {
+    content: ''; position: absolute; left: -31px; top: 12px;
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 2px solid var(--bg4); background: var(--bg);
+  }
+  .tl-item.phase-explore::before { border-color: var(--explore); background: rgba(88,166,255,0.2); }
+  .tl-item.phase-extract::before { border-color: var(--extract); background: rgba(63,185,80,0.2); }
+  .tl-item.phase-verify::before  { border-color: var(--verify); background: rgba(210,153,34,0.2); }
+  .tl-item.phase-delegate::before { border-color: var(--delegate); background: rgba(188,140,255,0.2); }
+  .tl-item.phase-diagnose::before { border-color: var(--diagnose); background: rgba(248,81,73,0.2); }
+  .tl-item.child {
+    margin-left: 24px; border-left: 2px solid var(--delegate);
+    padding-left: 14px; opacity: 0.85;
+  }
+  .tl-item.child::before { display: none; }
+  .tl-item .iter-num { color: var(--fg3); min-width: 48px; display: inline-block; }
+  .tl-item .phase-tag {
+    display: inline-block; padding: 1px 8px; border-radius: 4px;
+    font-size: 0.72rem; font-weight: 600; margin-right: 6px;
+  }
+  .tag-explore { background: rgba(88,166,255,0.15); color: var(--explore); }
+  .tag-extract { background: rgba(63,185,80,0.15); color: var(--extract); }
+  .tag-verify { background: rgba(210,153,34,0.15); color: var(--verify); }
+  .tag-delegate { background: rgba(188,140,255,0.15); color: var(--delegate); }
+  .tag-diagnose { background: rgba(248,81,73,0.15); color: var(--diagnose); }
+  .outcome-marker { font-weight: 700; margin-left: 4px; }
+  .outcome-success { color: var(--green); }
+  .outcome-partial { color: var(--orange); }
+  .outcome-fail { color: var(--red); }
+  .tl-item .hyp-tag {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 0.7rem; font-weight: 600; margin-left: 6px;
+    background: rgba(57,210,192,0.12); color: var(--cyan);
+  }
+  .tl-milestone {
+    background: rgba(63,185,80,0.08); border: 1px solid rgba(63,185,80,0.2);
+    border-radius: 6px; padding: 8px 14px; margin: 8px 0;
+    font-weight: 600; color: var(--green);
+  }
+  .tl-milestone::before { border-color: var(--green) !important; background: var(--green) !important; }
+  .fuel-indicator {
+    display: inline-block; margin-left: auto; float: right;
+    font-size: 0.72rem; color: var(--fg3);
+  }
+  .fuel-bar-mini {
+    display: inline-block; width: 50px; height: 6px; background: var(--bg4);
+    border-radius: 3px; overflow: hidden; vertical-align: middle; margin-left: 4px;
+  }
+  .fuel-bar-mini .fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+
+  /* --- Delegation Cards --- */
+  .deleg-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .deleg-cards { grid-template-columns: 1fr; } }
+  .deleg-card {
+    background: var(--bg2); border: 1px solid var(--bg4);
+    border-radius: var(--radius); padding: 20px; position: relative;
+  }
+  .deleg-card h4 { font-size: 0.95rem; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .deleg-card .quality-badge {
+    font-size: 0.72rem; padding: 2px 10px; border-radius: 10px; font-weight: 700;
+  }
+  .quality-high { background: rgba(63,185,80,0.15); color: var(--green); }
+  .quality-low { background: rgba(248,81,73,0.15); color: var(--red); }
+  .deleg-card ul { list-style: none; margin-top: 8px; }
+  .deleg-card li {
+    font-size: 0.82rem; padding: 4px 0; color: var(--fg2);
+    border-bottom: 1px solid var(--bg3);
+  }
+  .deleg-card li:last-child { border-bottom: none; }
+  .deleg-card li strong { color: var(--fg); }
+  .deleg-card .finding-correct { color: var(--green); }
+  .deleg-card .finding-wrong { color: var(--red); }
+  .deleg-card .finding-partial { color: var(--orange); }
+
+  /* --- Charts --- */
+  .chart-container {
+    background: var(--bg2); border: 1px solid var(--bg4);
+    border-radius: var(--radius); padding: 24px; margin-top: 16px;
+  }
+  canvas { max-width: 100%; }
+  .chart-legend {
+    display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px;
+    font-size: 0.78rem; color: var(--fg2);
+  }
+  .chart-legend .legend-item { display: flex; align-items: center; gap: 6px; }
+  .chart-legend .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  /* --- Hypothesis Arc --- */
+  .hyp-arc { display: flex; gap: 0; align-items: stretch; margin-top: 12px; overflow-x: auto; }
+  .hyp-node {
+    flex: 1; min-width: 160px; padding: 14px; text-align: center;
+    position: relative; border-radius: var(--radius);
+    background: var(--bg2); border: 1px solid var(--bg4);
+  }
+  .hyp-node + .hyp-node { margin-left: 8px; }
+  .hyp-node::after {
+    content: ''; position: absolute; top: 50%; right: -8px;
+    width: 8px; height: 2px; background: var(--bg4);
+  }
+  .hyp-node:last-child::after { display: none; }
+  .hyp-node .hyp-id { font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
+  .hyp-node .hyp-desc { font-size: 0.75rem; color: var(--fg2); margin-bottom: 8px; line-height: 1.4; }
+  .hyp-node .hyp-outcome {
+    font-size: 0.72rem; font-weight: 700; padding: 2px 10px;
+    border-radius: 10px; display: inline-block;
+  }
+  .hyp-node .hyp-iters { font-size: 0.7rem; color: var(--fg3); margin-top: 4px; }
+  .hyp-accepted .hyp-id { color: var(--green); }
+  .hyp-accepted { border-color: rgba(63,185,80,0.3); }
+  .hyp-rejected .hyp-id { color: var(--red); }
+  .hyp-rejected { border-color: rgba(248,81,73,0.3); }
+  .hyp-abandoned .hyp-id { color: var(--fg3); }
+  .hyp-abandoned { border-color: var(--bg4); }
+  .hyp-partial .hyp-id { color: var(--orange); }
+  .hyp-partial { border-color: rgba(210,153,34,0.3); }
+
+  /* --- Donut Chart --- */
+  .donut-section { display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
+  .donut-wrap { width: 220px; height: 220px; flex-shrink: 0; position: relative; }
+  .donut-center {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    text-align: center;
+  }
+  .donut-center .big { font-size: 1.6rem; font-weight: 700; }
+  .donut-center .small { font-size: 0.75rem; color: var(--fg2); }
+  .donut-legend { flex: 1; min-width: 200px; }
+  .donut-legend-item {
+    display: flex; align-items: center; gap: 10px; padding: 6px 0;
+    font-size: 0.85rem; border-bottom: 1px solid var(--bg3);
+  }
+  .donut-legend-item:last-child { border-bottom: none; }
+  .donut-legend-item .swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .donut-legend-item .count { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* --- Prose --- */
+  .prose { font-size: 0.9rem; color: var(--fg2); line-height: 1.75; }
+  .prose p { margin-bottom: 12px; }
+  .prose strong { color: var(--fg); }
+  .prose ul { margin: 8px 0 12px 20px; }
+  .prose li { margin-bottom: 6px; }
+  .prose .highlight { color: var(--accent); font-weight: 600; }
+  .prose .caution { color: var(--red); font-weight: 600; }
+
+  /* --- Annotation line --- */
+  .annotation {
+    font-size: 0.72rem; color: var(--fg3); font-style: italic;
+    padding: 4px 8px; background: var(--bg3); border-radius: 4px;
+    display: inline-block; margin: 2px 0;
+  }
+
+  /* Footer */
+  .footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--bg4); color: var(--fg3); font-size: 0.75rem; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ================= HEADER ================= -->
+<div class="header">
+  <h1>ARC-3 Delegation v0.3.0 Trajectory</h1>
+  <div class="subtitle">Task <code>arc3-ls20-cb3b57cc</code> &mdash; Opus 4.6 parent + Sonnet scout &mdash; 30 iterations</div>
+
+  <div class="meta-row">
+    <div class="meta-chip"><span class="label">Score</span> <span class="value">0</span></div>
+    <div class="meta-chip"><span class="label">Verdict</span> <span class="value">timeout</span></div>
+    <div class="meta-chip"><span class="label">Iterations</span> <span class="value">30 / 30</span></div>
+    <div class="meta-chip"><span class="label">Wall Time</span> <span class="value">8m 35s</span></div>
+    <div class="meta-chip"><span class="label">Actions</span> <span class="value">61</span></div>
+    <div class="meta-chip"><span class="label">Fuel Remaining</span> <span class="value">44px (22 moves)</span></div>
+    <div class="meta-chip"><span class="label">Delegations</span> <span class="value">2 (D1 + D2)</span></div>
+  </div>
+
+  <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+    <span class="badge badge-green">LEVEL 1 COMPLETED</span>
+    <span class="badge badge-orange">1 / 7 levels</span>
+    <span class="badge badge-red">no return() call</span>
+  </div>
+
+  <div class="warning-box">
+    <div class="icon">&#9888;</div>
+    <div class="text">
+      <strong>Agent never called return()</strong> &mdash; the score of 0 does not reflect actual progress.
+      Level 1 was completed at iteration 17, and the agent had 44 fuel pixels (22 moves) remaining at timeout.
+      The persistent failure to call <code>return()</code> across all three versions (v0.1.0, v0.2.0, v0.3.0) is the single most impactful unfixed bug.
+    </div>
+  </div>
+</div>
+
+<!-- ================= COMPARISON ================= -->
+<div class="section">
+  <h2>Version Comparison: v0.1.0 &rarr; v0.2.0 &rarr; v0.3.0</h2>
+  <div class="comparison-grid">
+    <div class="cell header-cell">Metric</div>
+    <div class="cell header-cell">v0.1.0 (run-008)</div>
+    <div class="cell header-cell">v0.2.0 (run-009)</div>
+    <div class="cell header-cell">v0.3.0 (run-010)</div>
+
+    <div class="cell metric-label">Iteration Budget</div>
+    <div class="cell v1">20</div>
+    <div class="cell v2">20</div>
+    <div class="cell v3"><span class="improved">30 (+50%)</span></div>
+
+    <div class="cell metric-label">Scout Model</div>
+    <div class="cell v1"><span class="regressed">Flash</span></div>
+    <div class="cell v2"><span class="improved">Sonnet</span></div>
+    <div class="cell v3"><span class="same">Sonnet</span></div>
+
+    <div class="cell metric-label">Scout Actions (L1)</div>
+    <div class="cell v1"><span class="regressed">42 (2 scouts)</span></div>
+    <div class="cell v2"><span class="improved">7 (1 scout)</span></div>
+    <div class="cell v3"><span class="improved">6 (1 scout)</span></div>
+
+    <div class="cell metric-label">Double-Execution Bug</div>
+    <div class="cell v1"><span class="regressed">Yes</span></div>
+    <div class="cell v2"><span class="improved">No</span></div>
+    <div class="cell v3"><span class="improved">No</span></div>
+
+    <div class="cell metric-label">Scout Report Quality</div>
+    <div class="cell v1"><span class="regressed">Low (discarded)</span></div>
+    <div class="cell v2"><span class="improved">High (accepted)</span></div>
+    <div class="cell v3"><span class="improved">High (accepted)</span></div>
+
+    <div class="cell metric-label">Dedicated Mapping Iters</div>
+    <div class="cell v1"><span class="neutral">3</span></div>
+    <div class="cell v2"><span class="neutral">5</span></div>
+    <div class="cell v3"><span class="improved">2 (map-while-navigate)</span></div>
+
+    <div class="cell metric-label">Levels Completed</div>
+    <div class="cell v1"><span class="regressed">0</span></div>
+    <div class="cell v2"><span class="improved">1 (iter 13)</span></div>
+    <div class="cell v3"><span class="same">1 (iter 17)</span></div>
+
+    <div class="cell metric-label">Re-Scout on L2</div>
+    <div class="cell v1"><span class="neutral">N/A</span></div>
+    <div class="cell v2"><span class="neutral">No</span></div>
+    <div class="cell v3"><span class="improved">Yes (D2, iter 21)</span></div>
+
+    <div class="cell metric-label">Fuel at Timeout</div>
+    <div class="cell v1"><span class="regressed">0 (depleted)</span></div>
+    <div class="cell v2"><span class="improved">56px (28 moves)</span></div>
+    <div class="cell v3"><span class="neutral">44px (22 moves)</span></div>
+
+    <div class="cell metric-label">return() Called</div>
+    <div class="cell v1"><span class="regressed">No</span></div>
+    <div class="cell v2"><span class="regressed">No</span></div>
+    <div class="cell v3"><span class="regressed">No</span></div>
+
+    <div class="cell metric-label">Failure Mode</div>
+    <div class="cell v1"><span class="neutral">Fuel depletion</span></div>
+    <div class="cell v2"><span class="neutral">Iteration exhaustion</span></div>
+    <div class="cell v3"><span class="neutral">Dead-end + no return</span></div>
+
+    <div class="cell metric-label">Wall Time</div>
+    <div class="cell v1">4m 15s</div>
+    <div class="cell v2">5m 36s</div>
+    <div class="cell v3">8m 35s</div>
+  </div>
+</div>
+
+<!-- ================= TIMELINE ================= -->
+<div class="section">
+  <h2>Control Flow Timeline</h2>
+  <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px; font-size:0.78rem;">
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--explore);margin-right:4px;"></span>Explore</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--extract);margin-right:4px;"></span>Extract/Navigate</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--verify);margin-right:4px;"></span>Verify</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--delegate);margin-right:4px;"></span>Delegate</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--diagnose);margin-right:4px;"></span>Diagnose</span>
+  </div>
+  <div class="timeline" id="timeline"></div>
+</div>
+
+<!-- ================= DELEGATION LOG ================= -->
+<div class="section">
+  <h2>Delegation Log</h2>
+  <div class="deleg-cards">
+    <div class="deleg-card">
+      <h4>D1 &mdash; Initial Scout <span class="quality-badge quality-high">HIGH QUALITY</span></h4>
+      <div style="font-size:0.78rem; color:var(--fg3); margin-bottom:10px;">
+        Iter 2 &bull; app=arc3-scout &bull; model=Sonnet &bull; 6 game actions &bull; ~7 child iters
+      </div>
+      <ul>
+        <li><strong>Entity:</strong> color 12, [45-46, 39-43], 10px, 5px/move <span class="finding-correct">CORRECT</span></li>
+        <li><strong>Stationary markers:</strong> color 0 at [31-32, 21-22], color 1 at [32-33, 20-21] <span class="finding-correct">CORRECT</span></li>
+        <li><strong>Fuel:</strong> color 11, -2px/action, 72 remaining of 84 initial <span class="finding-correct">CORRECT</span></li>
+        <li><strong>Targets:</strong> 3 clusters of color 9 (top, middle, bottom-left) <span class="finding-correct">CORRECT</span></li>
+        <li><strong>Corridors:</strong> "Main vertical corridor rows 8-49, cols 32-40" <span class="finding-partial">OVERSIMPLIFIED</span></li>
+        <li><strong>Hypotheses:</strong> 5 at high confidence <span class="finding-correct">CORRECT</span></li>
+      </ul>
+      <div style="margin-top:12px; font-size:0.82rem; color:var(--fg2);">
+        Parent verified all claims at iter 3. Scout data drove the entire L1 navigation strategy.
+        Cost-effective: only 6 of ~42 available actions consumed.
+      </div>
+    </div>
+    <div class="deleg-card">
+      <h4>D2 &mdash; Level 2 Re-Scout <span class="quality-badge quality-low">LOW QUALITY</span></h4>
+      <div style="font-size:0.78rem; color:var(--fg3); margin-bottom:10px;">
+        Iter 21 &bull; app=arc3-scout &bull; model=Sonnet &bull; 8 game actions &bull; ~7 child iters
+      </div>
+      <ul>
+        <li><strong>Entity position:</strong> color 12 at [40-41, 34-38] <span class="finding-correct">CORRECT</span> (moved by scout)</li>
+        <li><strong>Actions used:</strong> 48 cumulative (8 own) <span class="finding-partial">CONFUSING</span></li>
+        <li><strong>Status:</strong> "INCOMPLETE - ran out of scout action budget" <span class="finding-wrong">INCOMPLETE</span></li>
+        <li><strong>Corridor mapping:</strong> Not provided <span class="finding-wrong">MISSING</span></li>
+        <li><strong>Route to marker:</strong> Not provided <span class="finding-wrong">MISSING</span></li>
+      </ul>
+      <div style="margin-top:12px; font-size:0.82rem; color:var(--fg2);">
+        Good instinct to re-scout after level transition, but D2 ran out of its action budget
+        without mapping the critical corridor connections needed for L2 navigation.
+        Parent's own scanning (iters 22-25) was more productive.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= RESOURCE CHART ================= -->
+<div class="section">
+  <h2>Resource Chart</h2>
+  <div class="chart-container">
+    <canvas id="resourceChart" height="280"></canvas>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="dot" style="background:var(--orange)"></div> Fuel (px)</div>
+      <div class="legend-item"><div class="dot" style="background:var(--accent)"></div> Cumulative Actions</div>
+      <div class="legend-item"><div class="dot" style="background:rgba(188,140,255,0.5)"></div> Delegation Zones</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= HYPOTHESIS LOG ================= -->
+<div class="section">
+  <h2>Hypothesis Arc</h2>
+  <div class="hyp-arc">
+    <div class="hyp-node hyp-abandoned">
+      <div class="hyp-id">H1</div>
+      <div class="hyp-desc">Move entity down to touch color 9 cluster</div>
+      <div class="hyp-outcome" style="background:rgba(110,118,129,0.15); color:var(--fg3);">ABANDONED</div>
+      <div class="hyp-iters">Iter 4 &bull; 1 iter</div>
+    </div>
+    <div class="hyp-node hyp-accepted">
+      <div class="hyp-id">H2</div>
+      <div class="hyp-desc">Navigate entity to 0/1 marker to trigger state change</div>
+      <div class="hyp-outcome" style="background:rgba(63,185,80,0.15); color:var(--green);">ACCEPTED</div>
+      <div class="hyp-iters">Iters 6, 8, 10 &bull; L1 prereq</div>
+    </div>
+    <div class="hyp-node hyp-accepted">
+      <div class="hyp-id">H3</div>
+      <div class="hyp-desc">Touch marker activates target boxes (borders turn color 0)</div>
+      <div class="hyp-outcome" style="background:rgba(63,185,80,0.15); color:var(--green);">ACCEPTED</div>
+      <div class="hyp-iters">Iter 11 &bull; Marker absorbed</div>
+    </div>
+    <div class="hyp-node hyp-partial">
+      <div class="hyp-id">H4</div>
+      <div class="hyp-desc">Navigate entity into target box to complete level</div>
+      <div class="hyp-outcome" style="background:rgba(210,153,34,0.15); color:var(--orange);">L1 OK / L2 FAIL</div>
+      <div class="hyp-iters">Iters 13-17, 19 &bull; L1 at iter 17</div>
+    </div>
+    <div class="hyp-node hyp-abandoned">
+      <div class="hyp-id">H5</div>
+      <div class="hyp-desc">Navigate through upper crossover to reach right side of L2</div>
+      <div class="hyp-outcome" style="background:rgba(248,81,73,0.15); color:var(--red);">STUCK</div>
+      <div class="hyp-iters">Iters 26-29 &bull; Dead-end</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PHASE ANALYSIS ================= -->
+<div class="section">
+  <h2>Phase Analysis: 30-Iteration Budget Allocation</h2>
+  <div class="donut-section">
+    <div class="donut-wrap">
+      <canvas id="donutChart" width="220" height="220"></canvas>
+      <div class="donut-center">
+        <div class="big">30</div>
+        <div class="small">iterations</div>
+      </div>
+    </div>
+    <div class="donut-legend" id="donutLegend"></div>
+  </div>
+</div>
+
+<!-- ================= ROOT CAUSE ================= -->
+<div class="section">
+  <h2>Root Cause Analysis</h2>
+  <div class="prose">
+    <p>
+      <strong>Primary: Maze navigation dead-end combined with no <code>return()</code> call.</strong>
+      The agent navigated the entity into a dead-end corridor pocket at r25-26, c39-43 on level 2
+      and did not synthesize its corridor scan data into a correct escape route before running out of iterations.
+      Despite completing level 1, the agent never called <code>return()</code> to report partial progress.
+    </p>
+
+    <h3>Contributing Factors</h3>
+    <ul>
+      <li>
+        <strong>Dead-end navigation (iter 26):</strong> The agent moved RIGHT from c34-38 to c39-43 without first checking
+        upward access. The corridor scan from iter 25 showed the narrow vertical corridor (c34-38 only) at r17-24 is the
+        only way up. From c39-43, the wall at r20-24 blocked upward escape. <span class="caution">The agent moved RIGHT before going UP.</span>
+      </li>
+      <li>
+        <strong>Level 2 teleport confusion (iter 19):</strong> The first DOWN after level completion teleported the entity
+        from r10-11 to r40-41 (a 30-row jump). The agent wasted 6 moves trying blocked directions.
+      </li>
+      <li>
+        <strong>D2 scout quality (iter 21):</strong> The re-scout consumed 8 actions but returned an incomplete report
+        that did not map the critical corridor connections. A more thorough scout could have provided the route through the upper crossover.
+      </li>
+      <li>
+        <strong>No <code>return()</code> call:</strong> The agent had 1 level completed &mdash; meaningful progress. The plugin
+        should instruct the agent to call <code>return()</code> before timeout to capture partial credit.
+      </li>
+      <li>
+        <strong>Corridor alignment difficulty:</strong> The entity's 5-pixel width combined with 5-pixel movement steps
+        creates strict alignment requirements. The agent discovered some corridors are only accessible from specific column
+        positions reactively (hitting walls) rather than proactively (scanning first).
+      </li>
+    </ul>
+  </div>
+</div>
+
+<!-- ================= RECOMMENDATIONS ================= -->
+<div class="section">
+  <h2>Recommendations</h2>
+  <div class="prose">
+    <ul>
+      <li>
+        <strong class="highlight">Explicit <code>return()</code> instruction in plugin</strong> (highest impact):
+        "If iteration budget is running low and you have completed at least 1 level, call <code>return()</code> to capture
+        partial credit." This is the single fix that would have turned the 0 into a nonzero score across all three versions.
+      </li>
+      <li>
+        <strong>Proactive route planning before moving:</strong> After scanning corridors (iter 25), compute the full route
+        to the marker before executing. The scan showed r5-14 has continuous c9-53, so the correct route was: stay at c34-38,
+        UP through narrow corridor to r10, RIGHT across wide area to c49+, DOWN on the right side toward the marker.
+      </li>
+      <li>
+        <strong>Scout budget constraint for D2:</strong> Tell the level 2 scout to use at most 5 actions and focus on mapping
+        corridors, not navigating.
+      </li>
+      <li>
+        <strong>Movement simulation:</strong> Before executing a move sequence, simulate it against the known maze map.
+        The corridor data from iter 25 was sufficient to detect the dead-end at c39-43.
+      </li>
+      <li>
+        <strong>Larger iteration budget (40+):</strong> 30 iterations was enough for level 1 (17 iters) but left only 13
+        for level 2, which has a more complex maze. With 40 iterations, the agent could have recovered from the dead-end.
+      </li>
+      <li>
+        <strong>Level transition adaptation:</strong> Expect the entity to teleport on level transition. After the first DOWN
+        at iter 19, immediately re-map instead of trying 6 random directions.
+      </li>
+    </ul>
+  </div>
+</div>
+
+<div class="footer">
+  Generated from eval run <code>arc3_anthropic_claude-opus-4-6_2026-02-15T18-40-41-201Z</code>
+  &bull; Scorecard <code>165046f7-6cc1-4c36-8ec3-3315c7ced4a4</code>
+  &bull; Analysis: run-010 delegation v0.3.0
+</div>
+
+</div><!-- /container -->
+
+<script>
+// ============================================
+// TIMELINE DATA & RENDERING
+// ============================================
+const timelineData = [
+  { iter: 1,  phase: 'explore', tag: 'EXPLORE', label: 'Start game, observe frame, color distribution; entity(12)=10px, fuel(11)=84px, win_levels=7', fuel: 84, actions: 0 },
+  { iter: 2,  phase: 'delegate', tag: 'DELEGATE', label: 'Spawn scout D1 (app=arc3-scout, model=Sonnet, maxIter=10)', hyp: 'D1', fuel: 84, actions: 0 },
+  { iter: 'D1', phase: 'delegate', child: true, label: 'Child 1-6: probe directions, measure fuel, identify entity+goal, map corridors (6 actions)', fuel: 72, actions: 6 },
+  { iter: 'D1', phase: 'delegate', child: true, label: 'Child 7: RETURN JSON report -- entity=color 12 at [45-46,39-43], fuel=-2/action, 72 remaining', outcome: 'success', fuel: 72, actions: 6 },
+  { iter: 3,  phase: 'verify', tag: 'VERIFY', label: 'Parse report, verify entity@[45-46,39-43], 9-targets(45px), 0/1 markers, fuel=72; print grid', fuel: 72, actions: 6 },
+  { iter: 4,  phase: 'extract', tag: 'EXTRACT', label: 'DOWN x2: entity stuck at r45-46 both times (wall at r50); fuel 84->68', hyp: 'H1', outcome: 'fail', fuel: 68, actions: 8 },
+  { iter: 5,  phase: 'explore', tag: 'EXPLORE', label: 'Inspect area r40-55: corridor above open (all 3s), wall below r50, 9-block at r47-49', fuel: 68, actions: 8 },
+  { iter: 6,  phase: 'extract', tag: 'EXTRACT', label: 'UP+UP+LEFT: entity r45->r40->r35, c39->c34; discover 9-block moves WITH entity', hyp: 'H2', outcome: 'partial', fuel: 62, actions: 11 },
+  { iter: 7,  phase: 'explore', tag: 'EXPLORE', label: 'Check target clusters: top 6px r11-13 c35-37; bottom-left 24px r55-60 c3-8; marker r31-33 c20-22', fuel: 62, actions: 11 },
+  { iter: 8,  phase: 'extract', tag: 'EXTRACT', label: 'UP+LEFT x3: entity r35->r30, c34 stuck x3 (wall at c30-33); 4 actions, 3 wasted', hyp: 'H2', outcome: 'fail', fuel: 56, actions: 15 },
+  { iter: 9,  phase: 'explore', tag: 'EXPLORE', label: 'Map corridors r25-35 c15-48: wide horizontal at r25-29; narrow vertical c34-38 r17-24', fuel: 56, actions: 15 },
+  { iter: 10, phase: 'extract', tag: 'EXTRACT', label: 'UP+LEFT x3: entity r30->r25, c34->c29->c24->c19; reached wide corridor', hyp: 'H2', outcome: 'partial', fuel: 46, actions: 19 },
+  { iter: 11, phase: 'extract', tag: 'EXTRACT', label: 'DOWN: entity r25->r30; MARKER ABSORBED (color 1 gone, color 0: 3->60px)', hyp: 'H3', outcome: 'success', milestone: 'Marker absorbed -- target boxes activated', fuel: 44, actions: 20 },
+  { iter: 12, phase: 'explore', tag: 'EXPLORE', label: 'Inspect activated boxes: top (r9-15,c33-39) 9-pattern in 0-border; bottom-left (r53-62,c1-10)', fuel: 44, actions: 20 },
+  { iter: 13, phase: 'extract', tag: 'EXTRACT', label: 'UP x4+RIGHT x3: stuck going up (4 wasted), then RIGHT to c34-38', hyp: 'H4', outcome: 'fail', fuel: 30, actions: 27 },
+  { iter: 14, phase: 'explore', tag: 'EXPLORE', label: 'LEFT to c29-33, UP blocked; corridor c28-43 r16-26: path c34-38 exactly', fuel: 30, actions: 27 },
+  { iter: 15, phase: 'explore', tag: 'EXPLORE', label: 'Exact corridor scan: path cols 34-38 (width 5) at r17-24; entity needs c34-38 alignment', fuel: 30, actions: 27 },
+  { iter: 16, phase: 'extract', tag: 'EXTRACT', label: 'RIGHT to c34-38, UP to r20-21: corridor alignment correct, entity fits', hyp: 'H4', outcome: 'success', fuel: 22, actions: 31 },
+  { iter: 17, phase: 'extract', tag: 'EXTRACT', label: 'UP x2: r20->r15->r10; entity enters top target box', hyp: 'H4', outcome: 'success', milestone: 'LEVEL 1 COMPLETED', fuel: 20, actions: 33 },
+  { iter: 18, phase: 'explore', tag: 'EXPLORE', label: 'Level 2 state: entity r10-11, new color dist, 0/1 markers at r46-48 c50-52', fuel: 20, actions: 33 },
+  { iter: 19, phase: 'extract', tag: 'EXTRACT', label: 'DOWN x3+LEFT x3+DOWN: first DOWN teleports to r40-41 c29-33; STUCK 6 moves; fuel REFUELED to 86', hyp: 'H4', outcome: 'fail', fuel: 86, actions: 40 },
+  { iter: 20, phase: 'explore', tag: 'EXPLORE', label: 'Level 2 maze: entity r40-41 c29-33; new walls; marker at r46-48 c50-52; wall at r45', fuel: 86, actions: 40 },
+  { iter: 21, phase: 'delegate', tag: 'DELEGATE', label: 'Spawn scout D2 for level 2 (app=arc3-scout, model=Sonnet, maxIter=8)', hyp: 'D2', fuel: 86, actions: 40 },
+  { iter: 'D2', phase: 'delegate', child: true, label: 'Child 1-7: probed directions, mapped corridors, moved entity to r40-41 c34-38 (8 actions)', fuel: 70, actions: 48 },
+  { iter: 'D2', phase: 'delegate', child: true, label: 'Child 8: RETURN JSON -- entity stuck at c38, marker requires DOWN+RIGHT; status=INCOMPLETE', outcome: 'partial', fuel: 70, actions: 48 },
+  { iter: 22, phase: 'explore', tag: 'EXPLORE', label: 'Map corridors r35-54: vertical c29-38 and c44-58; gap c39-43 between them', fuel: 70, actions: 48 },
+  { iter: 23, phase: 'explore', tag: 'EXPLORE', label: 'Below entity: 9-block at r42-44, wall r45+; need UP first; map c27-34 vertical', fuel: 70, actions: 48 },
+  { iter: 24, phase: 'explore', tag: 'EXPLORE', label: 'Vertical scan c29 r35-55; wall r45-49 blocks entire width; r50+ open; upper r25-29 connected', fuel: 70, actions: 48 },
+  { iter: 25, phase: 'explore', tag: 'EXPLORE', label: 'Horizontal connections: c38-c44 open at r8-14 and r25-34; r5-14 fully open c19-53', fuel: 70, actions: 48 },
+  { iter: 26, phase: 'extract', tag: 'EXTRACT', label: 'UP to r30, RIGHT to c39-43, then stuck; entity r30-31 c39-43; 5 wasted moves', hyp: 'H5', outcome: 'partial', fuel: 56, actions: 55 },
+  { iter: 27, phase: 'explore', tag: 'EXPLORE', label: 'Entity at r30-31 c39-43; wall c44 right, wall r35 below; 9-block at r32-34', fuel: 56, actions: 55 },
+  { iter: 28, phase: 'extract', tag: 'EXTRACT', label: 'UP: entity r25-26 c39-43; wall r20-24 above blocks upward access', hyp: 'H5', outcome: 'fail', fuel: 56, actions: 55 },
+  { iter: 29, phase: 'extract', tag: 'EXTRACT', label: 'UP x3+RIGHT x2: ALL BLOCKED at r25-26 c39-43; dead-end confirmed', hyp: 'H5', outcome: 'fail', fuel: 44, actions: 61 },
+  { iter: 30, phase: 'diagnose', tag: 'DIAGNOSE', label: 'Check all 4 directions: above=wall, below=open, left=open, right=wall; dead-end; NO return() call; TIMEOUT', outcome: 'fail', fuel: 44, actions: 61 },
+];
+
+function renderTimeline() {
+  const container = document.getElementById('timeline');
+  let html = '';
+  for (const item of timelineData) {
+    const isChild = item.child;
+    const cls = [
+      'tl-item',
+      `phase-${item.phase}`,
+      isChild ? 'child' : '',
+      item.milestone ? 'tl-milestone' : ''
+    ].filter(Boolean).join(' ');
+
+    let outcomeHtml = '';
+    if (item.outcome === 'success') outcomeHtml = '<span class="outcome-marker outcome-success">&#10003;</span>';
+    else if (item.outcome === 'partial') outcomeHtml = '<span class="outcome-marker outcome-partial">~</span>';
+    else if (item.outcome === 'fail') outcomeHtml = '<span class="outcome-marker outcome-fail">&#10007;</span>';
+
+    let hypHtml = item.hyp ? `<span class="hyp-tag">${item.hyp}</span>` : '';
+
+    const tagClass = item.tag ? `tag-${item.phase}` : '';
+    const tagHtml = item.tag ? `<span class="phase-tag ${tagClass}">${item.tag}</span>` : '';
+
+    // Fuel bar
+    let fuelHtml = '';
+    if (item.fuel !== undefined) {
+      const maxFuel = 86;
+      const pct = Math.round((item.fuel / maxFuel) * 100);
+      let color = 'var(--green)';
+      if (pct < 30) color = 'var(--red)';
+      else if (pct < 60) color = 'var(--orange)';
+      fuelHtml = `<span class="fuel-indicator">${item.fuel}px <span class="fuel-bar-mini"><span class="fill" style="width:${pct}%;background:${color}"></span></span></span>`;
+    }
+
+    const iterLabel = isChild ? `<span class="iter-num" style="color:var(--delegate)">${item.iter}</span>` :
+                                `<span class="iter-num">${String(item.iter).padStart(2, '\u00A0')}</span>`;
+
+    html += `<div class="${cls}">
+      ${iterLabel}${tagHtml}${item.label} ${hypHtml}${outcomeHtml}${fuelHtml}
+    </div>`;
+
+    if (item.milestone) {
+      html += `<div class="tl-milestone" style="margin-left:0;font-size:0.85rem;">&#9733; ${item.milestone}</div>`;
+    }
+  }
+  container.innerHTML = html;
+}
+renderTimeline();
+
+// ============================================
+// RESOURCE CHART (Canvas)
+// ============================================
+function drawResourceChart() {
+  const canvas = document.getElementById('resourceChart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  const fuelData = [84,84,72,68,62,62,56,56,46,44,44,30,30,30,22,20,20,86,86,86,70,70,70,70,70,56,56,56,44,44];
+  const actionData = [0,0,6,8,8,11,11,15,15,19,20,20,27,27,27,31,33,33,40,40,40,48,48,48,48,55,55,55,61,61];
+  const maxFuel = 86;
+  const maxActions = 65;
+
+  const pad = { top: 30, right: 60, bottom: 40, left: 50 };
+  const cw = W - pad.left - pad.right;
+  const ch = H - pad.top - pad.bottom;
+
+  // Delegation zones
+  ctx.fillStyle = 'rgba(188,140,255,0.06)';
+  const x1 = pad.left + (1/29)*cw; const x1e = pad.left + (2/29)*cw;
+  ctx.fillRect(x1, pad.top, x1e - x1, ch);
+  const x2 = pad.left + (20/29)*cw; const x2e = pad.left + (21/29)*cw;
+  ctx.fillRect(x2, pad.top, x2e - x2, ch);
+
+  // Annotations
+  const annotations = [
+    { iter: 2, text: 'D1 scout', color: 'var(--delegate)' },
+    { iter: 11, text: 'Marker', color: 'var(--orange)' },
+    { iter: 17, text: 'L1 done', color: 'var(--green)' },
+    { iter: 19, text: 'Refuel', color: 'var(--cyan)' },
+    { iter: 21, text: 'D2 scout', color: 'var(--delegate)' },
+    { iter: 26, text: 'Dead-end', color: 'var(--red)' },
+  ];
+
+  ctx.font = '10px -apple-system, sans-serif';
+  for (const a of annotations) {
+    const x = pad.left + ((a.iter - 1) / 29) * cw;
+    ctx.strokeStyle = 'rgba(110,118,129,0.3)';
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + ch); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#8b949e';
+    ctx.textAlign = 'center';
+    ctx.fillText(a.text, x, pad.top - 8);
+  }
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(110,118,129,0.15)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + (i / 4) * ch;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + cw, y); ctx.stroke();
+  }
+
+  // Fuel line
+  ctx.strokeStyle = '#d29922';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 30; i++) {
+    const x = pad.left + (i / 29) * cw;
+    const y = pad.top + (1 - fuelData[i] / maxFuel) * ch;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Fuel dots
+  ctx.fillStyle = '#d29922';
+  for (let i = 0; i < 30; i++) {
+    const x = pad.left + (i / 29) * cw;
+    const y = pad.top + (1 - fuelData[i] / maxFuel) * ch;
+    ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Actions line
+  ctx.strokeStyle = '#58a6ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 30; i++) {
+    const x = pad.left + (i / 29) * cw;
+    const y = pad.top + (1 - actionData[i] / maxActions) * ch;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle = '#58a6ff';
+  for (let i = 0; i < 30; i++) {
+    const x = pad.left + (i / 29) * cw;
+    const y = pad.top + (1 - actionData[i] / maxActions) * ch;
+    ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Axes labels
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '11px -apple-system, sans-serif';
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + (i / 4) * ch + 4;
+    const fuelVal = Math.round(maxFuel * (1 - i / 4));
+    ctx.fillStyle = '#d29922';
+    ctx.fillText(fuelVal, pad.left - 8, y);
+    const actVal = Math.round(maxActions * (1 - i / 4));
+    ctx.fillStyle = '#58a6ff';
+    ctx.textAlign = 'left';
+    ctx.fillText(actVal, pad.left + cw + 8, y);
+    ctx.textAlign = 'right';
+  }
+
+  // X-axis
+  ctx.fillStyle = '#6e7681';
+  ctx.textAlign = 'center';
+  ctx.font = '10px -apple-system, sans-serif';
+  for (let i = 0; i < 30; i += 5) {
+    const x = pad.left + (i / 29) * cw;
+    ctx.fillText(i + 1, x, pad.top + ch + 20);
+  }
+  ctx.fillText('30', pad.left + cw, pad.top + ch + 20);
+
+  ctx.font = '11px -apple-system, sans-serif';
+  ctx.fillText('Iteration', pad.left + cw / 2, pad.top + ch + 36);
+}
+
+// ============================================
+// DONUT CHART
+// ============================================
+function drawDonut() {
+  const canvas = document.getElementById('donutChart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = 220 * dpr;
+  canvas.height = 220 * dpr;
+  ctx.scale(dpr, dpr);
+
+  const phases = [
+    { label: 'Init + Delegation', count: 2, color: '#bc8cff' },
+    { label: 'Verification', count: 1, color: '#d29922' },
+    { label: 'L1 Exploration', count: 5, color: '#58a6ff' },
+    { label: 'L1 Navigation', count: 7, color: '#3fb950' },
+    { label: 'L2 Reconnaissance', count: 8, color: '#39d2c0' },
+    { label: 'L2 Navigation', count: 4, color: '#f778ba' },
+    { label: 'Wasted / Dead-end', count: 3, color: '#f85149' },
+  ];
+
+  const total = phases.reduce((s, p) => s + p.count, 0);
+  const cx = 110, cy = 110, r = 90, inner = 55;
+  let angle = -Math.PI / 2;
+
+  for (const p of phases) {
+    const sweep = (p.count / total) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, angle, angle + sweep);
+    ctx.arc(cx, cy, inner, angle + sweep, angle, true);
+    ctx.closePath();
+    ctx.fillStyle = p.color;
+    ctx.fill();
+    angle += sweep;
+  }
+
+  // Legend
+  const legend = document.getElementById('donutLegend');
+  legend.innerHTML = phases.map(p =>
+    `<div class="donut-legend-item">
+      <div class="swatch" style="background:${p.color}"></div>
+      <span>${p.label}</span>
+      <span class="count">${p.count}</span>
+    </div>`
+  ).join('');
+}
+
+// ============================================
+// INIT
+// ============================================
+window.addEventListener('DOMContentLoaded', () => {
+  drawResourceChart();
+  drawDonut();
+});
+window.addEventListener('resize', () => {
+  drawResourceChart();
+});
+</script>
+</body>
+</html>

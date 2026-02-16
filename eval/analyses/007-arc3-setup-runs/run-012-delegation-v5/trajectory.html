@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARC-3 Delegation v0.5.0 Trajectory — arc3-ls20-cb3b57cc</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --bg4: #30363d;
+    --fg: #e6edf3; --fg2: #8b949e; --fg3: #6e7681;
+    --accent: #58a6ff; --green: #3fb950; --red: #f85149; --orange: #d29922;
+    --purple: #bc8cff; --cyan: #39d2c0; --pink: #f778ba;
+    --explore: #58a6ff; --extract: #3fb950; --verify: #d29922;
+    --delegate: #bc8cff; --diagnose: #f85149; --init: #39d2c0;
+    --error: #f778ba; --stall: #6e7681;
+    --radius: 8px; --gap: 24px;
+  }
+  html { font-size: 15px; scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--fg); line-height: 1.6;
+    padding: 0 16px 80px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+
+  /* --- Header --- */
+  .header { padding: 48px 0 32px; border-bottom: 1px solid var(--bg4); margin-bottom: var(--gap); }
+  .header h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 4px; }
+  .header .subtitle { color: var(--fg2); font-size: 0.95rem; margin-bottom: 20px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 16px; }
+  .meta-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--bg3); padding: 6px 14px; border-radius: 20px;
+    font-size: 0.82rem; font-weight: 500;
+  }
+  .meta-chip .label { color: var(--fg2); }
+  .meta-chip .value { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .badge {
+    display: inline-block; padding: 5px 14px; border-radius: 20px;
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .badge-green { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+  .badge-red { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
+  .badge-orange { background: rgba(210,153,34,0.15); color: var(--orange); border: 1px solid rgba(210,153,34,0.3); }
+
+  .info-box {
+    border-radius: var(--radius); padding: 16px 20px; margin-top: 16px;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .info-box .icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 2px; }
+  .info-box .text { font-size: 0.88rem; color: var(--fg); }
+  .info-box strong { font-weight: 700; }
+  .warning-box {
+    background: rgba(248,81,73,0.08); border: 1px solid rgba(248,81,73,0.25);
+  }
+  .warning-box strong { color: var(--red); }
+  .success-box {
+    background: rgba(63,185,80,0.08); border: 1px solid rgba(63,185,80,0.25);
+  }
+  .success-box strong { color: var(--green); }
+
+  /* --- Section --- */
+  .section { margin-top: 48px; }
+  .section h2 {
+    font-size: 1.25rem; font-weight: 700; margin-bottom: 20px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--bg4);
+  }
+  .section h3 { font-size: 1rem; font-weight: 600; margin: 20px 0 10px; color: var(--fg); }
+
+  /* --- Comparison Table --- */
+  .comparison-grid {
+    display: grid; grid-template-columns: 180px 1fr 1fr 1fr 1fr 1fr;
+    gap: 0; border-radius: var(--radius); overflow: hidden;
+    border: 1px solid var(--bg4); font-size: 0.82rem;
+  }
+  .comparison-grid .cell {
+    padding: 10px 14px; border-bottom: 1px solid var(--bg4);
+    border-right: 1px solid var(--bg4);
+  }
+  .comparison-grid .cell:nth-child(6n) { border-right: none; }
+  .comparison-grid .cell.header-cell {
+    background: var(--bg3); font-weight: 700; color: var(--fg2);
+    text-transform: uppercase; letter-spacing: 0.3px; font-size: 0.75rem;
+  }
+  .comparison-grid .cell.metric-label {
+    background: var(--bg2); font-weight: 600; color: var(--fg2);
+  }
+  .comparison-grid .cell.v1 { background: var(--bg2); }
+  .comparison-grid .cell.v2 { background: var(--bg2); }
+  .comparison-grid .cell.v3 { background: var(--bg2); }
+  .comparison-grid .cell.v4 { background: var(--bg2); }
+  .comparison-grid .cell.v5 { background: rgba(63,185,80,0.04); }
+  .improved { color: var(--green); font-weight: 600; }
+  .regressed { color: var(--red); font-weight: 600; }
+  .neutral { color: var(--fg2); }
+  .same { color: var(--fg3); }
+
+  /* --- Timeline --- */
+  .timeline { position: relative; padding-left: 40px; }
+  .timeline::before {
+    content: ''; position: absolute; left: 15px; top: 0; bottom: 0;
+    width: 2px; background: var(--bg4);
+  }
+  .tl-item {
+    position: relative; margin-bottom: 4px; padding: 6px 12px;
+    border-radius: 6px; font-size: 0.8rem; font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    transition: background 0.15s;
+  }
+  .tl-item:hover { background: var(--bg3); }
+  .tl-item::before {
+    content: ''; position: absolute; left: -31px; top: 12px;
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 2px solid var(--bg4); background: var(--bg);
+  }
+  .tl-item.phase-explore::before { border-color: var(--explore); background: rgba(88,166,255,0.2); }
+  .tl-item.phase-extract::before { border-color: var(--extract); background: rgba(63,185,80,0.2); }
+  .tl-item.phase-verify::before  { border-color: var(--verify); background: rgba(210,153,34,0.2); }
+  .tl-item.phase-delegate::before { border-color: var(--delegate); background: rgba(188,140,255,0.2); }
+  .tl-item.phase-diagnose::before { border-color: var(--diagnose); background: rgba(248,81,73,0.2); }
+  .tl-item.phase-error::before { border-color: var(--error); background: rgba(247,120,186,0.2); }
+  .tl-item.phase-stall::before { border-color: var(--stall); background: rgba(110,118,129,0.2); }
+  .tl-item.phase-return::before { border-color: var(--green); background: rgba(63,185,80,0.4); }
+  .tl-item .iter-num { color: var(--fg3); min-width: 48px; display: inline-block; }
+  .tl-item .phase-tag {
+    display: inline-block; padding: 1px 8px; border-radius: 4px;
+    font-size: 0.72rem; font-weight: 600; margin-right: 6px;
+  }
+  .tag-explore { background: rgba(88,166,255,0.15); color: var(--explore); }
+  .tag-extract { background: rgba(63,185,80,0.15); color: var(--extract); }
+  .tag-verify { background: rgba(210,153,34,0.15); color: var(--verify); }
+  .tag-delegate { background: rgba(188,140,255,0.15); color: var(--delegate); }
+  .tag-diagnose { background: rgba(248,81,73,0.15); color: var(--diagnose); }
+  .tag-error { background: rgba(247,120,186,0.15); color: var(--error); }
+  .tag-stall { background: rgba(110,118,129,0.15); color: var(--stall); }
+  .tag-return { background: rgba(63,185,80,0.15); color: var(--green); }
+  .outcome-marker { font-weight: 700; margin-left: 4px; }
+  .outcome-success { color: var(--green); }
+  .outcome-partial { color: var(--orange); }
+  .outcome-fail { color: var(--red); }
+  .tl-item .hyp-tag {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 0.7rem; font-weight: 600; margin-left: 6px;
+    background: rgba(57,210,192,0.12); color: var(--cyan);
+  }
+
+  .tl-milestone {
+    background: rgba(63,185,80,0.08); border: 1px solid rgba(63,185,80,0.2);
+    border-radius: 6px; padding: 8px 14px; margin: 8px 0;
+    font-weight: 600; color: var(--green);
+  }
+  .tl-milestone::before { border-color: var(--green) !important; background: var(--green) !important; }
+  .tl-marker-event {
+    background: rgba(210,153,34,0.08); border: 1px solid rgba(210,153,34,0.2);
+    border-radius: 6px; padding: 8px 14px; margin: 8px 0;
+    font-weight: 600; color: var(--orange);
+  }
+  .fuel-indicator {
+    display: inline-block; margin-left: auto; float: right;
+    font-size: 0.72rem; color: var(--fg3);
+  }
+  .fuel-bar-mini {
+    display: inline-block; width: 50px; height: 6px; background: var(--bg4);
+    border-radius: 3px; overflow: hidden; vertical-align: middle; margin-left: 4px;
+  }
+  .fuel-bar-mini .fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+
+  /* --- Delegation Cards --- */
+  .deleg-cards { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  .deleg-card {
+    background: var(--bg2); border: 1px solid var(--bg4);
+    border-radius: var(--radius); padding: 20px; position: relative;
+  }
+  .deleg-card h4 { font-size: 0.95rem; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .deleg-card .quality-badge {
+    font-size: 0.72rem; padding: 2px 10px; border-radius: 10px; font-weight: 700;
+  }
+  .quality-high { background: rgba(63,185,80,0.15); color: var(--green); }
+  .quality-medium { background: rgba(210,153,34,0.15); color: var(--orange); }
+  .quality-low { background: rgba(248,81,73,0.15); color: var(--red); }
+  .quality-none { background: rgba(110,118,129,0.15); color: var(--fg3); }
+
+  /* --- Charts --- */
+  .chart-container {
+    background: var(--bg2); border: 1px solid var(--bg4);
+    border-radius: var(--radius); padding: 24px; margin-top: 16px;
+  }
+  canvas { max-width: 100%; }
+  .chart-legend {
+    display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px;
+    font-size: 0.78rem; color: var(--fg2);
+  }
+  .chart-legend .legend-item { display: flex; align-items: center; gap: 6px; }
+  .chart-legend .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  /* --- Hypothesis Arc --- */
+  .hyp-arc { display: flex; gap: 0; align-items: stretch; margin-top: 12px; overflow-x: auto; }
+  .hyp-node {
+    flex: 1; min-width: 180px; padding: 14px; text-align: center;
+    position: relative; border-radius: var(--radius);
+    background: var(--bg2); border: 1px solid var(--bg4);
+  }
+  .hyp-node + .hyp-node { margin-left: 8px; }
+  .hyp-node::after {
+    content: ''; position: absolute; top: 50%; right: -8px;
+    width: 8px; height: 2px; background: var(--bg4);
+  }
+  .hyp-node:last-child::after { display: none; }
+  .hyp-node .hyp-id { font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
+  .hyp-node .hyp-desc { font-size: 0.75rem; color: var(--fg2); margin-bottom: 8px; line-height: 1.4; }
+  .hyp-node .hyp-outcome {
+    font-size: 0.72rem; font-weight: 700; padding: 2px 10px;
+    border-radius: 10px; display: inline-block;
+  }
+  .hyp-node .hyp-iters { font-size: 0.7rem; color: var(--fg3); margin-top: 4px; }
+  .hyp-accepted .hyp-id { color: var(--green); }
+  .hyp-accepted { border-color: rgba(63,185,80,0.3); }
+  .hyp-rejected .hyp-id { color: var(--red); }
+  .hyp-rejected { border-color: rgba(248,81,73,0.3); }
+  .hyp-abandoned .hyp-id { color: var(--fg3); }
+  .hyp-abandoned { border-color: var(--bg4); }
+  .hyp-partial .hyp-id { color: var(--orange); }
+  .hyp-partial { border-color: rgba(210,153,34,0.3); }
+
+  /* --- Donut Chart --- */
+  .donut-section { display: flex; gap: 32px; align-items: center; flex-wrap: wrap; }
+  .donut-wrap { width: 220px; height: 220px; flex-shrink: 0; position: relative; }
+  .donut-center {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    text-align: center;
+  }
+  .donut-center .big { font-size: 1.6rem; font-weight: 700; }
+  .donut-center .small { font-size: 0.75rem; color: var(--fg2); }
+  .donut-legend { flex: 1; min-width: 200px; }
+  .donut-legend-item {
+    display: flex; align-items: center; gap: 10px; padding: 6px 0;
+    font-size: 0.85rem; border-bottom: 1px solid var(--bg3);
+  }
+  .donut-legend-item:last-child { border-bottom: none; }
+  .donut-legend-item .swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .donut-legend-item .count { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* --- Prose --- */
+  .prose { font-size: 0.9rem; color: var(--fg2); line-height: 1.75; }
+  .prose p { margin-bottom: 12px; }
+  .prose strong { color: var(--fg); }
+  .prose ul { margin: 8px 0 12px 20px; }
+  .prose li { margin-bottom: 6px; }
+  .prose .highlight { color: var(--accent); font-weight: 600; }
+  .prose .caution { color: var(--red); font-weight: 600; }
+
+  /* Footer */
+  .footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--bg4); color: var(--fg3); font-size: 0.75rem; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ================= HEADER ================= -->
+<div class="header">
+  <h1>ARC-3 Delegation v0.5.0 Trajectory</h1>
+  <div class="subtitle">Task <code>arc3-ls20-cb3b57cc</code> &mdash; Opus 4.6 parent (no scout) &mdash; 25 iterations</div>
+
+  <div class="meta-row">
+    <div class="meta-chip"><span class="label">Score</span> <span class="value">14.3% (corrected)</span></div>
+    <div class="meta-chip"><span class="label">Verdict</span> <span class="value">partial-success</span></div>
+    <div class="meta-chip"><span class="label">Iterations</span> <span class="value">25 / 30</span></div>
+    <div class="meta-chip"><span class="label">Wall Time</span> <span class="value">12m 5s</span></div>
+    <div class="meta-chip"><span class="label">Actions</span> <span class="value">122</span></div>
+    <div class="meta-chip"><span class="label">Fuel Remaining</span> <span class="value">60px</span></div>
+    <div class="meta-chip"><span class="label">Delegations</span> <span class="value">0</span></div>
+    <div class="meta-chip"><span class="label">Cost</span> <span class="value">~$2.08</span></div>
+  </div>
+
+  <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+    <span class="badge badge-green">1 LEVEL COMPLETED</span>
+    <span class="badge badge-orange">1 / 7 levels</span>
+    <span class="badge badge-green">return() called</span>
+    <span class="badge badge-green">L1 in 16 actions (best)</span>
+  </div>
+
+  <div class="info-box success-box">
+    <div class="icon">&#9989;</div>
+    <div class="text">
+      <strong>First deliberate level completion in 5 versions.</strong>
+      Level 1 completed in 16 actions (baseline 29 = 100% efficiency). The agent understood the mechanism:
+      absorb marker &rarr; navigate to corridor &rarr; enter rectangle. Previous completions (v0.2.0, v0.3.0) were accidental.
+    </div>
+  </div>
+
+  <div class="info-box warning-box" style="margin-top:8px;">
+    <div class="icon">&#9888;</div>
+    <div class="text">
+      <strong>Level 2 navigation failed after 106 actions.</strong>
+      The agent absorbed the Level 2 marker twice but couldn't navigate LEFT from c49 to the rectangle at c14-19.
+      Walls at c24-33 blocked every LEFT attempt. A BFS pathfinding algorithm would have solved this.
+    </div>
+  </div>
+</div>
+
+<!-- ================= COMPARISON ================= -->
+<div class="section">
+  <h2>Version Comparison: v0.1.0 &rarr; v0.2.0 &rarr; v0.3.0 &rarr; v0.4.0 &rarr; v0.5.0</h2>
+  <div class="comparison-grid">
+    <div class="cell header-cell">Metric</div>
+    <div class="cell header-cell">v0.1.0 (008)</div>
+    <div class="cell header-cell">v0.2.0 (009)</div>
+    <div class="cell header-cell">v0.3.0 (010)</div>
+    <div class="cell header-cell">v0.4.0 (011)</div>
+    <div class="cell header-cell">v0.5.0 (012)</div>
+
+    <div class="cell metric-label">Iteration Budget</div>
+    <div class="cell v1">20</div>
+    <div class="cell v2">20</div>
+    <div class="cell v3">30</div>
+    <div class="cell v4"><span class="same">30</span></div>
+    <div class="cell v5"><span class="same">30</span></div>
+
+    <div class="cell metric-label">Scout Model</div>
+    <div class="cell v1"><span class="regressed">Flash</span></div>
+    <div class="cell v2"><span class="improved">Sonnet</span></div>
+    <div class="cell v3"><span class="same">Sonnet</span></div>
+    <div class="cell v4"><span class="same">Sonnet</span></div>
+    <div class="cell v5"><span class="neutral">None (self)</span></div>
+
+    <div class="cell metric-label">Scout Actions (L1)</div>
+    <div class="cell v1"><span class="regressed">42 (2 scouts)</span></div>
+    <div class="cell v2"><span class="improved">7 (1 scout)</span></div>
+    <div class="cell v3"><span class="improved">6 (1 scout)</span></div>
+    <div class="cell v4"><span class="improved">4 (1 scout)</span></div>
+    <div class="cell v5"><span class="improved">0 (no scout)</span></div>
+
+    <div class="cell metric-label">Levels Completed</div>
+    <div class="cell v1"><span class="regressed">0</span></div>
+    <div class="cell v2"><span class="improved">1 (iter 13)</span></div>
+    <div class="cell v3"><span class="same">1 (iter 17)</span></div>
+    <div class="cell v4"><span class="regressed">0 (REGRESSION)</span></div>
+    <div class="cell v5"><span class="improved">1 (iter 9) BEST</span></div>
+
+    <div class="cell metric-label">L1 Actions</div>
+    <div class="cell v1"><span class="neutral">&mdash;</span></div>
+    <div class="cell v2"><span class="neutral">~24</span></div>
+    <div class="cell v3"><span class="neutral">~33</span></div>
+    <div class="cell v4"><span class="neutral">&mdash;</span></div>
+    <div class="cell v5"><span class="improved">16 (BEST)</span></div>
+
+    <div class="cell metric-label">return() Called</div>
+    <div class="cell v1"><span class="regressed">No</span></div>
+    <div class="cell v2"><span class="regressed">No</span></div>
+    <div class="cell v3"><span class="regressed">No</span></div>
+    <div class="cell v4"><span class="improved">Yes (iter 20)</span></div>
+    <div class="cell v5"><span class="improved">Yes (iter 25)</span></div>
+
+    <div class="cell metric-label">Fuel at End</div>
+    <div class="cell v1"><span class="regressed">0 (depleted)</span></div>
+    <div class="cell v2"><span class="improved">56px</span></div>
+    <div class="cell v3"><span class="neutral">44px</span></div>
+    <div class="cell v4"><span class="regressed">0 (depleted)</span></div>
+    <div class="cell v5"><span class="improved">60px</span></div>
+
+    <div class="cell metric-label">Total Actions</div>
+    <div class="cell v1">~85</div>
+    <div class="cell v2">46</div>
+    <div class="cell v3">61</div>
+    <div class="cell v4">45</div>
+    <div class="cell v5">122</div>
+
+    <div class="cell metric-label">Failure Mode</div>
+    <div class="cell v1"><span class="neutral">Fuel depletion</span></div>
+    <div class="cell v2"><span class="neutral">Iter exhaustion</span></div>
+    <div class="cell v3"><span class="neutral">Dead-end + no return</span></div>
+    <div class="cell v4"><span class="neutral">Objective confusion</span></div>
+    <div class="cell v5"><span class="neutral">L2 pathfinding</span></div>
+
+    <div class="cell metric-label">Wall Time</div>
+    <div class="cell v1">4m 15s</div>
+    <div class="cell v2">5m 36s</div>
+    <div class="cell v3">8m 35s</div>
+    <div class="cell v4">9m 18s</div>
+    <div class="cell v5">12m 5s</div>
+
+    <div class="cell metric-label">Cost</div>
+    <div class="cell v1"><span class="neutral">N/A</span></div>
+    <div class="cell v2"><span class="neutral">N/A</span></div>
+    <div class="cell v3">$1.46</div>
+    <div class="cell v4">$1.27</div>
+    <div class="cell v5">$2.08</div>
+  </div>
+</div>
+
+<!-- ================= TIMELINE ================= -->
+<div class="section">
+  <h2>Control Flow Timeline</h2>
+  <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px; font-size:0.78rem;">
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--explore);margin-right:4px;"></span>Explore</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--extract);margin-right:4px;"></span>Extract/Navigate</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--diagnose);margin-right:4px;"></span>Diagnose</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--stall);margin-right:4px;"></span>Stall/Blocked</span>
+  </div>
+  <div class="timeline" id="timeline"></div>
+</div>
+
+<!-- ================= DELEGATION LOG ================= -->
+<div class="section">
+  <h2>Delegation Log</h2>
+  <div class="deleg-cards">
+    <div class="deleg-card">
+      <h4>No Delegations Used <span class="quality-badge quality-none">N/A</span></h4>
+      <div style="font-size:0.78rem; color:var(--fg3); margin-bottom:10px;">
+        v0.5.0 &bull; Parent navigated entirely on its own &bull; 0 child scouts spawned
+      </div>
+      <div style="font-size:0.82rem; color:var(--fg2);">
+        <p>Unlike v0.1.0&ndash;v0.4.0, the parent agent handled all grid analysis and navigation without delegating to child scouts.
+        The parent used visualization code to render the maze in ASCII, identify key elements (entity, marker, fuel, corridors, rectangles),
+        and execute navigation commands.</p>
+        <p style="margin-top:8px;"><strong>Assessment:</strong> Self-sufficient for Level 1 (completed in 16 actions). For Level 2, a scout
+        delegation would have helped map the new maze layout without consuming parent fuel. The lack of delegation contributed to
+        ~50 wasted blocked-move actions on Level 2.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= RESOURCE CHART ================= -->
+<div class="section">
+  <h2>Resource Chart</h2>
+  <div class="chart-container">
+    <canvas id="resourceChart" height="280"></canvas>
+    <div class="chart-legend">
+      <div class="legend-item"><div class="dot" style="background:var(--orange)"></div> Fuel (px)</div>
+      <div class="legend-item"><div class="dot" style="background:var(--accent)"></div> Cumulative Actions</div>
+      <div class="legend-item"><div class="dot" style="background:rgba(63,185,80,0.5)"></div> Level Completion</div>
+      <div class="legend-item"><div class="dot" style="background:rgba(210,153,34,0.5)"></div> Marker Absorption</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= HYPOTHESIS LOG ================= -->
+<div class="section">
+  <h2>Hypothesis Arc</h2>
+  <div class="hyp-arc">
+    <div class="hyp-node hyp-accepted">
+      <div class="hyp-id">H1</div>
+      <div class="hyp-desc">Navigate to marker, then enter rectangle to complete level</div>
+      <div class="hyp-outcome" style="background:rgba(63,185,80,0.15); color:var(--green);">ACCEPTED</div>
+      <div class="hyp-iters">Iters 1-9 &bull; L1 complete in 16 actions</div>
+    </div>
+    <div class="hyp-node hyp-partial">
+      <div class="hyp-id">H2</div>
+      <div class="hyp-desc">Marker count increase = rect border activation</div>
+      <div class="hyp-outcome" style="background:rgba(210,153,34,0.15); color:var(--orange);">EXPLAINED</div>
+      <div class="hyp-iters">Iter 5 &bull; Averaging artifact</div>
+    </div>
+    <div class="hyp-node hyp-accepted">
+      <div class="hyp-id">H3</div>
+      <div class="hyp-desc">Same mechanism for L2: absorb marker, enter rect</div>
+      <div class="hyp-outcome" style="background:rgba(210,153,34,0.15); color:var(--orange);">ACCEPTED BUT FAILED</div>
+      <div class="hyp-iters">Iters 10-25 &bull; Marker absorbed, couldn't reach rect</div>
+    </div>
+    <div class="hyp-node hyp-rejected">
+      <div class="hyp-id">H4</div>
+      <div class="hyp-desc">TOP route: UP&rarr;RIGHT&rarr;DOWN to reach marker and rect</div>
+      <div class="hyp-outcome" style="background:rgba(248,81,73,0.15); color:var(--red);">ROUTE OK, RETURN FAILED</div>
+      <div class="hyp-iters">Iters 15, 22 &bull; Reached marker but couldn't return LEFT</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= DONUT CHART ================= -->
+<div class="section">
+  <h2>Iteration Allocation</h2>
+  <div class="donut-section">
+    <div class="donut-wrap">
+      <canvas id="donutChart" width="220" height="220"></canvas>
+      <div class="donut-center">
+        <div class="big">25</div>
+        <div class="small">iterations</div>
+      </div>
+    </div>
+    <div class="donut-legend">
+      <div class="donut-legend-item">
+        <div class="swatch" style="background:var(--explore)"></div>
+        <span>Explore / Structure</span>
+        <span class="count">6</span>
+      </div>
+      <div class="donut-legend-item">
+        <div class="swatch" style="background:var(--extract)"></div>
+        <span>Extract / Navigate</span>
+        <span class="count">13</span>
+      </div>
+      <div class="donut-legend-item">
+        <div class="swatch" style="background:var(--diagnose)"></div>
+        <span>Diagnose</span>
+        <span class="count">2</span>
+      </div>
+      <div class="donut-legend-item">
+        <div class="swatch" style="background:var(--stall)"></div>
+        <span>Stall / Blocked</span>
+        <span class="count">3</span>
+      </div>
+      <div class="donut-legend-item">
+        <div class="swatch" style="background:var(--green)"></div>
+        <span>Return</span>
+        <span class="count">1</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= ROOT CAUSE ================= -->
+<div class="section">
+  <h2>Root Cause Analysis</h2>
+  <div class="prose">
+    <p><strong>Primary: Level 2 pathfinding failure.</strong> The agent completed Level 1 with high efficiency
+    (16 actions, earliest in 5 versions) but failed Level 2 because it could not find a navigable path from
+    the marker area (r45-46, c49-53) to the target rectangle (r39-44, c14-19). The LEFT corridor was blocked
+    by walls at c24-33 from every row the entity tried.</p>
+
+    <p><strong>Contributing factors:</strong></p>
+    <ul>
+      <li><strong>No systematic pathfinding</strong> &mdash; The agent used heuristic navigation (try direction,
+      backtrack if blocked), burning ~50 actions on blocked moves. A BFS on the 64&times;64 grid would have
+      revealed the shortest path or confirmed no viable path exists.</li>
+      <li><strong>No delegation for L2</strong> &mdash; A child scout could have mapped Level 2's corridors
+      without consuming parent fuel, potentially discovering the correct path to Rect 1.</li>
+      <li><strong>Teleport mechanic confusion</strong> &mdash; Entity occasionally teleported (r64-0, c64-0)
+      when crossing boundaries, making movement outcomes unpredictable.</li>
+      <li><strong>Repeated top-route cycles</strong> &mdash; The agent traveled UP&rarr;RIGHT&rarr;DOWN twice
+      (iters 15, 22) consuming ~16 moves each round trip to reach the marker, only to get stuck returning.</li>
+    </ul>
+
+    <p><strong>The v0.5.0 breakthrough vs limitation:</strong> For the first time, the agent <span class="highlight">understood
+    and deliberately executed</span> the level completion mechanism. But its navigation approach doesn't scale to
+    complex mazes. Level 1 had simple corridors; Level 2 required finding a specific path through multiple wall
+    segments that heuristic probing couldn't discover.</p>
+  </div>
+</div>
+
+<div class="footer">
+  ARC-3 Delegation Experiment v0.5.0 &mdash; Scorecard f6972e91 &mdash; 2026-02-15 &mdash; Generated from eval trace
+</div>
+
+</div><!-- /container -->
+
+<script>
+// ================= TIMELINE DATA =================
+const timelineData = [
+  { iter: 1, phase: 'explore', label: 'Start game; analyze grid; entity=[45-46,39-43], marker=[31-33,20-22]', fuel: 84, actions: 0 },
+  { iter: 2, phase: 'explore', label: 'Visualize grid sections; identify corridors, walls, Rect 1, Rect 2', fuel: 84, actions: 0 },
+  { iter: 3, phase: 'explore', label: 'Full-width visualization; map corridor network', fuel: 84, actions: 0 },
+  { iter: 4, phase: 'extract', label: 'LEFT x4, UP x3 to marker area; step=5; actions=7', fuel: 70, actions: 7, hyp: 'H1' },
+  { iter: 5, phase: 'diagnose', label: 'Marker count 5&rarr;60; rect borders activated; 9-pattern deposited', fuel: 70, actions: 7, hyp: 'H2' },
+  { iter: 6, phase: 'extract', label: 'RIGHT x2 BLOCKED at c24-28; UP BLOCKED at r25-26', fuel: 62, actions: 11, outcome: 'fail', hyp: 'H1' },
+  { iter: 7, phase: 'explore', label: 'Full-width scan r20-52; find c34-38 corridor to Rect 1', fuel: 62, actions: 11 },
+  { iter: 8, phase: 'extract', label: 'RIGHT succeeds to c29-33; 9-pattern cleared path', fuel: 60, actions: 12, hyp: 'H1' },
+  { iter: 9, phase: 'extract', label: 'RIGHT c34-38, UP x3 to r10-11; LEVEL 1 COMPLETED', fuel: 54, actions: 16, milestone: true, hyp: 'H1' },
+  { iter: 10, phase: 'explore', label: 'Map Level 2; entity inside Rect 1; new marker; new rect', fuel: 54, actions: 16 },
+  { iter: 11, phase: 'extract', label: 'UP from Rect 1 = TELEPORT to r35-36; DOWN; BLOCKED LEFT', fuel: null, actions: 19 },
+  { iter: 12, phase: 'explore', label: 'Fuel REFUELED to 94; new marker at [46-48,50-52]; Rect 1 at [39-44,14-19]', fuel: 94, actions: 19 },
+  { iter: 13, phase: 'explore', label: 'Full grid Level 2; exact marker positions; complex corridors', fuel: 94, actions: 19 },
+  { iter: 14, phase: 'extract', label: 'DOWN/RIGHT blocked; stuck at r40-41 c34-38; waste 12 blocked moves', fuel: 70, actions: 31, outcome: 'fail' },
+  { iter: 15, phase: 'extract', label: 'Top-route: UP x6, RIGHT x3, DOWN x6; reached c49-53', fuel: 70, actions: 48 },
+  { iter: 16, phase: 'extract', label: 'DOWN to marker row; absorption unclear; LEFT to c39-43', fuel: 36, actions: 54, marker: true },
+  { iter: 17, phase: 'diagnose', label: 'Marker still at [46-48,50-52]; rect borders still color 5', fuel: 24, actions: 54 },
+  { iter: 18, phase: 'extract', label: 'RIGHT x2, UP; MARKER ABSORBED (0 pixels)', fuel: 18, actions: 57, marker: true },
+  { iter: 19, phase: 'extract', label: 'LEFT toward Rect 1; teleport; stuck at c29-33; BLOCKED; fuel refueled', fuel: 78, actions: 70, outcome: 'fail' },
+  { iter: 20, phase: 'extract', label: 'Markers respawned; BLOCKED LEFT; stuck at c29-33', fuel: 74, actions: 72, outcome: 'fail' },
+  { iter: 21, phase: 'extract', label: 'DOWN/RIGHT blocked; stuck at c34-38', fuel: 64, actions: 77, outcome: 'fail' },
+  { iter: 22, phase: 'extract', label: 'Repeat top-route; marker absorbed at r45-46', fuel: 32, actions: 93, marker: true },
+  { iter: 23, phase: 'extract', label: 'Rect still color 5; LEFT blocked repeatedly; teleport; stuck', fuel: 86, actions: 109, outcome: 'fail' },
+  { iter: 24, phase: 'extract', label: 'UP; LEFT x5 BLOCKED; DOWN BLOCKED; no progress', fuel: 60, actions: 122, outcome: 'fail' },
+  { iter: 25, phase: 'return', label: 'Iteration limit triggered; return(score); 1/7 levels, 14.3%', fuel: 60, actions: 122 },
+];
+
+// Render timeline
+const tl = document.getElementById('timeline');
+timelineData.forEach(d => {
+  const el = document.createElement('div');
+  let cls = `tl-item phase-${d.phase}`;
+  if (d.milestone) cls += ' tl-milestone';
+  if (d.marker && !d.milestone) cls += ' tl-marker-event';
+  el.className = cls;
+
+  let fuelPct = d.fuel != null ? Math.round((d.fuel / 94) * 100) : 0;
+  let fuelColor = fuelPct > 50 ? 'var(--green)' : fuelPct > 20 ? 'var(--orange)' : 'var(--red)';
+  let fuelHtml = d.fuel != null ? `<span class="fuel-indicator">${d.fuel}px <span class="fuel-bar-mini"><span class="fill" style="width:${fuelPct}%;background:${fuelColor}"></span></span></span>` : '';
+
+  let phaseMap = {
+    explore: 'tag-explore', extract: 'tag-extract', diagnose: 'tag-diagnose',
+    delegate: 'tag-delegate', error: 'tag-error', stall: 'tag-stall', return: 'tag-return'
+  };
+  let phaseLabel = d.phase.charAt(0).toUpperCase() + d.phase.slice(1);
+  let outcomeHtml = '';
+  if (d.outcome === 'fail') outcomeHtml = '<span class="outcome-marker outcome-fail">&#x2717;</span>';
+  if (d.milestone) outcomeHtml = '<span class="outcome-marker outcome-success">&#x2714; LEVEL 1</span>';
+  if (d.marker && !d.milestone) outcomeHtml = '<span class="outcome-marker outcome-partial">&#x25C6; marker</span>';
+
+  let hypHtml = d.hyp ? `<span class="hyp-tag">${d.hyp}</span>` : '';
+
+  el.innerHTML = `<span class="iter-num">iter ${d.iter}</span><span class="phase-tag ${phaseMap[d.phase]}">${phaseLabel}</span>${d.label}${outcomeHtml}${hypHtml}${fuelHtml}`;
+  tl.appendChild(el);
+});
+
+// ================= RESOURCE CHART =================
+const ctx = document.getElementById('resourceChart').getContext('2d');
+const W = ctx.canvas.width = ctx.canvas.parentElement.clientWidth - 48;
+const H = 280;
+ctx.canvas.height = H;
+const pad = { top: 20, right: 60, bottom: 40, left: 60 };
+const cw = W - pad.left - pad.right;
+const ch = H - pad.top - pad.bottom;
+
+const fuelData = [84,84,84,70,70,62,62,60,54,54,null,94,94,70,70,36,24,18,78,74,64,32,86,60,60];
+const actData  = [0,0,0,7,7,11,11,12,16,16,19,19,19,31,48,54,54,57,70,72,77,93,109,122,122];
+const maxFuel = 94;
+const maxAct = 122;
+
+function x(i) { return pad.left + (i / 24) * cw; }
+function yFuel(v) { return pad.top + (1 - v / maxFuel) * ch; }
+function yAct(v) { return pad.top + (1 - v / maxAct) * ch; }
+
+// Grid
+ctx.strokeStyle = '#21262d'; ctx.lineWidth = 1;
+for (let i = 0; i <= 5; i++) {
+  let yy = pad.top + (i / 5) * ch;
+  ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(pad.left + cw, yy); ctx.stroke();
+}
+
+// Level completion zone (iter 9)
+ctx.fillStyle = 'rgba(63,185,80,0.08)';
+ctx.fillRect(x(8.5), pad.top, x(9.5) - x(8.5), ch);
+
+// Marker absorption zones (iters 18, 22)
+ctx.fillStyle = 'rgba(210,153,34,0.06)';
+ctx.fillRect(x(17.5), pad.top, x(18.5) - x(17.5), ch);
+ctx.fillRect(x(21.5), pad.top, x(22.5) - x(21.5), ch);
+
+// Fuel line
+ctx.strokeStyle = '#d29922'; ctx.lineWidth = 2;
+ctx.beginPath();
+let started = false;
+for (let i = 0; i < 25; i++) {
+  if (fuelData[i] != null) {
+    if (!started) { ctx.moveTo(x(i), yFuel(fuelData[i])); started = true; }
+    else ctx.lineTo(x(i), yFuel(fuelData[i]));
+  }
+}
+ctx.stroke();
+
+// Actions line
+ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 2;
+ctx.beginPath();
+ctx.moveTo(x(0), yAct(actData[0]));
+for (let i = 1; i < 25; i++) ctx.lineTo(x(i), yAct(actData[i]));
+ctx.stroke();
+
+// Dots
+for (let i = 0; i < 25; i++) {
+  if (fuelData[i] != null) {
+    ctx.fillStyle = '#d29922';
+    ctx.beginPath(); ctx.arc(x(i), yFuel(fuelData[i]), 3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = '#58a6ff';
+  ctx.beginPath(); ctx.arc(x(i), yAct(actData[i]), 3, 0, Math.PI * 2); ctx.fill();
+}
+
+// Axes labels
+ctx.fillStyle = '#8b949e'; ctx.font = '11px -apple-system, sans-serif';
+ctx.textAlign = 'center';
+for (let i = 0; i < 25; i += 2) {
+  ctx.fillText(i + 1, x(i), H - 10);
+}
+ctx.fillText('Iteration', pad.left + cw / 2, H - 0);
+
+ctx.textAlign = 'right';
+for (let i = 0; i <= 5; i++) {
+  ctx.fillStyle = '#d29922';
+  ctx.fillText(Math.round(maxFuel * (1 - i/5)), pad.left - 8, pad.top + (i/5) * ch + 4);
+}
+ctx.textAlign = 'left';
+for (let i = 0; i <= 5; i++) {
+  ctx.fillStyle = '#58a6ff';
+  ctx.fillText(Math.round(maxAct * (1 - i/5)), pad.left + cw + 8, pad.top + (i/5) * ch + 4);
+}
+
+// Level 1 label
+ctx.fillStyle = '#3fb950'; ctx.font = 'bold 11px -apple-system, sans-serif';
+ctx.textAlign = 'center';
+ctx.fillText('L1', x(8.5), pad.top - 5);
+
+// Marker labels
+ctx.fillStyle = '#d29922'; ctx.font = 'bold 10px -apple-system, sans-serif';
+ctx.fillText('M', x(18), pad.top - 5);
+ctx.fillText('M', x(22), pad.top - 5);
+
+// ================= DONUT CHART =================
+const dCtx = document.getElementById('donutChart').getContext('2d');
+const dW = 220, dH = 220, cx2 = dW/2, cy = dH/2, ro = 90, ri = 60;
+const slices = [
+  { count: 6, color: '#58a6ff' },
+  { count: 13, color: '#3fb950' },
+  { count: 2, color: '#f85149' },
+  { count: 3, color: '#6e7681' },
+  { count: 1, color: '#3fb950' },
+];
+const total = slices.reduce((s, sl) => s + sl.count, 0);
+let angle = -Math.PI / 2;
+slices.forEach(sl => {
+  const sweep = (sl.count / total) * Math.PI * 2;
+  dCtx.beginPath();
+  dCtx.arc(cx2, cy, ro, angle, angle + sweep);
+  dCtx.arc(cx2, cy, ri, angle + sweep, angle, true);
+  dCtx.closePath();
+  dCtx.fillStyle = sl.color;
+  dCtx.fill();
+  angle += sweep;
+});
+</script>
+</body>
+</html>

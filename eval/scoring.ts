@@ -287,10 +287,10 @@ function gridsEqual(a: unknown, b: unknown): boolean {
 export function arc3Score(predicted: string, _expected: string | string[]): number {
 	try {
 		const data = JSON.parse(predicted);
-		if (typeof data.score === "number" && typeof data.total_levels === "number") {
-			return data.total_levels > 0
-				? Math.min(1, data.score / data.total_levels)
-				: 0;
+		// ARC-3 API returns score as a percentage (0-100), already averaged across levels.
+		// Convert to 0-1 range for the harness.
+		if (typeof data.score === "number") {
+			return Math.min(1, Math.max(0, data.score / 100));
 		}
 		return 0;
 	} catch {

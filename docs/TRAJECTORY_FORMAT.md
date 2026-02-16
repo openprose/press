@@ -1,7 +1,14 @@
-# Annotated Trajectory Format (v2)
+# Annotated Trajectory Format (v3)
 
 This is the canonical format for an annotated RLM trajectory.
 Written by an LLM analyst, consumed by an LLM synthesizer.
+
+**v3 changes** (backward-compatible with v2):
+- New **Delegation Log** section tracks child agent invocations as first-class entities
+- Control flow lines now support `[Dx]` delegation links alongside `[Hx]` hypothesis links
+- Control flow supports indented child agent traces inline with parent
+- New optional frontmatter fields for delegation metrics
+- See [Upgrade Guide from v2](#upgrade-guide-from-v2) at the end for full details
 
 **v2 changes** (backward-compatible with v1):
 - Control flow lines now support `PHASE:sub-phase` two-level labels, `[Hx]` hypothesis links, and `✓✗~→` outcome markers
@@ -244,6 +251,120 @@ iter 19  RETURN                      ✗  return output grid with wrong ordering
 
 ---
 
+## Template: Delegation-Heavy ARC-3 Task
+
+This example demonstrates the format applied to a trajectory where a parent agent
+delegates work to child agents. It shows the **Delegation Log**,
+`[Dx]` tags in Control Flow, and inline child traces.
+
+```markdown
+---
+taskId: arc3-ls20-cb3b57cc
+score: 0
+iterations: 20
+wallTimeMs: 255342
+answerType: ANSWER_TYPE.INTERACTIVE
+taskGroup: TASK_TYPE.ARC3
+answer: ""
+expected: "interactive"
+error: "RLM reached max iterations (20) without returning an answer"
+patterns:
+  - delegation-rlm
+  - delegation-app-plugin
+  - multi-block-execution
+  - catastrophic-forgetting
+  - context-loop
+failureMode: delegation-waste
+verdict: timeout
+hypothesesTested: 4
+hypothesesRejected: 2
+breakthroughIter: 11
+itersWasted: 6
+delegationCount: 2
+delegationItersTotal: 12
+---
+
+# Trajectory: arc3-ls20-cb3b57cc
+
+## Task Summary
+
+ARC-3 delegation experiment: Opus 4.6 delegates game scouting to Gemini Flash
+child (app="arc3-scout", model="fast", maxIterations=50). Scout explores for 6
+iterations, returns structured JSON. Opus plays from scout's game state.
+
+## Control Flow
+
+```
+iter  1  DELEGATE:child-spawn  [D1]  →  spawn scout (app=arc3-scout, model=fast, maxIter=50)
+  │ D1  child  1  EXPLORE:init         →  start game, define utilities, probe actions
+  │ D1  child  2  EXPLORE:structure     →  analyze grid, find objects, track diffs
+  │ D1  child  3  EXPLORE:hyp-test      ~  try action sequences, discover color 12 moves
+  │ D1  child  4  EXPLORE:structure     →  detailed region analysis
+  │ D1  child  5  EXPLORE:structure     →  map corridor structure
+  │ D1  child  6  RETURN               ✓  return JSON report (levelsCompleted=0)
+iter  1  DELEGATE:child-spawn  [D2]  →  DUPLICATE: same code re-executed, second scout runs
+  │ D2  child  1  EXPLORE:init         →  (game already started — continues from D1 state)
+  │ D2  child  2-5  ...                →  additional exploration (42 total game actions)
+  │ D2  child  6  RETURN               ✓  return JSON report (levelsCompleted=0)
+iter  2  EXPLORE:state-check          →  observe current frame after scouts, color distribution
+iter  3  EXPLORE:visualize            →  downsample grid to hex dump
+iter  4  EXPLORE:visualize            →  full-resolution hex dump of maze
+iter  5  EXPLORE:hyp-test    [H1]    ~  try Down — player disappears (transition screen)
+iter  6  EXPLORE:diagnose             →  entire screen color 11 — transition
+iter  7  EXPLORE:diagnose             →  step through transition, game returns
+iter  8  EXPLORE:structure            →  find player (stationary), color 11 bounds
+iter  9  EXPLORE:hyp-test    [H1]    ✗  try Right — player doesn't move
+iter 10  EXPLORE:hyp-test    [H2]    ~  try Up — 52 pixels changed, player static
+iter 11  EXPLORE:diagnose    [H3]    ✓  diff: 12/9 block moved, color 11 lost 2px — BREAKTHROUGH
+iter 12  EXPLORE:structure            →  detailed patterns, player shape, fuel bar
+iter 13  STALL:context-loop  [H1]    ✗  repeats iter 9 — lost context
+iter 14  STALL:context-loop  [H2]    ✗  repeats iter 10
+iter 15  STALL:context-loop           ✗  repeats iter 12
+iter 16  EXTRACT:implement   [H3]    ~  bulk nav: D1 L15 U15 — block overshoots
+iter 17  EXPLORE:diagnose             →  block at rows 25-26, only 4 fuel left
+iter 18  EXTRACT:fallback    [H3]    ✗  Down x2 — overshoots, fuel=0
+iter 19  (no trace)                   ✗  max iterations approaching
+iter 20  (no trace)                   ✗  timeout — no return()
+```
+
+## Delegation Log
+
+| ID | App | Model | MaxIter | Iters Used | Trigger Iter | Return Format | Quality | Cost |
+|----|-----|-------|---------|-----------|--------------|---------------|---------|------|
+| D1 | arc3-scout | fast (Gemini Flash) | 50 | 6 | 1 | JSON report | low: misidentified player | 42 game actions (shared with D2) |
+| D2 | arc3-scout | fast (Gemini Flash) | 50 | 6 | 1 (dup) | JSON report | medium: identified moving block | (shared session with D1) |
+
+**Delegation summary:**
+- D1 returned: `{"controlledEntity": "Color 1 (Blue) - small 2-pixel object"}` — **wrong**
+- D2 returned: `{"controlledEntity": "A cluster of pixels (likely color 12 or 9)"}` — closer
+- Neither discovered the fuel mechanic (color 11 depletion)
+- Parent discarded both reports at iter 2: "findings are vague"
+
+**Environment flow:**
+- D1/D2 received: sandbox globals (`arc3` client), app plugin (`arc3-scout.md` body)
+- D1/D2 returned: JSON string via `return()` — parent received as `scoutReport` variable
+- Shared state: `arc3` client persisted across D1→D2→parent (42 actions consumed, game in progress)
+
+## Hypothesis Log
+
+| ID | Hypothesis | Iters | Outcome | Evidence |
+|----|-----------|-------|---------|----------|
+| H1 | Player (color 1) moves with directional actions | 5,9,13 | rejected | 0 pixel changes at player position |
+| H2 | Some entity moves with actions | 10,14 | superseded | 52px changed, player static |
+| H3 | Actions move 12/9 block; color 11 = fuel | 11-12,16-18 | accepted | Diff confirms block shift, 11 decrements by 2 |
+| H4 | Navigate block to player to win | 16-18 | attempted | Block reached vicinity but overshot; fuel=0 |
+
+**Hypothesis arc:** H1(rej)→H2(partial)→H3(breakthrough iter 11)→H4(impl, failed)
+
+## Phase Analysis
+[... same as before ...]
+
+## Root Cause
+[... same as before ...]
+```
+
+---
+
 ## Field Reference
 
 ### YAML Frontmatter (required fields)
@@ -294,6 +415,26 @@ itersWasted: 0
 implementationAttempts: 1
 ```
 
+### YAML Frontmatter (optional delegation fields)
+
+These fields track child agent usage. Include them when the trajectory contains
+`rlm()` delegation calls.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| delegationCount | number | Total `rlm()` calls made by the parent (including duplicates) |
+| delegationItersTotal | number | Sum of iterations consumed across all child agents |
+
+**Example:**
+```yaml
+delegationCount: 2
+delegationItersTotal: 12
+```
+
+Benchmark-specific frontmatter fields (e.g., game actions, fuel, resource depletion)
+belong in benchmark-specific annotation extensions, not in this canonical format.
+See `docs/TRAJECTORY_FORMAT_ARC3.md` for ARC-3-specific fields.
+
 ### Control Flow Line Format
 
 ```
@@ -308,10 +449,33 @@ Each field:
 | `PHASE` | yes | ALLCAPS | Coarse phase label (see phase vocabulary below) |
 | `:sub-phase` | optional | lowercase | Fine-grained technique or activity within the phase |
 | `[Hx]` | optional | `[H1]`..`[Hn]` | Links iteration to a hypothesis in the Hypothesis Log |
+| `[Dx]` | optional | `[D1]`..`[Dn]` | Links iteration to a delegation in the Delegation Log |
 | outcome | optional | symbol | `✓` success, `✗` failure, `~` partial/ambiguous, `→` neutral/continuing |
 | description | yes | free text | Brief description of what happened |
 
+`[Hx]` and `[Dx]` may appear on the same line when a delegation tests a hypothesis.
+
 **Alignment:** Use fixed-width formatting so that the phase column, hypothesis tag column, and outcome marker column are visually aligned. This enables at-a-glance scanning of the hypothesis timeline and outcome pattern.
+
+#### Inline Child Traces
+
+When a parent iteration spawns a child via `rlm()`, the child's trace can be
+shown inline, indented under the parent's DELEGATE line. Use the `│ Dx` prefix
+to mark child iterations:
+
+```
+iter  3  DELEGATE:child-spawn  [D1]  →  spawn classifier child (app=classifier, model=fast)
+  │ D1  child  1  EXPLORE:parse        →  parse input data
+  │ D1  child  2  EXTRACT:compute      →  classify items
+  │ D1  child  3  RETURN               ✓  return JSON results
+iter  4  EXTRACT:aggregate             →  merge child results
+```
+
+Guidelines for inline child traces:
+- Include when the child's behavior is relevant to understanding the trajectory
+- Abbreviate long child runs: `│ D1  child  2-8  EXPLORE/EXTRACT  →  iterating...`
+- Omit entirely for trivial children (e.g., `maxIterations: 1` one-shot calls)
+- Child trace detail should be proportional to its impact on the outcome
 
 #### Phase Vocabulary
 
@@ -379,6 +543,15 @@ omit them when the phase alone is sufficient. Seed sub-phases:
 | `api` | API-level error (MALFORMED_FUNCTION_CALL, timeout) |
 | `logic` | Detected logical error in own code (not a crash, but wrong result) |
 
+**Under DELEGATE:**
+
+| Sub-phase | When to use |
+|-----------|-------------|
+| `child-spawn` | Launching an `rlm()` child — should have `[Dx]` tag |
+| `child-collect` | Receiving and parsing a child's return value |
+| `fan-out` | Launching multiple children via `Promise.all()` |
+| `child-abandon` | Parent discards a child's result as unhelpful |
+
 As with phases, **coin new sub-phases** freely. Use `lowercase-kebab-case`.
 
 #### Outcome Markers
@@ -438,6 +611,54 @@ This enables quick statistical queries like:
 - What fraction of iterations were spent on ultimately-rejected hypotheses?
 - Did the agent abandon a correct hypothesis and return to it later?
 
+### Delegation Log
+
+The Delegation Log tracks child agent invocations as first-class entities. It
+sits after the Hypothesis Log (or after Control Flow if no Hypothesis Log).
+
+**When to include:** Always include when the trajectory contains `rlm()` calls.
+Omit for single-agent trajectories with no delegation.
+
+**Format:**
+
+```markdown
+## Delegation Log
+
+| ID | App | Model | MaxIter | Iters Used | Trigger Iter | Return Format | Quality | Cost |
+|----|-----|-------|---------|-----------|--------------|---------------|---------|------|
+| D1 | [app name or -] | [model alias] | [budget] | [actual] | [parent iter] | [format] | [assessment] | [resource cost] |
+```
+
+**Fields:**
+
+| Field | Description |
+|-------|-------------|
+| ID | Short identifier: D1, D2, ... in order of invocation |
+| App | Named app plugin used (from `app` param), or `-` if raw `systemPrompt` |
+| Model | Model alias used (from `model` param), or `(inherit)` if parent's model |
+| MaxIter | Iteration budget given to the child |
+| Iters Used | Actual iterations the child consumed |
+| Trigger Iter | Parent iteration that launched this child |
+| Return Format | What the child returned: `JSON report`, `string`, `error`, `timeout` |
+| Quality | Brief quality assessment of the child's output: `high`, `medium`, `low`, `wrong`, `unused` |
+| Cost | External resources consumed (game actions, API calls, tokens) |
+
+**Optional sections after the table:**
+
+```markdown
+**Delegation summary:**
+- D1 returned: [key content from return value]
+- D2 returned: [key content from return value]
+
+**Environment flow:**
+- What was passed to children: [sandbox globals, app plugin, context]
+- What was returned: [return value, shared state mutations]
+- Shared state effects: [side effects visible to parent after child returns]
+```
+
+The **Environment flow** section captures what v2 could not: the data and state
+that flows between agents through the shared sandbox, context, and return values.
+
 ### Pattern Vocabulary
 
 These are **seed terms**, not a closed set. Use them when they fit.
@@ -467,9 +688,12 @@ an error.
 | `parallel-fanout`       | Promise.all() over multiple rlm() calls                                 |
 | `sequential-delegation` | Chained delegation calls where each depends on the prior                |
 | `prompt-crafting`       | Invested significant effort designing the prompt for a child call       |
-| `over-delegation`       | Delegated a task that would have been simpler to compute directly       |
-| `under-delegation`      | Ground through manually when a delegation would have been faster/better |
-| `...`                   | Any other delegation pattern you think is relevant                      |
+| `delegation-app-plugin`  | Used named `app` param to load a pre-configured child system prompt     |
+| `delegation-report-quality` | Quality of child's returned report affected parent's subsequent strategy |
+| `delegation-discarded`   | Parent discarded child's output as unhelpful and re-did the work        |
+| `over-delegation`        | Delegated a task that would have been simpler to compute directly       |
+| `under-delegation`       | Ground through manually when a delegation would have been faster/better |
+| `...`                    | Any other delegation pattern you think is relevant                      |
 
 **Reasoning and iteration — how the RLM thinks through the problem:**
 
@@ -541,6 +765,7 @@ the full taxonomy — limiting annotators to known modes defeats the purpose.
 | `format-mismatch`           | Right answer, wrong format (not extracted from wrapper) |
 | `unawaited-delegation`      | Called rlm() without await — result silently lost       |
 | `multi-block-hallucination` | Generated fabricated output between code blocks         |
+| `multi-block-execution`     | Multiple code blocks executed in one iteration (duplicate delegation, wasted actions) |
 | `...`                       | Any other formatting error you think is relevant        |
 
 **Infrastructure and limits:**
@@ -551,6 +776,8 @@ the full taxonomy — limiting annotators to known modes defeats the purpose.
 | `api-error`               | MALFORMED_FUNCTION_CALL or other API-level failure                 |
 | `spinning`                | Made no meaningful progress across 3+ iterations (stuck in a loop) |
 | `delegation-context-loss` | Child agent lacked context needed to do its job                    |
+| `delegation-waste`        | Delegation consumed resources without contributing to the solution  |
+| `delegation-resource-depletion` | Child consumed shared resources parent needed later (fuel, actions, quota) |
 | `...`                     | Any other infrastructure failure you think is relevant             |
 
 **Other:**
@@ -651,3 +878,59 @@ needs every feature. Scale the annotation complexity to the trajectory:
   useful metric for identifying inefficient search behavior.
 - Mark `STALL` phases explicitly; they are the format's strongest signal
   for "wasted work."
+
+**Delegation trajectory (parent + child agents):**
+- Delegation Log: always include, with quality assessments
+- Inline child traces: include for impactful children; abbreviate long runs
+- Environment flow: include when understanding what flowed between agents matters
+- Benchmark-specific resource tracking (game actions, fuel, API calls) belongs
+  in benchmark-specific annotation extensions (e.g., `docs/TRAJECTORY_FORMAT_ARC3.md`)
+
+---
+
+## Upgrade Guide from v2
+
+The following changes were made to the format. All are backward-compatible
+(existing v2 annotations remain valid).
+
+### New: Delegation Log section
+
+A structured table that tracks `rlm()` child invocations. Fields include
+app plugin used, model, iteration budget, quality assessment, and resource cost.
+Accompanied by optional **Delegation summary** and **Environment flow** prose.
+
+### New: `[Dx]` tags on control flow lines
+
+Like `[Hx]` for hypotheses, `[Dx]` links an iteration to a delegation in the
+Delegation Log. May appear alongside `[Hx]` on the same line.
+
+### New: Inline child traces
+
+Child agent iterations can be shown indented under the parent's DELEGATE line
+using the `│ Dx  child  N` prefix. Enables understanding the full multi-agent
+execution without a separate file.
+
+### New: Delegation frontmatter fields
+
+Optional fields: `delegationCount`, `delegationItersTotal`.
+
+### New: Delegation-specific patterns and failure modes
+
+Patterns: `delegation-app-plugin`, `delegation-report-quality`,
+`delegation-discarded`.
+
+Failure modes: `multi-block-execution`, `delegation-waste`,
+`delegation-resource-depletion`.
+
+Benchmark-specific resource tracking (Resource Log, resource frontmatter fields)
+belongs in benchmark-specific extensions. See `docs/TRAJECTORY_FORMAT_ARC3.md`.
+
+### New: DELEGATE sub-phases
+
+`child-spawn`, `child-collect`, `fan-out`, `child-abandon`.
+
+### Unchanged
+
+- All v2 features (sub-phases, `[Hx]` tags, outcome markers, Hypothesis Log)
+- All v1 features (frontmatter, Pattern/Failure Mode vocabularies, Phase Analysis)
+- Existing phase labels and sub-phases
