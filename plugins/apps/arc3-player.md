@@ -1,7 +1,7 @@
 ---
 name: arc3-player
 kind: app
-version: 1.3.0
+version: 1.4.0
 description: Play one ARC-3 level — learn mechanics by experimenting, then execute strategically
 author: sl
 tags: [arc, arc3, exploration, learning]
@@ -14,22 +14,16 @@ You play ONE level of an interactive 64x64 grid game. The rules are unknown — 
 
 ### Rules (CRITICAL — read these FIRST)
 
-1. **YOUR MOST IMPORTANT RULE:** At the TOP of EVERY code block you emit (no exceptions), paste this EXACT guard:
-   ```javascript
-   if (typeof __iterCount === 'undefined') __iterCount = 0;
-   __iterCount++;
-   if (__iterCount >= 12) {
-     __level_result = { knowledge: __k || {}, actions: __actionsThisLevel || 0, completed: false };
-     return("Emergency return at iter " + __iterCount);
-   }
+1. **YOUR MOST IMPORTANT RULE:** The FIRST LINE of EVERY code block must be:
    ```
-   This guard MUST be the literal first 4 lines of every code block. No exceptions. Not after other code. Not in a function. The literal first lines.
-2. You MUST return a result before hitting the iteration limit. An incomplete return with partial knowledge is infinitely better than a timeout with no return.
-3. Test each available action ONCE in your first real iteration (the discovery protocol). Do not skip this.
-4. Track `__actionsThisLevel` after every `arc3.step()` call. Return if it exceeds 40.
-5. NEVER call `arc3.start()`. The game is already running. Calling `arc3.start()` resets ALL progress across ALL levels. You only have `arc3.step()`, `arc3.observe()`, and `arc3.actionCount`.
-6. Budget at most 40 game actions per level. Return immediately if you exceed this.
-7. Plan your work: iteration 0 = setup, iteration 1 = discovery, iterations 2-10 = play, iteration 11 = return results.
+   if (__guard()) return(__guard.msg);
+   ```
+   This checks the iteration deadline and action budget. It is already defined from setup. Just call it.
+2. NEVER call `arc3.start()`. The game is already running. Calling it resets ALL progress. You only have `step()`, `arc3.observe()`, and `arc3.actionCount`.
+3. Use `step(action)` instead of `arc3.step(action)`. The `step()` wrapper tracks actions and detects GAME_OVER.
+4. Iteration 1: call `await __discover()` to test each direction and get a diff analysis. Do not skip this.
+5. Plan your work: iter 0 = setup, iter 1 = discover, iters 2-9 = play, iter 10 = return results.
+6. Return a result before timeout. Partial knowledge is infinitely better than no return.
 
 ### API
 
@@ -44,6 +38,7 @@ You play ONE level of an interactive 64x64 grid game. The rules are unknown — 
 Read prior knowledge and define your perceptual toolkit.
 
 ```javascript
+// === SETUP: Define persistent functions and state ===
 const prior = (typeof __level_task !== 'undefined') ? __level_task.knowledge : {};
 __k = {
   objectTypes: prior.objectTypes || {},
@@ -52,14 +47,54 @@ __k = {
   openQuestions: prior.openQuestions || [],
 };
 __iterCount = 0;
-// HARD DEADLINE: Return by iteration 12 no matter what.
-// Plan: iter 0 = setup, iter 1 = discovery, iters 2-10 = play, iter 11 = return.
+__actionsThisLevel = 0;
 
-// === Perceptual Toolkit ===
-// These are general vision algorithms — they encode NO game knowledge.
+// === GUARD: Call `if (__guard()) return(__guard.msg);` as first line of every code block ===
+__guard = function() {
+  __iterCount++;
+  if (__iterCount >= 12) {
+    __level_result = { knowledge: __k || {}, actions: __actionsThisLevel || 0, completed: false };
+    __guard.msg = "Emergency return at iter " + __iterCount + ". Results in __level_result.";
+    return true;
+  }
+  if (__actionsThisLevel > 25) {
+    __level_result = { knowledge: __k || {}, actions: __actionsThisLevel, completed: false };
+    __guard.msg = "Action budget exceeded (" + __actionsThisLevel + "). Results in __level_result.";
+    return true;
+  }
+  return false;
+};
+__guard.msg = "";
 
-// Connected-component labeling: find contiguous same-color regions.
-// You must determine which colors are "background" by analyzing color frequencies.
+// === STEP WRAPPER: Use step(action) instead of arc3.step(action) ===
+async function step(action) {
+  __actionsThisLevel++;
+  const result = await arc3.step(action);
+  if (result.state === 'GAME_OVER') {
+    __k.rules.push("GAME_OVER reached at " + __actionsThisLevel + " actions");
+    __level_result = { knowledge: __k, actions: __actionsThisLevel, completed: false, reason: 'game_over' };
+  }
+  if (result.levels_completed > __startLevel) {
+    __level_result = { knowledge: __k, actions: __actionsThisLevel, completed: true };
+  }
+  return result;
+}
+
+// === PERCEPTUAL TOOLKIT (general vision algorithms — no game knowledge) ===
+function diffGrids(a, b) {
+  const changes = [];
+  for (let r = 0; r < a.length; r++)
+    for (let c = 0; c < a[0].length; c++)
+      if (a[r][c] !== b[r][c]) changes.push({ r, c, was: a[r][c], now: b[r][c] });
+  return changes;
+}
+
+function colorFreqs(grid) {
+  const freq = {};
+  for (const row of grid) for (const v of row) freq[v] = (freq[v] || 0) + 1;
+  return Object.entries(freq).sort((a, b) => b[1] - a[1]).map(([c, n]) => ({ color: +c, count: n }));
+}
+
 function findComponents(grid, bgColors) {
   const H = grid.length, W = grid[0].length;
   const vis = Array.from({length: H}, () => new Uint8Array(W));
@@ -80,57 +115,11 @@ function findComponents(grid, bgColors) {
     comps.push({ color, count: px.length,
       rMin: Math.min(...rs), rMax: Math.max(...rs),
       cMin: Math.min(...cs), cMax: Math.max(...cs),
-      cr: Math.round(rs.reduce((a,b)=>a+b)/rs.length),
-      cc: Math.round(cs.reduce((a,b)=>a+b)/cs.length),
     });
   }
   return comps;
 }
 
-// Group nearby components into multi-color objects.
-// `dist` = max gap in pixels to consider components part of the same object.
-function clusterObjects(comps, dist) {
-  if (!dist) dist = 3;
-  const used = new Set(), objects = [];
-  function bDist(a, b) {
-    return Math.max(
-      Math.max(0, Math.max(a.rMin, b.rMin) - Math.min(a.rMax, b.rMax)),
-      Math.max(0, Math.max(a.cMin, b.cMin) - Math.min(a.cMax, b.cMax)));
-  }
-  for (let i = 0; i < comps.length; i++) {
-    if (used.has(i)) continue;
-    const cluster = [comps[i]]; used.add(i);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (let j = 0; j < comps.length; j++) {
-        if (used.has(j)) continue;
-        if (cluster.some(c => bDist(c, comps[j]) <= dist)) {
-          cluster.push(comps[j]); used.add(j); changed = true;
-        }
-      }
-    }
-    objects.push({
-      colors: [...new Set(cluster.map(c => c.color))].sort((a,b)=>a-b),
-      pixels: cluster.reduce((s, c) => s + c.count, 0),
-      rMin: Math.min(...cluster.map(c=>c.rMin)), rMax: Math.max(...cluster.map(c=>c.rMax)),
-      cMin: Math.min(...cluster.map(c=>c.cMin)), cMax: Math.max(...cluster.map(c=>c.cMax)),
-      cr: Math.round(cluster.reduce((s,c)=>s+c.cr*c.count,0)/cluster.reduce((s,c)=>s+c.count,0)),
-      cc: Math.round(cluster.reduce((s,c)=>s+c.cc*c.count,0)/cluster.reduce((s,c)=>s+c.count,0)),
-      components: cluster,
-    });
-  }
-  return objects;
-}
-
-// Color frequency analysis: find the most common colors (likely background).
-function colorFreqs(grid) {
-  const freq = {};
-  for (const row of grid) for (const v of row) freq[v] = (freq[v] || 0) + 1;
-  return Object.entries(freq).sort((a, b) => b[1] - a[1]).map(([c, n]) => ({ color: +c, count: n }));
-}
-
-// Render a sub-region as hex for visual inspection.
 function renderRegion(g, r0, r1, c0, c1) {
   const rows = [];
   for (let r = r0; r <= Math.min(r1, g.length-1); r++)
@@ -138,122 +127,78 @@ function renderRegion(g, r0, r1, c0, c1) {
   return rows.join('\n');
 }
 
-// Pixel-level diff between two grids.
-function diffGrids(a, b) {
-  const changes = [];
-  for (let r = 0; r < a.length; r++)
-    for (let c = 0; c < a[0].length; c++)
-      if (a[r][c] !== b[r][c]) changes.push({ r, c, was: a[r][c], now: b[r][c] });
-  return changes;
-}
+// === DISCOVERY: Call `await __discover()` in iteration 1 ===
+__discover = async function() {
+  const discoveries = [];
+  for (const action of [1, 2, 3, 4]) {
+    const before = arc3.observe().frame[0];
+    const result = await step(action);
+    const after = result.frame[0];
+    const changes = diffGrids(before, after);
+    const mazeChanges = changes.filter(c => c.r < 52);
+    const hudChanges = changes.filter(c => c.r >= 52);
+    discoveries.push({ action, maze: mazeChanges.length, hud: hudChanges.length,
+      mazeEx: mazeChanges.slice(0, 10), hudEx: hudChanges.slice(0, 5), state: result.state });
+    console.log(`Action ${action}: ${mazeChanges.length} maze, ${hudChanges.length} HUD changes`);
+    if (result.levels_completed > __startLevel) { console.log("LEVEL COMPLETED!"); break; }
+    if (changes.length > 1000) console.log("  WARNING: Massive change — possible death");
+  }
+  // Analyze: the entity that MOVED is your character (largest pixel change per action)
+  const movingColors = new Set();
+  for (const d of discoveries) for (const mc of d.mazeEx) { movingColors.add(mc.was); movingColors.add(mc.now); }
+  console.log("Colors that moved:", [...movingColors]);
+  console.log("Your character = the largest group of pixels that changes position each action.");
+  return discoveries;
+};
 
-// Initial observation
+// === INITIAL OBSERVATION ===
 const frame0 = arc3.observe();
 __grid = frame0.frame[0];
 __startLevel = frame0.levels_completed;
-__actionsThisLevel = 0;
-
-// Analyze color distribution to determine background
 const freqs = colorFreqs(__grid);
 console.log(`Level ${__startLevel + 1}. Grid: ${__grid.length}x${__grid[0].length}`);
-console.log(`Color frequencies: ${freqs.slice(0, 6).map(f => `${f.color}:${f.count}`).join(', ')}`);
-console.log(`Available actions: ${frame0.available_actions}`);
+console.log(`Colors: ${freqs.slice(0, 6).map(f => `${f.color}:${f.count}`).join(', ')}`);
+console.log(`Actions: ${frame0.available_actions}`);
+console.log("NEXT: Call `await __discover()` to test each direction.");
 ```
 
-### Iteration 1: Discovery Protocol (MANDATORY — run this before anything else)
+### Iteration 1: Discovery (MANDATORY)
 
-Test each action exactly once, diff the full grid, record what changed. This is the foundation for all subsequent reasoning.
+Call the pre-defined `__discover()` function. It tests each direction, diffs the grid, and prints what moved.
 
 ```javascript
-// === DEADLINE GUARD (MUST be first 4 lines of EVERY code block) ===
-if (typeof __iterCount === 'undefined') __iterCount = 0;
-__iterCount++;
-if (__iterCount >= 12) {
-  __level_result = { knowledge: __k || {}, actions: __actionsThisLevel || 0, completed: false };
-  return("Emergency return at iter " + __iterCount);
-}
+if (__guard()) return(__guard.msg);
 
-// === DISCOVERY PROTOCOL: Test each action once, diff everything ===
-const discoveries = [];
-for (const action of frame0.available_actions.slice(0, 4)) { // test first 4 actions
-  const before = arc3.observe().frame[0];
-  const result = await arc3.step(action);
-  __actionsThisLevel++;
-  const after = result.frame[0];
-  const changes = diffGrids(before, after);
-
-  // Separate maze changes (game area) from HUD changes (bottom strip)
-  const mazeChanges = changes.filter(c => c.r < 52);
-  const hudChanges = changes.filter(c => c.r >= 52);
-
-  discoveries.push({ action, totalChanges: changes.length, mazeChanges: mazeChanges.length,
-    hudChanges: hudChanges.length, mazeExamples: mazeChanges.slice(0, 15),
-    hudExamples: hudChanges.slice(0, 10), state: result.state });
-
-  console.log(`Action ${action}: ${mazeChanges.length} maze, ${hudChanges.length} HUD changes`);
-
-  // Massive change = something dramatic (death? level transition?)
-  if (changes.length > 1000) console.log("  WARNING: Massive grid change — possible death or transition");
-  // Level completed?
-  if (result.levels_completed > __startLevel) {
-    console.log("  LEVEL COMPLETED!");
-    break;
-  }
-}
-
+const disc = await __discover();
 __grid = arc3.observe().frame[0];
-console.log(`Discovery done. ${__actionsThisLevel} actions used.`);
 
-// === POST-DISCOVERY ANALYSIS (do not skip) ===
-// 1. Which colors moved in the maze region (r < 52)? That's your character.
-const movingColors = new Set();
-for (const d of discoveries) {
-  for (const mc of d.mazeExamples) { movingColors.add(mc.was); movingColors.add(mc.now); }
-}
-console.log("Colors that moved in maze:", [...movingColors]);
-// 2. How many maze pixels changed per action? 25 pixels = 5x5 block = 5px step.
-for (const d of discoveries) console.log(`  Action ${d.action}: ${d.mazeChanges} maze px, ${d.hudChanges} HUD px`);
-// 3. Direction mapping: action 1=up (block row decreases), 2=down, 3=left, 4=right
-// 4. If any action caused 0 maze changes, you may be blocked by a wall.
-// 5. HUD changes = resource meters (fuel, lives, level counter). Track which rows changed.
+// Record what you learned in __k
+// The entity that moved the MOST pixels is your character
+// HUD changes (rows >= 52) indicate resource meters
+console.log(`Discovery done. ${__actionsThisLevel} actions, ${disc.length} directions tested.`);
 ```
 
 ### Core Loop (Iteration 2+)
 
-Each iteration: **deadline guard → observe → diff → update knowledge → decide → act**.
+Each iteration: **guard → observe → diff → update knowledge → decide → act**.
 
 ```javascript
-// === DEADLINE GUARD (MUST be first 4 lines of EVERY code block) ===
-if (typeof __iterCount === 'undefined') __iterCount = 0;
-__iterCount++;
-if (__iterCount >= 12) {
-  __level_result = { knowledge: __k || {}, actions: __actionsThisLevel || 0, completed: false };
-  return("Emergency return at iter " + __iterCount);
-}
-// === ACTION BUDGET GUARD ===
-if (__actionsThisLevel > 40) {
-  __level_result = { knowledge: __k || {}, actions: __actionsThisLevel, completed: false };
-  return("Action budget exceeded: " + __actionsThisLevel);
-}
+if (__guard()) return(__guard.msg);
 
-// 1. Observe current state
-const frame = arc3.observe();
-const grid = frame.frame[0];
-
-// 2. Diff against previous state
+// 1. Observe and diff
+const grid = arc3.observe().frame[0];
 const changes = diffGrids(__grid, grid);
-// - What moved? What appeared/disappeared?
-// - Did HUD regions change (bottom bar, corners, edges)?
-// - Correlate changes with your last action
 
-// 3. Update __k with evidence from diff + last action
-// "I took action X near object Y and Z changed" → hypothesis
+// 2. Update __k with evidence from diff + last action
 
-// 4. Decide: explore or exploit?
-// Explore if: unknown object types exist, or goal condition unclear
-// Exploit if: you understand the win condition and can achieve it
+// 3. Decide: explore or exploit?
+// Explore if: unknown object types, or goal condition unclear
+// Exploit if: you understand the win condition
 
-// 5. Execute and update state
+// 4. Execute using step(action) — NOT arc3.step()
+// const result = await step(1); // example: move up
+
+// 5. Update state
 __grid = grid;
 ```
 

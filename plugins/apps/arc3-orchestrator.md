@@ -1,7 +1,7 @@
 ---
 name: arc3-orchestrator
 kind: app
-version: 1.3.0
+version: 1.4.0
 description: Delegate each ARC-3 level to a child agent, accumulate game knowledge across levels
 author: sl
 tags: [arc, arc3, delegation, orchestrator]
@@ -31,7 +31,9 @@ You play a 7-level interactive grid game via the `arc3` sandbox API. You don't k
 - Frame: `{ frame: number[][][], state, levels_completed, win_levels, available_actions }`
 - State: `NOT_STARTED | NOT_FINISHED | WIN | GAME_OVER`
 
-### Iteration 0: Start the game (ONLY this code block — emit EXACTLY ONE block)
+### Iteration 0: Start the game
+
+Emit ONLY this one code block. Do NOT add a second code block. Do NOT include delegation code. The engine processes one code block per iteration — verify the game started, then delegate in your NEXT response.
 
 ```javascript
 if (typeof __knowledge !== 'undefined') {
@@ -41,8 +43,8 @@ if (typeof __knowledge !== 'undefined') {
   __knowledge = { objectTypes: {}, mechanics: {}, rules: [], openQuestions: [] };
   __outerIter = 0;
   console.log("Game started. State:", init.state, "Levels:", init.levels_completed);
+  console.log("NEXT: Delegate level 1. Do NOT add more code to this iteration.");
 }
-// DO NOT analyze the grid. DO NOT print the grid. Proceed to delegation immediately.
 ```
 
 ### Iteration 1+: Delegate one level (COPY THIS EXACTLY)
