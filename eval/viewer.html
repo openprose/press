@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RLM Trace Viewer</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #1a1a2e;
+  --card: #16213e;
+  --border: #2a2a4a;
+  --text: #e0e0e0;
+  --text-dim: #8888aa;
+  --accent: #4a6fa5;
+  --green: #2ecc40;
+  --yellow: #ffdc00;
+  --red: #ff4136;
+  --output-bg: #0d2818;
+  --error-bg: #2a0a0a;
+  --mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  --sans: system-ui, -apple-system, sans-serif;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Drop Zone ── */
+#drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  border: 3px dashed var(--border);
+  border-radius: 16px;
+  margin: 24px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+#drop-zone:hover, #drop-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(74, 111, 165, 0.08);
+}
+#drop-zone h2 { font-size: 20px; color: var(--text-dim); font-weight: 400; margin-bottom: 8px; }
+#drop-zone p { font-size: 13px; color: var(--text-dim); }
+#file-input { display: none; }
+
+/* ── App Layout ── */
+#app { display: none; height: 100vh; flex-direction: column; }
+#app.visible { display: flex; }
+
+/* Summary Bar */
+#summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 20px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  min-height: 44px;
+}
+#summary-bar .label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+#summary-bar .value { font-size: 13px; font-weight: 600; }
+#summary-bar .group { display: flex; flex-direction: column; }
+#summary-bar .file-name { color: var(--accent); font-family: var(--mono); font-size: 12px; cursor: pointer; }
+#summary-bar .file-name:hover { text-decoration: underline; }
+
+/* Main Content Area */
+#main { display: flex; flex: 1; overflow: hidden; }
+
+/* Sidebar */
+#sidebar {
+  width: 280px;
+  min-width: 280px;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+#sidebar h3 {
+  padding: 12px 16px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  z-index: 1;
+}
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.15s;
+}
+.task-item:hover { background: rgba(255,255,255,0.04); }
+.task-item.active { background: rgba(74,111,165,0.15); border-left-color: var(--accent); }
+.task-item .task-id {
+  font-family: var(--mono);
+  font-size: 12px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-item .task-meta { display: flex; gap: 6px; align-items: center; font-size: 11px; flex-shrink: 0; }
+.score-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--mono);
+}
+.score-green { background: rgba(46,204,64,0.2); color: var(--green); }
+.score-yellow { background: rgba(255,220,0,0.2); color: var(--yellow); }
+.score-red { background: rgba(255,65,54,0.2); color: var(--red); }
+
+/* Content Area */
+#content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+#content-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Iteration Cards */
+.iter-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.iter-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.02);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+}
+.iter-header .iter-num { color: var(--accent); font-family: var(--mono); }
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--mono);
+}
+.badge-code { background: rgba(74,111,165,0.2); color: var(--accent); }
+.badge-error { background: rgba(255,65,54,0.2); color: var(--red); }
+.badge-depth { background: rgba(142,68,173,0.25); color: #bb86fc; }
+.badge-child-ok { background: rgba(46,204,64,0.15); color: var(--green); }
+.badge-child-fail { background: rgba(255,65,54,0.15); color: var(--red); }
+
+.iter-body { padding: 12px 16px; }
+
+/* Collapsible Sections */
+details { margin-top: 8px; }
+details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 0;
+  list-style: none;
+  user-select: none;
+}
+details > summary::before {
+  content: '\25B6';
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+details[open] > summary::before { transform: rotate(90deg); }
+details > summary::-webkit-details-marker { display: none; }
+
+/* Code Blocks */
+pre {
+  background: #0d1117;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+pre.output-block { background: var(--output-bg); border-color: #1a3a2a; }
+pre.error-block { background: var(--error-bg); border-color: #3a1a1a; color: #ff8888; }
+
+/* Syntax highlight tokens */
+.kw { color: #ff79c6; }
+.str { color: #f1fa8c; }
+.num { color: #bd93f9; }
+.cmt { color: #6272a4; font-style: italic; }
+.fn { color: #50fa7b; }
+.op { color: #ff79c6; }
+
+/* Reasoning text */
+.reasoning-text {
+  font-size: 13px;
+  line-height: 1.65;
+  color: #c0c0d8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 4px;
+}
+
+/* Children Panel */
+.children-panel { margin-top: 10px; }
+.child-item {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.child-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.child-header:hover { background: rgba(255,255,255,0.03); }
+.child-query {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.child-timeline { padding: 0 12px 12px; }
+
+/* Nested cards */
+.child-timeline .iter-card {
+  border-color: rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.01);
+}
+
+/* Env Inspector */
+.env-tree { font-family: var(--mono); font-size: 12px; margin-top: 6px; }
+.env-tree details { margin-top: 2px; margin-left: 16px; }
+.env-tree summary { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 12px; color: var(--text); }
+.env-key { color: #8be9fd; }
+.env-changed { background: rgba(255,220,0,0.15); padding: 0 3px; border-radius: 2px; }
+.env-value { color: #c0c0d8; }
+.env-string { color: #f1fa8c; }
+.env-number { color: #bd93f9; }
+.env-bool { color: #ff79c6; }
+.env-null { color: #6272a4; }
+.show-all-btn {
+  display: inline-block;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+.show-all-btn:hover { background: rgba(74,111,165,0.15); }
+
+/* Game Board */
+#game-board-section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+#game-board-section h3 {
+  font-size: 14px;
+  margin-bottom: 12px;
+  color: var(--accent);
+}
+.game-board-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.game-board-controls input[type="range"] {
+  flex: 1;
+  min-width: 200px;
+  accent-color: var(--accent);
+}
+.game-board-info {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+.game-board-info span { white-space: nowrap; }
+.game-board-info .val { color: var(--text); font-weight: 600; }
+#game-canvas { border: 1px solid var(--border); border-radius: 4px; image-rendering: pixelated; }
+
+/* No data message */
+.no-data {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 60px 20px;
+  font-size: 15px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a5a; }
+
+/* Task error banner */
+.task-error-banner {
+  background: var(--error-bg);
+  border: 1px solid #3a1a1a;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: #ff8888;
+}
+
+/* Task info bar */
+.task-info-bar {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.task-info-bar .val { color: var(--text); font-weight: 600; }
+
+/* Attempts section */
+.attempts-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.attempt-pill {
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-family: var(--mono);
+  font-weight: 600;
+  cursor: default;
+}
+
+/* Responsive */
+@media (max-width: 1100px) {
+  #sidebar { width: 220px; min-width: 220px; }
+}
+</style>
+</head>
+<body>
+
+<div id="drop-zone">
+  <h2>Drop a results JSON file here or click to browse</h2>
+  <p>Supports BenchmarkResult format from the eval harness</p>
+  <input type="file" id="file-input" accept=".json">
+</div>
+
+<div id="app">
+  <div id="summary-bar"></div>
+  <div id="main">
+    <div id="sidebar">
+      <h3>Tasks</h3>
+      <div id="task-list"></div>
+    </div>
+    <div id="content">
+      <div id="content-inner">
+        <div class="no-data" id="placeholder">Select a task from the sidebar</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── ARC Color Palette ──
+const ARC_COLORS = [
+  '#000000', '#0074D9', '#FF4136', '#2ECC40',
+  '#FFDC00', '#AAAAAA', '#F012BE', '#FF851B',
+  '#7FDBFF', '#870C25', '#00CED1', '#8B4513',
+  '#FFB6C1', '#9ACD32', '#DDA0DD', '#F5F5DC'
+];
+
+const ACTION_NAMES = {
+  1: 'Up', 2: 'Down', 3: 'Left', 4: 'Right',
+  5: 'Interact', 6: 'Click', 7: 'Undo'
+};
+
+// ── State ──
+let data = null;
+let selectedTaskIndex = -1;
+let fileName = '';
+
+// ── File Loading ──
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const app = document.getElementById('app');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) loadFile(fileInput.files[0]);
+});
+
+function loadFile(file) {
+  fileName = file.name;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      data = JSON.parse(e.target.result);
+      initApp();
+    } catch (err) {
+      alert('Failed to parse JSON: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ── App Initialization ──
+function initApp() {
+  dropZone.style.display = 'none';
+  app.classList.add('visible');
+  renderSummaryBar();
+  renderTaskList();
+  if (data.results && data.results.length > 0) {
+    selectTask(0);
+  }
+}
+
+// ── Summary Bar ──
+function renderSummaryBar() {
+  const bar = document.getElementById('summary-bar');
+  const agg = data.aggregate || {};
+  const totalWall = agg.totalWallTimeMs != null ? formatMs(agg.totalWallTimeMs) : '?';
+  const completed = (agg.completedTasks || 0) + (agg.failedTasks || 0);
+
+  bar.innerHTML = `
+    <span class="file-name" title="Click to load another file" onclick="resetViewer()">${esc(fileName)}</span>
+    ${summaryGroup('Benchmark', data.benchmark || '?')}
+    ${summaryGroup('Model', data.model || '?')}
+    ${summaryGroup('Timestamp', formatTimestamp(data.timestamp))}
+    ${summaryGroup('Mean Score', agg.meanScore != null ? agg.meanScore.toFixed(3) : '?')}
+    ${summaryGroup('Tasks', completed)}
+    ${summaryGroup('Wall Time', totalWall)}
+    ${data.config ? summaryGroup('Config', `i=${data.config.maxIterations} d=${data.config.maxDepth} c=${data.config.concurrency}${data.config.attempts ? ' a=' + data.config.attempts : ''}`) : ''}
+  `;
+}
+
+function summaryGroup(label, value) {
+  return `<div class="group"><span class="label">${label}</span><span class="value">${esc(String(value))}</span></div>`;
+}
+
+// ── Task List ──
+function renderTaskList() {
+  const list = document.getElementById('task-list');
+  list.innerHTML = '';
+  if (!data.results) return;
+  data.results.forEach((r, i) => {
+    const el = document.createElement('div');
+    el.className = 'task-item';
+    el.dataset.index = i;
+    const scoreClass = r.score >= 0.5 ? 'score-green' : r.score >= 0.25 ? 'score-yellow' : 'score-red';
+    el.innerHTML = `
+      <span class="task-id" title="${esc(r.taskId)}">${esc(r.taskId)}</span>
+      <span class="task-meta">
+        <span class="score-badge ${scoreClass}">${r.score.toFixed(2)}</span>
+        <span title="Iterations">${r.iterations || 0}i</span>
+        <span title="Wall time">${formatMs(r.wallTimeMs)}</span>
+      </span>
+    `;
+    el.addEventListener('click', () => selectTask(i));
+    list.appendChild(el);
+  });
+}
+
+function selectTask(index) {
+  selectedTaskIndex = index;
+  document.querySelectorAll('.task-item').forEach((el, i) => {
+    el.classList.toggle('active', i === index);
+  });
+  renderTaskDetail(data.results[index]);
+}
+
+// ── Task Detail ──
+function renderTaskDetail(result) {
+  const inner = document.getElementById('content-inner');
+  inner.innerHTML = '';
+
+  // Task info bar
+  const infoBar = document.createElement('div');
+  infoBar.className = 'task-info-bar';
+  const expected = Array.isArray(result.expected) ? result.expected.join(' | ') : (result.expected || '');
+  infoBar.innerHTML = `
+    <span>Task: <span class="val">${esc(result.taskId)}</span></span>
+    <span>Score: <span class="val">${result.score.toFixed(3)}</span></span>
+    <span>Iterations: <span class="val">${result.iterations || 0}</span></span>
+    <span>Wall: <span class="val">${formatMs(result.wallTimeMs)}</span></span>
+    <span>Chars: <span class="val">${formatNum(result.charCount?.input || 0)}in / ${formatNum(result.charCount?.output || 0)}out</span></span>
+    <span>Answer: <span class="val">${esc(truncate(result.answer || '', 80))}</span></span>
+    <span>Expected: <span class="val">${esc(truncate(expected, 80))}</span></span>
+  `;
+  inner.appendChild(infoBar);
+
+  // Attempts bar (pass@N)
+  if (result.attempts && result.attempts > 1 && result.attemptScores) {
+    const ab = document.createElement('div');
+    ab.className = 'attempts-bar';
+    ab.innerHTML = '<span style="font-size:11px;color:var(--text-dim);margin-right:4px;">Attempts:</span>';
+    result.attemptScores.forEach((s, i) => {
+      const cls = s >= 0.5 ? 'score-green' : s >= 0.25 ? 'score-yellow' : 'score-red';
+      const best = i === result.bestAttempt ? ' outline:2px solid var(--accent);' : '';
+      ab.innerHTML += `<span class="attempt-pill ${cls}" style="${best}" title="Attempt ${i}${i === result.bestAttempt ? ' (best)' : ''}">#${i}: ${s.toFixed(2)}</span>`;
+    });
+    inner.appendChild(ab);
+  }
+
+  // Task error banner
+  if (result.error) {
+    const errBanner = document.createElement('div');
+    errBanner.className = 'task-error-banner';
+    errBanner.textContent = result.error;
+    inner.appendChild(errBanner);
+  }
+
+  // Metadata links (scorecard, replay URL)
+  if (result.metadata) {
+    const meta = result.metadata;
+    if (meta.scorecardId || meta.replayUrl) {
+      const metaDiv = document.createElement('div');
+      metaDiv.className = 'task-info-bar';
+      let h = '';
+      if (meta.scorecardId) h += `<span>Scorecard: <span class="val">${esc(meta.scorecardId)}</span></span>`;
+      if (meta.replayUrl) h += `<span>Replay: <a href="${esc(meta.replayUrl)}" target="_blank" style="color:var(--accent)">${esc(truncate(meta.replayUrl, 60))}</a></span>`;
+      metaDiv.innerHTML = h;
+      inner.appendChild(metaDiv);
+    }
+  }
+
+  // Game Board (ARC-3 actionLog)
+  const actionLog = result.metadata?.actionLog;
+  if (actionLog && actionLog.length > 0) {
+    inner.appendChild(renderGameBoard(actionLog));
+  }
+
+  // Iteration timeline
+  if (result.trace && result.trace.length > 0) {
+    const timeline = renderTimeline(result.trace, 0);
+    inner.appendChild(timeline);
+  } else {
+    const noTrace = document.createElement('div');
+    noTrace.className = 'no-data';
+    noTrace.textContent = 'No trace data available';
+    inner.appendChild(noTrace);
+  }
+
+  // Scroll to top
+  document.getElementById('content').scrollTop = 0;
+}
+
+// ── Iteration Timeline ──
+function renderTimeline(trace, depth) {
+  const frag = document.createDocumentFragment();
+  trace.forEach((entry, i) => {
+    const card = document.createElement('div');
+    card.className = 'iter-card';
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'iter-header';
+    const depthLabel = depth > 0 ? ` <span class="badge badge-depth">depth ${depth}</span>` : '';
+    const codeCount = entry.code ? entry.code.length : 0;
+    const codeBadge = codeCount > 0 ? `<span class="badge badge-code">${codeCount} block${codeCount > 1 ? 's' : ''}</span>` : '';
+    const errorBadge = entry.error ? '<span class="badge badge-error">error</span>' : '';
+    header.innerHTML = `<span class="iter-num">#${i + 1}</span>${depthLabel} ${codeBadge} ${errorBadge}`;
+    card.appendChild(header);
+
+    // Body
+    const body = document.createElement('div');
+    body.className = 'iter-body';
+
+    // Reasoning
+    if (entry.reasoning) {
+      const reasoning = renderCollapsible('Reasoning', () => {
+        const div = document.createElement('div');
+        div.className = 'reasoning-text';
+        div.textContent = entry.reasoning;
+        return div;
+      }, entry.reasoning.length > 400);
+      body.appendChild(reasoning);
+    }
+
+    // Code blocks
+    if (entry.code && entry.code.length > 0) {
+      entry.code.forEach((codeStr, ci) => {
+        const label = entry.code.length > 1 ? `Code [${ci + 1}/${entry.code.length}]` : 'Code';
+        const codeEl = renderCollapsible(label, () => {
+          const pre = document.createElement('pre');
+          pre.innerHTML = highlightJS(codeStr);
+          return pre;
+        }, false);
+        body.appendChild(codeEl);
+      });
+    }
+
+    // Output
+    if (entry.output) {
+      const outputEl = renderCollapsible('Output', () => {
+        const pre = document.createElement('pre');
+        pre.className = 'output-block';
+        pre.textContent = entry.output;
+        return pre;
+      }, entry.output.length > 600);
+      body.appendChild(outputEl);
+    }
+
+    // Error
+    if (entry.error) {
+      const errDetails = document.createElement('details');
+      errDetails.open = true;
+      const errSummary = document.createElement('summary');
+      errSummary.textContent = 'Error';
+      errSummary.style.color = 'var(--red)';
+      errDetails.appendChild(errSummary);
+      const pre = document.createElement('pre');
+      pre.className = 'error-block';
+      pre.textContent = entry.error;
+      errDetails.appendChild(pre);
+      body.appendChild(errDetails);
+    }
+
+    // Children
+    if (entry.children && entry.children.length > 0) {
+      body.appendChild(renderChildrenPanel(entry.children, depth));
+    }
+
+    // Env Snapshot
+    if (entry.envSnapshot) {
+      const prevSnapshot = i > 0 ? trace[i - 1]?.envSnapshot : null;
+      body.appendChild(renderEnvInspector(entry.envSnapshot, prevSnapshot));
+    }
+
+    card.appendChild(body);
+    frag.appendChild(card);
+  });
+  return frag;
+}
+
+// ── Collapsible Section ──
+function renderCollapsible(title, contentFn, startCollapsed) {
+  const details = document.createElement('details');
+  if (!startCollapsed) details.open = true;
+  const summary = document.createElement('summary');
+  summary.textContent = title;
+  details.appendChild(summary);
+  // Lazy render content on first open
+  let rendered = false;
+  if (!startCollapsed) {
+    details.appendChild(contentFn());
+    rendered = true;
+  }
+  details.addEventListener('toggle', () => {
+    if (details.open && !rendered) {
+      details.appendChild(contentFn());
+      rendered = true;
+    }
+  });
+  return details;
+}
+
+// ── Children Panel ──
+function renderChildrenPanel(children, parentDepth) {
+  const panel = document.createElement('div');
+  panel.className = 'children-panel';
+  const details = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.innerHTML = `Children (${children.length})`;
+  details.appendChild(summary);
+
+  children.forEach((child) => {
+    const item = document.createElement('div');
+    item.className = 'child-item';
+
+    const childDetails = document.createElement('details');
+    const childSummary = document.createElement('summary');
+    childSummary.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12px;text-transform:none;letter-spacing:0;';
+
+    const failed = child.error || child.answer == null;
+    const statusBadge = failed
+      ? '<span class="badge badge-child-fail">failed</span>'
+      : '<span class="badge badge-child-ok">ok</span>';
+    const depthBadge = `<span class="badge badge-depth">d${child.depth}</span>`;
+
+    childSummary.innerHTML = `
+      ${depthBadge} ${statusBadge}
+      <span class="badge badge-code">${child.iterations}i</span>
+      <span class="child-query" title="${esc(child.query)}">${esc(truncate(child.query, 80))}</span>
+    `;
+    childDetails.appendChild(childSummary);
+
+    // Lazy render child timeline
+    let childRendered = false;
+    childDetails.addEventListener('toggle', () => {
+      if (childDetails.open && !childRendered) {
+        const tlDiv = document.createElement('div');
+        tlDiv.className = 'child-timeline';
+
+        if (child.answer != null) {
+          const ansDiv = document.createElement('div');
+          ansDiv.style.cssText = 'font-size:12px;color:var(--text-dim);margin-bottom:8px;';
+          ansDiv.innerHTML = `Answer: <span style="color:var(--text)">${esc(truncate(child.answer, 200))}</span>`;
+          tlDiv.appendChild(ansDiv);
+        }
+        if (child.error) {
+          const errDiv = document.createElement('pre');
+          errDiv.className = 'error-block';
+          errDiv.textContent = child.error;
+          errDiv.style.marginBottom = '8px';
+          tlDiv.appendChild(errDiv);
+        }
+        if (child.trace && child.trace.length > 0) {
+          tlDiv.appendChild(renderTimeline(child.trace, child.depth));
+        }
+        childDetails.appendChild(tlDiv);
+        childRendered = true;
+      }
+    });
+
+    item.appendChild(childDetails);
+    details.appendChild(item);
+  });
+
+  panel.appendChild(details);
+  return panel;
+}
+
+// ── Env Inspector ──
+function renderEnvInspector(snapshot, prevSnapshot) {
+  const details = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.textContent = 'Env Snapshot';
+  details.appendChild(summary);
+
+  const tree = document.createElement('div');
+  tree.className = 'env-tree';
+  tree.appendChild(renderJsonTree(snapshot, prevSnapshot, '', true));
+  details.appendChild(tree);
+  return details;
+}
+
+function renderJsonTree(value, prevValue, key, topLevel) {
+  if (value === null || value === undefined) {
+    const span = document.createElement('span');
+    if (key) span.innerHTML = `<span class="env-key">${esc(key)}</span>: `;
+    span.innerHTML += '<span class="env-null">null</span>';
+    maybeMarkChanged(span, key, value, prevValue);
+    return span;
+  }
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return renderObjectTree(value, prevValue, key, topLevel);
+  }
+
+  if (Array.isArray(value)) {
+    return renderArrayTree(value, prevValue, key, topLevel);
+  }
+
+  // Primitive
+  const span = document.createElement('span');
+  const changed = prevValue !== undefined && !deepEqual(value, prevValue);
+  const keyHtml = key ? `<span class="env-key${changed ? ' env-changed' : ''}">${esc(key)}</span>: ` : '';
+
+  if (typeof value === 'string') {
+    const display = value.length > 200 ? truncate(value, 200) : value;
+    span.innerHTML = keyHtml + `<span class="env-string">"${esc(display)}"</span>`;
+    if (value.length > 200) {
+      const btn = document.createElement('button');
+      btn.className = 'show-all-btn';
+      btn.textContent = `show all (${value.length} chars)`;
+      btn.addEventListener('click', () => {
+        const strSpan = span.querySelector('.env-string');
+        if (btn.textContent.startsWith('show')) {
+          strSpan.textContent = '"' + value + '"';
+          btn.textContent = 'truncate';
+        } else {
+          strSpan.textContent = '"' + truncate(value, 200) + '"';
+          btn.textContent = `show all (${value.length} chars)`;
+        }
+      });
+      span.appendChild(btn);
+    }
+  } else if (typeof value === 'number') {
+    span.innerHTML = keyHtml + `<span class="env-number">${value}</span>`;
+  } else if (typeof value === 'boolean') {
+    span.innerHTML = keyHtml + `<span class="env-bool">${value}</span>`;
+  } else {
+    span.innerHTML = keyHtml + `<span class="env-value">${esc(String(value))}</span>`;
+  }
+  return span;
+}
+
+function renderObjectTree(obj, prevObj, key, topLevel) {
+  const keys = Object.keys(obj);
+  if (keys.length === 0) {
+    const span = document.createElement('span');
+    if (key) span.innerHTML = `<span class="env-key">${esc(key)}</span>: `;
+    span.innerHTML += '{}';
+    return span;
+  }
+
+  const det = document.createElement('details');
+  if (topLevel) det.open = true;
+  const sum = document.createElement('summary');
+  const changed = prevObj !== undefined && !deepEqual(obj, prevObj);
+  const keyHtml = key ? `<span class="env-key${changed ? ' env-changed' : ''}">${esc(key)}</span>: ` : '';
+  sum.innerHTML = keyHtml + `{${keys.length} keys}`;
+  det.appendChild(sum);
+
+  const container = document.createElement('div');
+  container.style.marginLeft = '16px';
+  keys.forEach(k => {
+    const row = document.createElement('div');
+    const pv = (prevObj && typeof prevObj === 'object' && !Array.isArray(prevObj)) ? prevObj[k] : undefined;
+    row.appendChild(renderJsonTree(obj[k], pv, k, false));
+    container.appendChild(row);
+  });
+  det.appendChild(container);
+  return det;
+}
+
+function renderArrayTree(arr, prevArr, key, topLevel) {
+  if (arr.length === 0) {
+    const span = document.createElement('span');
+    if (key) span.innerHTML = `<span class="env-key">${esc(key)}</span>: `;
+    span.innerHTML += '[]';
+    return span;
+  }
+
+  const det = document.createElement('details');
+  if (topLevel) det.open = true;
+  const sum = document.createElement('summary');
+  const changed = prevArr !== undefined && !deepEqual(arr, prevArr);
+  const keyHtml = key ? `<span class="env-key${changed ? ' env-changed' : ''}">${esc(key)}</span>: ` : '';
+  sum.innerHTML = keyHtml + `[${arr.length} items]`;
+  det.appendChild(sum);
+
+  const container = document.createElement('div');
+  container.style.marginLeft = '16px';
+
+  const showCount = Math.min(arr.length, 20);
+  for (let i = 0; i < showCount; i++) {
+    const row = document.createElement('div');
+    const pv = (Array.isArray(prevArr) && i < prevArr.length) ? prevArr[i] : undefined;
+    row.appendChild(renderJsonTree(arr[i], pv, String(i), false));
+    container.appendChild(row);
+  }
+  if (arr.length > 20) {
+    const moreBtn = document.createElement('button');
+    moreBtn.className = 'show-all-btn';
+    moreBtn.textContent = `show all (${arr.length} items)`;
+    moreBtn.addEventListener('click', () => {
+      if (moreBtn.textContent.startsWith('show')) {
+        for (let i = 20; i < arr.length; i++) {
+          const row = document.createElement('div');
+          const pv = (Array.isArray(prevArr) && i < prevArr.length) ? prevArr[i] : undefined;
+          row.appendChild(renderJsonTree(arr[i], pv, String(i), false));
+          container.insertBefore(row, moreBtn);
+        }
+        moreBtn.textContent = 'collapse';
+      } else {
+        while (container.children.length > 21) {
+          container.removeChild(container.children[20]);
+        }
+        moreBtn.textContent = `show all (${arr.length} items)`;
+      }
+    });
+    container.appendChild(moreBtn);
+  }
+  det.appendChild(container);
+  return det;
+}
+
+function maybeMarkChanged(span, key, value, prevValue) {
+  if (prevValue !== undefined && !deepEqual(value, prevValue)) {
+    const keyEl = span.querySelector('.env-key');
+    if (keyEl) keyEl.classList.add('env-changed');
+  }
+}
+
+// ── Game Board Viewer ──
+function renderGameBoard(actionLog) {
+  const section = document.createElement('div');
+  section.id = 'game-board-section';
+  section.innerHTML = '<h3>Game Board (ARC-3)</h3>';
+
+  const canvas = document.createElement('canvas');
+  canvas.id = 'game-canvas';
+  const cellSize = 6;
+  // Determine grid size from first frame
+  const firstFrame = actionLog[0].resultFrame.frame;
+  const height = firstFrame[0].length;
+  const width = firstFrame[0][0].length;
+  canvas.width = width * cellSize;
+  canvas.height = height * cellSize;
+  section.appendChild(canvas);
+
+  const controls = document.createElement('div');
+  controls.className = 'game-board-controls';
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.min = '0';
+  slider.max = String(actionLog.length - 1);
+  slider.value = '0';
+  const stepLabel = document.createElement('span');
+  stepLabel.style.cssText = 'font-family:var(--mono);font-size:12px;min-width:60px;';
+  stepLabel.textContent = `0 / ${actionLog.length - 1}`;
+  controls.appendChild(slider);
+  controls.appendChild(stepLabel);
+  section.appendChild(controls);
+
+  const info = document.createElement('div');
+  info.className = 'game-board-info';
+  section.appendChild(info);
+
+  const ctx = canvas.getContext('2d');
+
+  function drawFrame(index) {
+    const entry = actionLog[index];
+    const frame = entry.resultFrame.frame;
+    const h = frame[0].length;
+    const w = frame[0][0].length;
+    for (let row = 0; row < h; row++) {
+      for (let col = 0; col < w; col++) {
+        const colorIdx = frame[0][row][col];
+        ctx.fillStyle = ARC_COLORS[colorIdx] || '#000000';
+        ctx.fillRect(col * cellSize, row * cellSize, cellSize, cellSize);
+      }
+    }
+
+    stepLabel.textContent = `${index} / ${actionLog.length - 1}`;
+    const actionName = ACTION_NAMES[entry.action] || `Action ${entry.action}`;
+    let infoHtml = `
+      <span>Action: <span class="val">${index} - ${esc(actionName)}</span></span>
+      <span>State: <span class="val">${esc(entry.resultFrame.state)}</span></span>
+      <span>Levels: <span class="val">${entry.resultFrame.levels_completed}/${entry.resultFrame.win_levels}</span></span>
+      <span>Time: <span class="val">${formatMs(entry.timestampMs)}</span></span>
+    `;
+    if (entry.action === 6 && entry.x != null && entry.y != null) {
+      infoHtml += `<span>Click: <span class="val">(${entry.x}, ${entry.y})</span></span>`;
+    }
+    info.innerHTML = infoHtml;
+  }
+
+  slider.addEventListener('input', () => drawFrame(parseInt(slider.value)));
+
+  // Draw initial frame
+  drawFrame(0);
+  return section;
+}
+
+// ── Syntax Highlighting ──
+const JS_KEYWORDS = new Set([
+  'async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue',
+  'debugger', 'default', 'delete', 'do', 'else', 'export', 'extends', 'finally',
+  'for', 'from', 'function', 'if', 'import', 'in', 'instanceof', 'let', 'new',
+  'of', 'return', 'static', 'super', 'switch', 'this', 'throw', 'try', 'typeof',
+  'var', 'void', 'while', 'with', 'yield', 'true', 'false', 'null', 'undefined',
+  'console', 'JSON', 'Math', 'Array', 'Object', 'String', 'Number', 'Promise',
+  'Map', 'Set', 'RegExp', 'Error', 'Date'
+]);
+
+function highlightJS(code) {
+  // Escape HTML first
+  let escaped = esc(code);
+
+  // Comments: // ... and /* ... */
+  escaped = escaped.replace(/(\/\/[^\n]*)/g, '<span class="cmt">$1</span>');
+  escaped = escaped.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="cmt">$1</span>');
+
+  // Strings: handle template literals, double and single quotes
+  // We do this carefully to avoid breaking HTML entities
+  escaped = escaped.replace(/(`(?:[^`\\]|\\.)*`)/g, '<span class="str">$1</span>');
+  escaped = escaped.replace(/("(?:[^"\\]|\\.)*")/g, '<span class="str">$1</span>');
+  escaped = escaped.replace(/('(?:[^'\\]|\\.)*')/g, '<span class="str">$1</span>');
+
+  // Numbers
+  escaped = escaped.replace(/\b(\d+(?:\.\d+)?(?:e[+-]?\d+)?)\b/g, '<span class="num">$1</span>');
+
+  // Keywords (word boundary match)
+  const kwPattern = new RegExp('\\b(' + Array.from(JS_KEYWORDS).join('|') + ')\\b', 'g');
+  escaped = escaped.replace(kwPattern, '<span class="kw">$1</span>');
+
+  // Function calls: word followed by (
+  escaped = escaped.replace(/\b([a-zA-Z_$][\w$]*)\s*(?=\()/g, (m, fn) => {
+    if (JS_KEYWORDS.has(fn)) return m; // Already highlighted as keyword
+    return `<span class="fn">${fn}</span>`;
+  });
+
+  return escaped;
+}
+
+// ── Utilities ──
+function esc(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function truncate(str, max) {
+  if (str.length <= max) return str;
+  return str.slice(0, max) + '...';
+}
+
+function formatMs(ms) {
+  if (ms == null) return '?';
+  if (ms < 1000) return ms + 'ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+  const mins = Math.floor(ms / 60000);
+  const secs = ((ms % 60000) / 1000).toFixed(0);
+  return mins + 'm' + secs + 's';
+}
+
+function formatNum(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(n);
+}
+
+function formatTimestamp(ts) {
+  if (!ts) return '?';
+  try {
+    const d = new Date(ts);
+    return d.toLocaleString();
+  } catch { return ts; }
+}
+
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (typeof a !== typeof b) return false;
+  if (typeof a !== 'object') return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const k of keysA) {
+    if (!deepEqual(a[k], b[k])) return false;
+  }
+  return true;
+}
+
+function resetViewer() {
+  data = null;
+  selectedTaskIndex = -1;
+  app.classList.remove('visible');
+  dropZone.style.display = '';
+  fileInput.value = '';
+}
+</script>
+</body>
+</html>

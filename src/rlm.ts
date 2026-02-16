@@ -39,6 +39,10 @@ export interface RlmOptions {
 	 * app body is looked up here and used as the child's system prompt.
 	 */
 	childApps?: Record<string, string>;
+	/** When true, child rlm() traces are captured in parent trace entries. Default: false. */
+	traceChildren?: boolean;
+	/** When true, sandbox variable snapshots are captured after each iteration. Default: false. */
+	traceSnapshots?: boolean;
 }
 
 export interface RlmResult {
@@ -52,6 +56,17 @@ export interface TraceEntry {
 	code: string[];
 	output: string;
 	error: string | null;
+	children?: ChildTrace[];
+	envSnapshot?: Record<string, unknown>;
+}
+
+export interface ChildTrace {
+	query: string;
+	depth: number;
+	answer: string | null;
+	iterations: number;
+	trace: TraceEntry[];
+	error?: string;
 }
 
 /** Error with partial trace for diagnostics. */
@@ -95,6 +110,13 @@ interface ContextStore {
 	locals: Map<string, LocalStore>;
 }
 
+
+/** Keys to exclude from environment snapshots (sandbox infrastructure, not user variables). */
+const SNAPSHOT_EXCLUDE_KEYS = new Set([
+	'console', 'require', 'setTimeout', 'setInterval',
+	'clearTimeout', 'clearInterval', 'URL', 'URLSearchParams',
+	'TextEncoder', 'TextDecoder',
+]);
 
 function buildOrientationBlock(
 	invocationId: string,
@@ -142,6 +164,8 @@ export async function rlm(query: string, context: string | undefined, options: R
 		sandboxGlobals: options.sandboxGlobals,
 		globalDocs: options.globalDocs,
 		childApps: options.childApps,
+		traceChildren: options.traceChildren ?? false,
+		traceSnapshots: options.traceSnapshots ?? false,
 	};
 
 	const modelTable = buildModelTable(opts.models);
@@ -154,6 +178,19 @@ export async function rlm(query: string, context: string | undefined, options: R
 	if (opts.sandboxGlobals) {
 		for (const [name, value] of Object.entries(opts.sandboxGlobals)) {
 			env.set(name, value);
+		}
+	}
+
+	const childTraceSlot: { current: ChildTrace[] | null } = { current: null };
+
+	const snapshotExcludeKeys = new Set(SNAPSHOT_EXCLUDE_KEYS);
+	snapshotExcludeKeys.add('rlm');
+	snapshotExcludeKeys.add('__rlm');
+	snapshotExcludeKeys.add('__ctx');
+	snapshotExcludeKeys.add('context');
+	if (opts.sandboxGlobals) {
+		for (const key of Object.keys(opts.sandboxGlobals)) {
+			snapshotExcludeKeys.add(key);
 		}
 	}
 
@@ -296,6 +333,10 @@ export async function rlm(query: string, context: string | undefined, options: R
 		const trace: TraceEntry[] = [];
 
 		for (let iteration = 0; iteration < effectiveMaxIterations; iteration++) {
+			if (opts.traceChildren) {
+				childTraceSlot.current = [];
+			}
+
 			let response: string;
 			try {
 				response = await callLLM(messages, effectiveSystemPrompt);
@@ -386,7 +427,14 @@ export async function rlm(query: string, context: string | undefined, options: R
 						break;
 					}
 					const answer = typeof returnValue === "object" ? JSON.stringify(returnValue) : String(returnValue);
-					trace.push({ reasoning: response, code: codeBlocks, output: combinedOutput, error: combinedError });
+					const entry: TraceEntry = { reasoning: response, code: codeBlocks, output: combinedOutput, error: combinedError };
+					if (opts.traceChildren && childTraceSlot.current && childTraceSlot.current.length > 0) {
+						entry.children = childTraceSlot.current;
+					}
+					if (opts.traceSnapshots) {
+						entry.envSnapshot = env.snapshot(snapshotExcludeKeys);
+					}
+					trace.push(entry);
 					return { answer, iterations: iteration + 1, trace };
 				}
 			}
@@ -396,7 +444,14 @@ export async function rlm(query: string, context: string | undefined, options: R
 				combinedOutput += (combinedOutput ? "\n" : "") + blocksDiscardedWarning;
 			}
 
-			trace.push({ reasoning: response, code: codeBlocks, output: combinedOutput, error: combinedError });
+			const entry: TraceEntry = { reasoning: response, code: codeBlocks, output: combinedOutput, error: combinedError };
+			if (opts.traceChildren && childTraceSlot.current && childTraceSlot.current.length > 0) {
+				entry.children = childTraceSlot.current;
+			}
+			if (opts.traceSnapshots) {
+				entry.envSnapshot = env.snapshot(snapshotExcludeKeys);
+			}
+			trace.push(entry);
 
 			if (codeBlocks.length > 0) {
 				let outputMsg = combinedOutput || "(no output)";
@@ -487,7 +542,28 @@ export async function rlm(query: string, context: string | undefined, options: R
 		const promise = (async () => {
 			try {
 				const result = await rlmInternal(q, c, savedDepth + 1, childLineage, childInvocationId, callerInvocationId, resolvedSystemPrompt, modelCallLLM, rlmOpts?.maxIterations);
+				if (opts.traceChildren && childTraceSlot.current) {
+					childTraceSlot.current.push({
+						query: q,
+						depth: savedDepth + 1,
+						answer: result.answer,
+						iterations: result.iterations,
+						trace: result.trace,
+					});
+				}
 				return result.answer;
+			} catch (err) {
+				if (opts.traceChildren && childTraceSlot.current && err instanceof RlmError) {
+					childTraceSlot.current.push({
+						query: q,
+						depth: savedDepth + 1,
+						answer: null,
+						iterations: err.iterations,
+						trace: err.trace,
+						error: err.message,
+					});
+				}
+				throw err;
 			} finally {
 				activeDepth = savedDepth;
 			}

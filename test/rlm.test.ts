@@ -745,4 +745,129 @@ describe("rlm", () => {
 		expect(systemPrompts[1]).not.toContain("## My Plugin");
 		expect(systemPrompts[1]).toContain("The `myApi` global provides X.");
 	});
+
+	describe("traceChildren", () => {
+		it("child trace captured when traceChildren is true", async () => {
+			const callLLM: CallLLM = async (messages, _systemPrompt) => {
+				const userMsg = messages[0]?.content || "";
+				if (userMsg === "child task") {
+					return '```repl\nreturn "child answer"\n```';
+				}
+				return '```repl\nconst r = await rlm("child task")\nreturn r\n```';
+			};
+
+			const result = await rlm("parent task", undefined, {
+				callLLM,
+				maxDepth: 3,
+				traceChildren: true,
+			});
+
+			expect(result.answer).toBe("child answer");
+			// The parent's trace entry that delegated should have children
+			const entryWithChildren = result.trace.find(t => t.children && t.children.length > 0);
+			expect(entryWithChildren).toBeDefined();
+			expect(entryWithChildren!.children).toHaveLength(1);
+			expect(entryWithChildren!.children![0].answer).toBe("child answer");
+			expect(entryWithChildren!.children![0].trace.length).toBeGreaterThan(0);
+		});
+
+		it("child trace absent when traceChildren is false (default)", async () => {
+			const callLLM: CallLLM = async (messages, _systemPrompt) => {
+				const userMsg = messages[0]?.content || "";
+				if (userMsg === "child task") {
+					return '```repl\nreturn "child answer"\n```';
+				}
+				return '```repl\nconst r = await rlm("child task")\nreturn r\n```';
+			};
+
+			const result = await rlm("parent task", undefined, {
+				callLLM,
+				maxDepth: 3,
+				// traceChildren defaults to false
+			});
+
+			expect(result.answer).toBe("child answer");
+			// No trace entry should have children
+			for (const entry of result.trace) {
+				expect(entry.children).toBeUndefined();
+			}
+		});
+
+		it("failed child trace captured when traceChildren is true", async () => {
+			const callLLM: CallLLM = async (messages, _systemPrompt) => {
+				const userMsg = messages[0]?.content || "";
+				if (userMsg === "doomed child") {
+					return '```repl\nconsole.log("working...")\n```';
+				}
+				if (messages.length <= 1) {
+					return '```repl\ntry { await rlm("doomed child") } catch(e) { console.log("caught: " + e.message) }\n```';
+				}
+				return '```repl\nreturn "parent done"\n```';
+			};
+
+			const result = await rlm("parent task", undefined, {
+				callLLM,
+				maxDepth: 3,
+				maxIterations: 3,
+				traceChildren: true,
+			});
+
+			const entryWithChildren = result.trace.find(t => t.children && t.children.length > 0);
+			expect(entryWithChildren).toBeDefined();
+			expect(entryWithChildren!.children![0].error).toBeDefined();
+			expect(entryWithChildren!.children![0].answer).toBeNull();
+		});
+	});
+
+	describe("traceSnapshots", () => {
+		it("envSnapshot captured when traceSnapshots is true", async () => {
+			const callLLM = mockCallLLM([
+				'```repl\nx = 42\n```',
+				'```repl\nx = 99\nreturn x\n```',
+			]);
+
+			const result = await rlm("test", undefined, {
+				callLLM,
+				traceSnapshots: true,
+			});
+
+			expect(result.trace[0].envSnapshot).toBeDefined();
+			expect(result.trace[0].envSnapshot!.x).toBe(42);
+			expect(result.trace[1].envSnapshot).toBeDefined();
+			expect(result.trace[1].envSnapshot!.x).toBe(99);
+		});
+
+		it("envSnapshot absent when traceSnapshots is false (default)", async () => {
+			const callLLM = mockCallLLM([
+				'```repl\nx = 42\n```',
+				'```repl\nreturn x\n```',
+			]);
+
+			const result = await rlm("test", undefined, { callLLM });
+
+			for (const entry of result.trace) {
+				expect(entry.envSnapshot).toBeUndefined();
+			}
+		});
+
+		it("envSnapshot excludes sandboxGlobals keys", async () => {
+			const mockApi = { greet: () => "hi" };
+			const callLLM = mockCallLLM([
+				'```repl\nmyVar = "hello"\nreturn myVar\n```',
+				'```repl\nreturn myVar\n```',
+			]);
+
+			const result = await rlm("test", undefined, {
+				callLLM,
+				traceSnapshots: true,
+				sandboxGlobals: { myApi: mockApi },
+			});
+
+			const snap = result.trace[0].envSnapshot!;
+			expect(snap.myVar).toBe("hello");
+			expect(snap.myApi).toBeUndefined();
+			expect(snap.console).toBeUndefined();
+			expect(snap.rlm).toBeUndefined();
+		});
+	});
 });

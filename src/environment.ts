@@ -5,6 +5,7 @@ export interface RlmEnvironment {
 	exec(code: string): Promise<{ output: string; error: string | null; returnValue?: unknown }>;
 	get(name: string): unknown;
 	set(name: string, value: unknown): void;
+	snapshot(excludeKeys?: Set<string>, maxBytes?: number): Record<string, unknown>;
 }
 
 export class JsEnvironment implements RlmEnvironment {
@@ -92,6 +93,28 @@ export class JsEnvironment implements RlmEnvironment {
 
 	set(name: string, value: unknown): void {
 		this.context[name] = value;
+	}
+
+	snapshot(excludeKeys?: Set<string>, maxBytes = 256 * 1024): Record<string, unknown> {
+		const result: Record<string, unknown> = {};
+		let totalSize = 0;
+		for (const key of Object.getOwnPropertyNames(this.context)) {
+			if (excludeKeys?.has(key)) continue;
+			try {
+				const value = this.context[key];
+				if (typeof value === "function") continue;
+				const serialized = JSON.stringify(value);
+				totalSize += serialized.length;
+				if (totalSize > maxBytes) {
+					result[key] = `[truncated: ${serialized.length} chars]`;
+					continue;
+				}
+				result[key] = JSON.parse(serialized);
+			} catch {
+				result[key] = "[non-serializable]";
+			}
+		}
+		return result;
 	}
 
 	private hoistDeclarations(code: string): { declarations: string; body: string } {

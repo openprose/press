@@ -15,6 +15,15 @@ export interface Arc3Frame {
 	available_actions: number[];
 }
 
+export interface Arc3ActionEntry {
+	index: number;           // 0-based action index
+	action: number;          // action code (1-7)
+	x?: number;              // for action 6 (click)
+	y?: number;              // for action 6 (click)
+	resultFrame: Arc3Frame;  // the frame returned by this action
+	timestampMs: number;     // wall-clock time since start()
+}
+
 export interface Arc3Scorecard {
 	card_id: string;
 	score: number;
@@ -47,17 +56,22 @@ export class Arc3Client {
 	private _lastFrame: Arc3Frame | null = null;
 	private _actionCount: number = 0;
 	private _closed: boolean = false;
+	private _actionLog: Arc3ActionEntry[] = [];
+	private _startTime = 0;
+	private _logActions = false;
 
-	constructor(gameId: string, apiKey?: string) {
+	constructor(gameId: string, apiKey?: string, opts?: { logActions?: boolean }) {
 		this.gameId = gameId;
 		const key = apiKey ?? process.env.ARC3_API_KEY;
 		if (!key) throw new Error("ARC3_API_KEY not set");
 		this._apiKey = key;
+		if (opts?.logActions) this._logActions = true;
 	}
 
 	get lastFrame(): Arc3Frame | null { return this._lastFrame; }
 	get actionCount(): number { return this._actionCount; }
 	get scorecardId(): string | null { return this._scorecardId; }
+	get actionLog(): readonly Arc3ActionEntry[] { return this._actionLog; }
 
 	get completed(): boolean {
 		if (!this._lastFrame) return false;
@@ -78,6 +92,8 @@ export class Arc3Client {
 
 		this._lastFrame = frame;
 		this._actionCount = 0;
+		this._actionLog = [];
+		this._startTime = Date.now();
 		return frame;
 	}
 
@@ -99,6 +115,15 @@ export class Arc3Client {
 		const frame = await this._request("POST", `/api/cmd/${cmd}`, body) as unknown as Arc3Frame;
 		this._lastFrame = frame;
 		this._actionCount++;
+		if (this._logActions) {
+			this._actionLog.push({
+				index: this._actionCount - 1,
+				action,
+				...(action === 6 && x !== undefined && y !== undefined ? { x, y } : {}),
+				resultFrame: frame,
+				timestampMs: Date.now() - this._startTime,
+			});
+		}
 		return frame;
 	}
 

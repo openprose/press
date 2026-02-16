@@ -40,6 +40,10 @@ export interface HarnessConfig {
 	attempts?: number;
 	/** Pre-loaded app plugin bodies keyed by name, available for child agents via `app` option. */
 	childApps?: Record<string, string>;
+	/** When true, child rlm() traces are captured in parent trace entries. */
+	traceChildren?: boolean;
+	/** When true, sandbox variable snapshots are captured after each iteration. */
+	traceSnapshots?: boolean;
 	/** Create per-task sandbox globals. Called before rlm() for each task. */
 	setupSandbox?: (task: EvalTask) => Record<string, unknown>;
 	/** Cleanup after each task (success or error). */
@@ -111,7 +115,7 @@ export async function runEval(
 				}
 
 				try {
-					const result = await runSingleTask(task, config.callLLM, config.scoringFn, maxIterations, maxDepth, config.pluginBodies, config.models, config.maxBlocksPerIteration, config.setupSandbox, config.cleanupTask, config.getResultMetadata, config.globalDocs, config.childApps);
+					const result = await runSingleTask(task, config.callLLM, config.scoringFn, maxIterations, maxDepth, config.pluginBodies, config.models, config.maxBlocksPerIteration, config.setupSandbox, config.cleanupTask, config.getResultMetadata, config.globalDocs, config.childApps, config.traceChildren, config.traceSnapshots);
 					attemptScores.push(result.score);
 
 					if (!bestResult || result.score > bestResult.score) {
@@ -204,6 +208,8 @@ async function runSingleTask(
 	getResultMetadata?: (task: EvalTask) => Record<string, unknown> | undefined,
 	globalDocs?: string,
 	childApps?: Record<string, string>,
+	traceChildren?: boolean,
+	traceSnapshots?: boolean,
 ): Promise<EvalResult> {
 	const startTime = Date.now();
 
@@ -235,6 +241,8 @@ async function runSingleTask(
 			...(sandboxGlobals && { sandboxGlobals }),
 			...(globalDocs && { globalDocs }),
 			...(childApps && { childApps }),
+			...(traceChildren && { traceChildren }),
+			...(traceSnapshots && { traceSnapshots }),
 		});
 
 		const wallTimeMs = Date.now() - startTime;

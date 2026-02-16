@@ -225,4 +225,63 @@ describe("JsEnvironment", () => {
 		expect(results).toContain("L1: L1");
 		expect(results).toContain("L2: L2");
 	});
+
+	describe("snapshot", () => {
+		it("returns user variables set via set() and exec()", async () => {
+			const env = new JsEnvironment();
+			env.set("x", 42);
+			await env.exec("y = 'hello'");
+			const builtins = new Set(["console", "require", "setTimeout", "setInterval", "clearTimeout", "clearInterval", "URL", "URLSearchParams", "TextEncoder", "TextDecoder"]);
+			const snap = env.snapshot(builtins);
+			expect(snap.x).toBe(42);
+			expect(snap.y).toBe("hello");
+		});
+
+		it("excludes keys in the exclude set", () => {
+			const env = new JsEnvironment();
+			env.set("x", 10);
+			env.set("y", 20);
+			const snap = env.snapshot(new Set(["x"]));
+			expect(snap.x).toBeUndefined();
+			expect(snap.y).toBe(20);
+		});
+
+		it("skips functions", () => {
+			const env = new JsEnvironment();
+			env.set("fn", () => {});
+			env.set("val", 99);
+			const snap = env.snapshot();
+			expect(snap.fn).toBeUndefined();
+			expect(snap.val).toBe(99);
+		});
+
+		it("handles non-serializable values", () => {
+			const env = new JsEnvironment();
+			const circular: Record<string, unknown> = {};
+			circular.self = circular;
+			env.set("circular", circular);
+			const snap = env.snapshot();
+			expect(snap.circular).toBe("[non-serializable]");
+		});
+
+		it("respects size limit", () => {
+			const env = new JsEnvironment();
+			env.set("big", Array.from({ length: 1000 }, (_, i) => i));
+			const snap = env.snapshot(undefined, 100);
+			const values = Object.values(snap);
+			const hasTruncated = values.some(
+				(v) => typeof v === "string" && v.startsWith("[truncated:"),
+			);
+			expect(hasTruncated).toBe(true);
+		});
+
+		it("deep-copies values (mutation safety)", () => {
+			const env = new JsEnvironment();
+			const obj = { a: 1 };
+			env.set("obj", obj);
+			const snap = env.snapshot();
+			obj.a = 999;
+			expect(snap.obj).toEqual({ a: 1 });
+		});
+	});
 });

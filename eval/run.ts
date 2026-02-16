@@ -88,6 +88,9 @@ interface CliArgs {
 	maxBlocksPerIteration: number | null;
 	attempts: number;
 	game: string | null;
+	traceActions: boolean;
+	traceChildren: boolean;
+	traceSnapshots: boolean;
 }
 
 function usage(): never {
@@ -122,6 +125,10 @@ Options:
   --with-labels            OOLONG: use labeled context (context_window_text_with_labels)
   --model-alias <spec>     Register a model alias: alias=model[:tag1,tag2] (repeatable)
   --child-app <name>       Load a named app plugin for child delegation (repeatable)
+  --trace-children         Capture child agent traces in parent trace entries
+  --trace-snapshots        Capture sandbox variable snapshots per iteration
+  --trace-actions          ARC-3: record action log per task
+  --trace-full             Enable all trace options above
   --filter <expr>          OOLONG: filter tasks by field values (comma=AND, pipe=OR)
                            e.g. "task_group=TASK_TYPE.NUMERIC_ONE_CLASS"
                            e.g. "answer_type=ANSWER_TYPE.NUMERIC|ANSWER_TYPE.COMPARISON"
@@ -153,6 +160,16 @@ function parseArgs(argv: string[]): CliArgs {
 		}
 		if (arg === "--with-labels") {
 			flags.add("with-labels");
+		} else if (arg === "--trace-actions") {
+			flags.add("trace-actions");
+		} else if (arg === "--trace-children") {
+			flags.add("trace-children");
+		} else if (arg === "--trace-snapshots") {
+			flags.add("trace-snapshots");
+		} else if (arg === "--trace-full") {
+			flags.add("trace-children");
+			flags.add("trace-snapshots");
+			flags.add("trace-actions");
 		} else if (arg.startsWith("--") && i + 1 < argv.length) {
 			const key = arg.slice(2);
 			if (key === "model-alias") {
@@ -191,6 +208,9 @@ function parseArgs(argv: string[]): CliArgs {
 		rateLimit: parseFloat(args["rate-limit"] ?? "5"),
 		rateBurst: parseInt(args["rate-burst"] ?? "10", 10),
 		withLabels: flags.has("with-labels"),
+		traceActions: flags.has("trace-actions"),
+		traceChildren: flags.has("trace-children"),
+		traceSnapshots: flags.has("trace-snapshots"),
 		filter: args.filter ?? null,
 		selectedProblems: args["selected-problems"]
 			? args["selected-problems"].split(",").map((s) => s.trim())
@@ -380,7 +400,7 @@ function getBenchmarkConfig(args: CliArgs): BenchmarkConfig {
 				globalDocs: arc3GlobalDocs,
 				setupSandbox: (task) => {
 					const gameId = task.metadata?.gameId as string;
-					const client = new Arc3Client(gameId);
+					const client = new Arc3Client(gameId, undefined, { logActions: args.traceActions });
 					clients.set(task.id, client);
 					return { arc3: client };
 				},
@@ -390,6 +410,7 @@ function getBenchmarkConfig(args: CliArgs): BenchmarkConfig {
 					return {
 						scorecardId: client.scorecardId,
 						replayUrl: `https://three.arcprize.org/scorecards/${client.scorecardId}`,
+						...(client.actionLog.length > 0 && { actionLog: client.actionLog }),
 					};
 				},
 				cleanupTask: async (task) => {
@@ -495,6 +516,15 @@ async function main(): Promise<void> {
 	}
 	if (args.withLabels) {
 		console.log(`With Labels:     yes (using context_window_text_with_labels)`);
+	}
+	if (args.traceActions) {
+		console.log(`Trace Actions:   yes (recording action log per task)`);
+	}
+	if (args.traceChildren) {
+		console.log(`Trace Children:  yes (capturing child agent traces)`);
+	}
+	if (args.traceSnapshots) {
+		console.log(`Trace Snapshots: yes (capturing env snapshots per iteration)`);
 	}
 	if (args.attempts > 1) {
 		console.log(`Attempts:        ${args.attempts} (pass@${args.attempts})`);
@@ -614,6 +644,8 @@ async function main(): Promise<void> {
 		...((benchmarkConfig.childApps || cliChildApps) && {
 			childApps: { ...benchmarkConfig.childApps, ...cliChildApps },
 		}),
+		...(args.traceChildren && { traceChildren: true }),
+		...(args.traceSnapshots && { traceSnapshots: true }),
 		filter: args.filter ?? undefined,
 		onProgress: printProgress,
 	});
