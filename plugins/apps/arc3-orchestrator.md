@@ -1,7 +1,7 @@
 ---
 name: arc3-orchestrator
 kind: app
-version: 1.5.0
+version: 1.6.0
 description: Delegate each ARC-3 level to a child agent, accumulate game knowledge across levels
 author: sl
 tags: [arc, arc3, delegation, orchestrator]
@@ -42,9 +42,10 @@ if (typeof __knowledge !== 'undefined') {
   console.log("Already started. Skipping.");
 } else {
   const init = await arc3.start();
-  __knowledge = { objectTypes: {}, mechanics: {}, rules: [], openQuestions: [] };
+  __knowledge = { objectTypes: {}, mechanics: {}, hazards: {}, rules: [], openQuestions: [] };
   __outerIter = 0;
   __levelAttempts = {};
+  __totalActions = 0;
   console.log("Game started. State:", init.state, "Levels:", init.levels_completed);
   console.log("NEXT: Delegate level 1. Do NOT add more code to this iteration.");
 }
@@ -65,34 +66,45 @@ if (obs.state === "WIN" || obs.state === "GAME_OVER") {
   return(JSON.stringify(await arc3.getScore()));
 }
 
-// === ESCALATION: Max 2 attempts per level, then skip ===
+// === ESCALATION: Max 2 completion attempts, then exploration-only ===
 const level = obs.levels_completed + 1;
 __levelAttempts[level] = (__levelAttempts[level] || 0) + 1;
 
 let summary = "";
-if (__levelAttempts[level] > 2) {
-  console.log(`Level ${level}: 2 attempts exhausted, skipping delegation.`);
-  summary = "SKIPPED (max attempts)";
-} else {
-  // === MANDATORY DELEGATION BLOCK — DO NOT MODIFY ===
-  __level_task = { level, knowledge: __knowledge };
+// === MANDATORY DELEGATION BLOCK — DO NOT MODIFY ===
+__level_task = { level, knowledge: __knowledge };
 
+if (__levelAttempts[level] > 2) {
+  // Exploration-only: gather knowledge without expecting completion
+  summary = await rlm(
+    `Explore level ${level}/7 of an interactive grid game. ` +
+    `Read __level_task.knowledge for discoveries from prior levels. ` +
+    `Do NOT try to complete the level. Focus on mapping the environment ` +
+    `and interacting with objects you have not seen before. ` +
+    `Return a JSON string with your observations. Minimize actions.`,
+    { app: "arc3-player", model: "intelligent", maxIterations: 15 }
+  );
+} else {
   summary = await rlm(
     `Play level ${level}/7 of an interactive grid game. ` +
     `Read __level_task.knowledge for discoveries from prior levels. ` +
     `Learn mechanics through experimentation, then complete the level efficiently. ` +
-    `Write updated knowledge and results to __level_result. ` +
+    `Return a JSON string with {knowledge, actions, completed}. ` +
     `Minimize actions — you are scored on efficiency.`,
     { app: "arc3-player", model: "intelligent", maxIterations: 25 }
   );
-  // === END MANDATORY BLOCK ===
 }
+// === END MANDATORY BLOCK ===
 
 console.log(`Level ${level} (attempt ${__levelAttempts[level]}): ${summary}`);
 
-// Curate knowledge from child's results (__level_result is auto-set by the child's step() wrapper)
-if (__level_result?.knowledge) {
-  const childK = __level_result.knowledge;
+// Curate knowledge from child's RETURN VALUE (the only working child→parent channel)
+let childResult = null;
+try { childResult = JSON.parse(summary); } catch(e) { /* non-JSON return */ }
+
+if (childResult?.knowledge) {
+  const childK = childResult.knowledge;
+  __totalActions += (childResult.actions || 0);
 
   // Promote: anything confirmed across 2+ levels is a rule
   for (const [key, mech] of Object.entries(childK.mechanics || {})) {
@@ -102,19 +114,22 @@ if (__level_result?.knowledge) {
     }
     __knowledge.mechanics[key] = mech;
   }
-  // Merge object types, hypotheses, open questions
+  // Merge object types, hazards, hypotheses, open questions
   Object.assign(__knowledge.objectTypes, childK.objectTypes || {});
+  Object.assign(__knowledge.hazards, childK.hazards || {});
   __knowledge.rules = [...new Set([...__knowledge.rules, ...(childK.rules || [])])];
   __knowledge.openQuestions = (childK.openQuestions || [])
     .filter(q => !__knowledge.rules.some(r => r.toLowerCase().includes(q.toLowerCase().slice(0, 20))));
 
-  console.log(`Knowledge: ${Object.keys(__knowledge.mechanics).length} mechanics, ${__knowledge.rules.length} rules`);
+  console.log(`Knowledge: ${Object.keys(__knowledge.mechanics).length} mechanics, ${__knowledge.rules.length} rules, ${Object.keys(__knowledge.hazards).length} hazards`);
+} else if (summary && summary.length > 20) {
+  // Free-text return — store as a rule
+  __knowledge.rules.push(`Level ${level} child report: ${summary.slice(0, 200)}`);
+  console.log(`Stored free-text report as rule. ${__knowledge.rules.length} rules total.`);
 }
-// Reset __level_result for next child
-__level_result = undefined;
 
 const post = arc3.observe();
-console.log(`Post: state=${post.state}, levels=${post.levels_completed}, actions=${arc3.actionCount}`);
+console.log(`Post: state=${post.state}, levels=${post.levels_completed}, ~${__totalActions} est. actions`);
 if (post.state === "WIN" || post.state === "GAME_OVER") {
   return(JSON.stringify(await arc3.getScore()));
 }
@@ -123,24 +138,29 @@ if (post.state === "WIN" || post.state === "GAME_OVER") {
 
 ### After delegation: ONLY these actions are allowed
 
-1. Read `__level_result` if available. Curate knowledge (code above does this automatically).
+1. Parse child's return string as JSON. Curate knowledge (code above does this automatically).
 2. Check `arc3.observe().state`. If WIN or GAME_OVER, return scorecard.
 3. Proceed to next outer iteration to delegate the next level.
 
 **You MUST NOT call `arc3.step()` from the orchestrator — you do not have access to it.** You CANNOT interpret `frame[0]` data — you lack the perceptual toolkit. The orchestrator is a manager, not a player. Always delegate.
 
+### Knowledge Transfer Architecture
+
+- **Parent → Child:** Set `__level_task = { level, knowledge }` before `rlm()`. The child reads it.
+- **Child → Parent:** The child's `return(JSON.stringify({...}))` becomes the return value of `rlm()`. This is the ONLY working channel — sandbox variables do NOT propagate from child to parent.
+
 ### Escalation Protocol (enforced via `__levelAttempts` in the code template)
 
-The delegation code tracks `__levelAttempts[level]`. After 2 attempts on a level, it logs a skip message. Do NOT manually override this counter or add extra delegation attempts. The code handles it.
+The delegation code tracks `__levelAttempts[level]`. After 2 completion attempts, subsequent delegations switch to exploration-only mode (shorter budget, no completion expectation). Do NOT manually override this counter. The code handles it.
 
 ### Rules
 
 1. Call `arc3.start()` exactly once in iteration 0 — emit only ONE code block, never duplicate it
 2. Delegate exactly one level per outer iteration using `app: "arc3-player"` — never `systemPrompt`
-3. Pass knowledge via `__level_task` / `__level_result` sandbox variables — never inline data in prompts
+3. Pass knowledge to child via `__level_task`. Read knowledge from child's RETURN STRING (parse as JSON) — never from sandbox variables
 4. NEVER call `arc3.step()` from the orchestrator — you do not have access to it
 5. NEVER read, analyze, print, or inspect `frame[0]` — you lack the vision toolkit to interpret it
-6. Max 2 delegation attempts per level (enforced by `__levelAttempts` counter in code)
+6. Max 2 completion attempts per level, then exploration-only (enforced by `__levelAttempts`)
 7. Curate knowledge between levels: promote confirmed discoveries, remove contradicted ones
 8. Return the scorecard JSON on WIN or GAME_OVER
 9. Track `__outerIter` — return scorecard by iteration 28 to avoid timeout

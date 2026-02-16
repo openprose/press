@@ -1,7 +1,7 @@
 ---
 name: arc3-player
 kind: app
-version: 1.5.0
+version: 1.6.0
 description: Play one ARC-3 level — learn mechanics by experimenting, then execute strategically
 author: sl
 tags: [arc, arc3, exploration, learning]
@@ -20,7 +20,7 @@ You play ONE level of an interactive 64x64 grid game. The rules are unknown — 
    ```
    This checks the iteration deadline and action budget. It is already defined from setup. Just call it.
 2. NEVER call `arc3.start()`. The game is already running. Calling it resets ALL progress.
-3. Use `step(action)` to take actions. `arc3.step()` has been replaced — both call the same budget-enforced wrapper. There is no way to bypass the action counter.
+3. Use `step(action)` to take actions. `arc3.step()` has been replaced — both call the same budget-enforced wrapper (35 actions max). There is no way to bypass the action counter.
 4. Iteration 1: call `await __discover()` to test each direction and get a diff analysis. Do not skip this.
 5. Plan your work: iter 0 = setup, iter 1 = discover, iters 2-8 = play, iter 9 = return results.
 6. Return a result before timeout. Partial knowledge is infinitely better than no return.
@@ -53,13 +53,16 @@ __done = false;
 // === GUARD: Call `if (__guard()) return(__guard.msg);` as first line of every code block ===
 __guard = function() {
   __iterCount++;
+  if (__done && __returnPayload) {
+    __guard.msg = __returnPayload;
+    return true;
+  }
   if (__done) {
-    __guard.msg = "Level done. Results in __level_result.";
+    __guard.msg = JSON.stringify({ knowledge: __k || {}, actions: __actionsThisLevel || 0, completed: false });
     return true;
   }
   if (__iterCount >= 10) {
-    __level_result = __level_result || { knowledge: __k || {}, actions: __actionsThisLevel || 0, completed: false };
-    __guard.msg = "Emergency return at iter " + __iterCount + ". Results in __level_result.";
+    __guard.msg = JSON.stringify({ knowledge: __k || {}, actions: __actionsThisLevel || 0, completed: false, reason: 'timeout' });
     return true;
   }
   return false;
@@ -68,22 +71,23 @@ __guard.msg = "";
 
 // === INTERCEPT arc3.step — budget enforcement is UNAVOIDABLE ===
 const __originalStep = arc3.step.bind(arc3);
+__returnPayload = null;
 arc3.step = async function(action) {
   __actionsThisLevel++;
-  if (__actionsThisLevel > 20) {
-    __level_result = __level_result || { knowledge: __k, actions: __actionsThisLevel, completed: false, reason: 'budget' };
+  if (__actionsThisLevel > 35) {
     __done = true;
+    __returnPayload = JSON.stringify({ knowledge: __k, actions: __actionsThisLevel, completed: false, reason: 'budget' });
     return { state: 'BUDGET_EXCEEDED', frame: [arc3.observe().frame[0]], levels_completed: arc3.observe().levels_completed, available_actions: [] };
   }
   const result = await __originalStep(action);
   if (result.state === 'GAME_OVER') {
     __k.rules.push("GAME_OVER at " + __actionsThisLevel + " actions");
-    __level_result = { knowledge: __k, actions: __actionsThisLevel, completed: false, reason: 'game_over' };
     __done = true;
+    __returnPayload = JSON.stringify({ knowledge: __k, actions: __actionsThisLevel, completed: false, reason: 'game_over' });
   }
   if (result.levels_completed > __startLevel) {
-    __level_result = { knowledge: __k, actions: __actionsThisLevel, completed: true };
     __done = true;
+    __returnPayload = JSON.stringify({ knowledge: __k, actions: __actionsThisLevel, completed: true });
   }
   return result;
 };
@@ -232,13 +236,13 @@ __grid = grid;
 
 ### On Completion
 
+Return a JSON string — this is the ONLY way to send knowledge back to the orchestrator. Sandbox variables do NOT propagate to the parent.
+
 ```javascript
-__level_result = {
+const result = {
   knowledge: __k,
   actions: __actionsThisLevel,
   completed: arc3.observe().levels_completed > __startLevel,
 };
-return(`Level ${__startLevel + 1}: ${__level_result.completed ? 'done' : 'incomplete'}, ` +
-  `${__actionsThisLevel} actions, ${Object.keys(__k.mechanics).length} mechanics found. ` +
-  `Results in __level_result.`);
+return(JSON.stringify(result));
 ```
