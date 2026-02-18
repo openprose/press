@@ -1,5 +1,5 @@
 import { JsEnvironment } from "./environment.js";
-import { buildChildRepl, buildModelTable, formatGlobalDocs, SYSTEM_PROMPT } from "./system-prompt.js";
+import { buildModelTable, buildSystemPrompt } from "./system-prompt.js";
 
 export type CallLLM = (messages: Array<{ role: string; content: string }>, systemPrompt: string) => Promise<string>;
 
@@ -118,32 +118,6 @@ const SNAPSHOT_EXCLUDE_KEYS = new Set([
 	'TextEncoder', 'TextDecoder',
 ]);
 
-function buildOrientationBlock(
-	invocationId: string,
-	parentId: string | null,
-	depth: number,
-	maxDepth: number,
-	effectiveMaxIterations: number,
-	lineage: readonly string[],
-): string {
-	const rootTask = lineage[0].length > 200 ? lineage[0].substring(0, 200) + "..." : lineage[0];
-
-	const roleDesc = depth === 0
-		? "You are the root orchestrator."
-		: `Parent: "${parentId}". Root task: "${rootTask}"`;
-	const delegationDesc = depth < maxDepth
-		? `You can delegate to child RLMs at depth ${depth + 1} (max depth: ${maxDepth}).`
-		: "You are at the maximum delegation depth and cannot spawn child agents.";
-
-	return (
-		`\n\n## Your Position\n\n` +
-		`Agent "${invocationId}" — depth ${depth} of ${maxDepth} (0-indexed).\n` +
-		`${roleDesc}\n` +
-		`Iteration budget: ${effectiveMaxIterations} iterations (use them wisely).\n` +
-		`${delegationDesc}`
-	);
-}
-
 function extractCodeBlocks(text: string): string[] {
 	const blocks: string[] = [];
 	const regex = /```(?:javascript|js|repl)\n([\s\S]*?)```/g;
@@ -169,9 +143,6 @@ export async function rlm(query: string, context: string | undefined, options: R
 	};
 
 	const modelTable = buildModelTable(opts.models);
-	const globalDocsSection = formatGlobalDocs(opts.globalDocs);
-	const basePrompt = SYSTEM_PROMPT + globalDocsSection + modelTable;
-	const rootSystemPrompt = opts.pluginBodies ? `${basePrompt}\n\n---\n\n${opts.pluginBodies}` : basePrompt;
 
 	const env = new JsEnvironment();
 
@@ -283,23 +254,26 @@ export async function rlm(query: string, context: string | undefined, options: R
 
 		const canDelegate = depth < opts.maxDepth;
 
-		// Build orientation block and effective system prompt
-		const orientationBlock = buildOrientationBlock(
-			invocationId, parentId, depth, opts.maxDepth,
-			effectiveMaxIterations, lineage,
-		);
-		let effectiveSystemPrompt: string;
+		// Build unified system prompt
+		let programContent: string | undefined;
 		if (customSystemPrompt) {
-			// Parent provided custom instructions — use child base template
-			const childBase = buildChildRepl(canDelegate);
-			effectiveSystemPrompt = customSystemPrompt + childBase + globalDocsSection + modelTable + orientationBlock;
-		} else if (depth === 0) {
-			// Root agent gets the full system prompt with plugins
-			effectiveSystemPrompt = rootSystemPrompt + orientationBlock;
-		} else {
-			// Non-root child without custom prompt — use base system prompt, no plugins
-			effectiveSystemPrompt = SYSTEM_PROMPT + globalDocsSection + modelTable + orientationBlock;
+			programContent = customSystemPrompt;
+		} else if (depth === 0 && opts.pluginBodies) {
+			programContent = opts.pluginBodies;
 		}
+
+		const effectiveSystemPrompt = buildSystemPrompt({
+			canDelegate,
+			invocationId,
+			parentId,
+			depth,
+			maxDepth: opts.maxDepth,
+			maxIterations: effectiveMaxIterations,
+			lineage,
+			programContent,
+			globalDocs: opts.globalDocs,
+			modelTable,
+		});
 
 		// Initialize local store for this invocation
 		if (!contextStore.locals.has(invocationId)) {

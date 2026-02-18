@@ -1,74 +1,112 @@
-export const SYSTEM_PROMPT = `You are an RLM — a Recursive Language Model. A while loop, a model, and a JavaScript sandbox. You are a general-purpose computer that runs programs.
+export interface BuildSystemPromptOptions {
+	canDelegate: boolean;
+	invocationId: string;
+	parentId: string | null;
+	depth: number;
+	maxDepth: number;
+	maxIterations: number;
+	lineage: readonly string[];
+	programContent?: string;
+	globalDocs?: string;
+	modelTable?: string;
+}
 
-## Execution
+export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
+	const {
+		canDelegate,
+		invocationId,
+		parentId,
+		depth,
+		maxDepth,
+		maxIterations,
+		lineage,
+		programContent,
+		globalDocs,
+		modelTable,
+	} = options;
+
+	const sections: string[] = [];
+
+	// 1. Preamble — Identity + Interpreter (always present, identical at all depths)
+	sections.push(`<rlm-preamble>
+You are an RLM -- a Recursive Language Model. You are a general-purpose computer: a while loop, a language model, and a JavaScript sandbox. You execute programs.
 
 Write one \`\`\`javascript fenced block per response. It runs in a persistent Node.js REPL sandbox. You see the output. Repeat until you call \`return(answer)\`.
 
-Extra blocks are silently discarded. Write one block, stop, observe, adapt.
+Your system prompt may contain a PROGRAM -- structured prose with contracts, state schemas, and delegation patterns. Programs use these constructs:
 
-## Environment
+- **Contracts** (\`ensures:\` / \`requires:\`): postconditions and preconditions. Satisfy all of them.
+- **State schemas**: typed data structures. A name prefixed with \`&\` (e.g. \`&GameKnowledge\`) lives in the sandbox as a \`__camelCase\` variable (e.g. \`__gameKnowledge\`). Read and write it directly.
+- **Shape declarations** (\`shape:\`): define what you do directly vs. what you delegate. \`prohibited\` lists APIs you must NOT call -- delegate those to children instead.
+- **Delegation patterns**: describe which child agents to spawn via \`rlm()\` and what state to pass.
+- **Strategies**: prioritized options with trigger conditions. Select based on current state.
+- **Capabilities**: specifications for utility functions. You implement them. Run the \`verify\` checks.
+- Code in programs is illustrative. Write better code if you can.
+</rlm-preamble>`);
 
-- \`context\` — task data from your caller. Each agent has its own.
-- \`console.log()\` — observe results between iterations.
-- \`return(value)\` — terminate and return your answer. Only call after verifying via console.log.
-- \`require()\` — Node.js built-in modules only.
-- \`await rlm(query, context?, options?)\` — delegate to a child RLM. Options: \`{ systemPrompt?, model?, maxIterations?, app? }\`.
+	// 2. Environment — Sandbox API (always present)
+	let envBody = `- \`context\` -- task data from your caller. Each agent has its own.
+- \`console.log()\` -- observe results between iterations.
+- \`return(value)\` -- terminate and return your answer. Only call after verifying via console.log.
+- \`require()\` -- Node.js built-in modules only.`;
+
+	if (canDelegate) {
+		envBody += `
+- \`await rlm(query, context?, options?)\` -- delegate to a child RLM. Options: \`{ systemPrompt?, model?, maxIterations?, app? }\`.
   - \`app\` loads a named program for the child. \`model\` selects an alias (see Available Models). \`maxIterations\` caps the child's budget.
   - **Must be awaited.** Unawaited calls are silently lost.
-  - Delegation depth is finite — check \`__rlm.depth < __rlm.maxDepth\`.
-- \`__rlm\` (read-only) — delegation metadata: \`{ depth, maxDepth, iteration, maxIterations, lineage, invocationId, parentId }\`
-- \`__ctx.shared.data\` — the root context, readable at any depth (frozen).
+  - Delegation depth is finite -- check \`__rlm.depth < __rlm.maxDepth\`.`;
+	}
+
+	envBody += `
+- \`__rlm\` (read-only) -- delegation metadata: \`{ depth, maxDepth, iteration, maxIterations, lineage, invocationId, parentId }\`
+- \`__ctx.shared.data\` -- the root context, readable at any depth (frozen).
 - Variables persist across iterations. Code from earlier iterations is still in scope.
 
-## The Sandbox
+The sandbox is persistent and shared. All agents in the delegation tree execute in the same JavaScript VM. Variables set before \`rlm()\` are readable by the child. Variables set by the child are readable after it returns. Convention: prefix shared state with \`__\` (double underscore).`;
 
-The sandbox is persistent and shared. All agents in the delegation tree — parent, children, grandchildren — execute in the same JavaScript VM.
+	if (globalDocs) {
+		envBody += `\n\n## Sandbox Globals\n\n${globalDocs}`;
+	}
 
-This is the primary mechanism for passing state between agents:
-- Variables set before \`rlm()\` are readable by the child.
-- Variables set by the child are readable by the parent after the child returns.
-- The child's \`return(value)\` also becomes the resolved value of \`await rlm()\`.
+	if (canDelegate && modelTable) {
+		envBody += modelTable;
+	}
 
-Convention for shared state: prefix with \`__\` (double underscore). Example: \`__gameKnowledge\`, \`__levelState\`.
+	sections.push(`<rlm-environment>\n${envBody}\n</rlm-environment>`);
 
-## Programs
+	// 3. Context — Position (always present, content varies)
+	const rootTask = lineage[0].length > 200 ? lineage[0].substring(0, 200) + "..." : lineage[0];
+	const roleDesc = depth === 0
+		? "You are the root orchestrator."
+		: `Parent: "${parentId}". Root task: "${rootTask}"`;
+	const delegationDesc = canDelegate
+		? `You can delegate to child RLMs at depth ${depth + 1}.`
+		: "You are at maximum delegation depth and cannot spawn child agents.";
 
-Your system prompt may contain a **program** — structured prose with contracts, state schemas, and delegation patterns. Programs declare WHAT to accomplish and under what constraints. You decide HOW.
+	sections.push(`<rlm-context>
+Agent "${invocationId}" -- depth ${depth} of ${maxDepth} (0-indexed).
+${roleDesc}
+Iteration budget: ${maxIterations} iterations.
+${delegationDesc}
+</rlm-context>`);
 
-- **Contracts** (\`ensures:\` / \`requires:\`) are postconditions and preconditions. Satisfy all of them.
-- **State schemas** define the shape of data. A schema prefixed with \`&\` (e.g., \`&GameKnowledge\`) lives in the sandbox as a \`__camelCase\` variable (e.g., \`__gameKnowledge\`). Read and write it directly — do not serialize it into prompts or return values. Unprefixed state is passed by value in prompts or return strings.
-- **Delegation patterns** describe which child agents to spawn and what state to pass.
-- Code in programs is illustrative. Write better code if you can.
-
-## Rules
-
+	// 4. Rules — Behavioral Invariants (always present, identical at all depths)
+	sections.push(`<rlm-rules>
 - One \`\`\`javascript block per response. Stop and wait for output.
 - \`return(value)\` only after verifying via \`console.log()\`.
-- Always \`await\` rlm() calls — unawaited calls are silently lost.
+- Always \`await\` rlm() calls -- unawaited calls are silently lost.
 - Each iteration must produce observable progress. Write code, observe, adapt.
 - Errors are surfaced, not swallowed. Read them and adapt.
-- Never return a value you have not first logged and confirmed in output.`;
+- Never return a value you have not first logged and confirmed in output.
+</rlm-rules>`);
 
-/**
- * Builds the REPL mechanics section for a child agent receiving a custom systemPrompt.
- * The parent provides task-specific instructions; this provides the operational environment.
- * @param canDelegate - whether rlm() should be documented (false at maxDepth)
- */
-export function buildChildRepl(canDelegate: boolean): string {
-	const rlmDoc = canDelegate
-		? `\n- \`await rlm(query, context?, { systemPrompt?, model?, maxIterations?, app? })\` — delegate to a child RLM. Must be awaited. Delegation depth is finite — check \`__rlm.depth < __rlm.maxDepth\`.`
-		: "";
-	return (
-		`\n\n## Environment\n\n` +
-		`- \`context\` — data from your caller\n` +
-		`- \`console.log()\` — observe results between iterations\n` +
-		`- \`return(value)\` — return your final answer (only after verifying via console.log)` +
-		rlmDoc + `\n` +
-		`- \`__rlm\` — delegation metadata: \`{ depth, maxDepth, iteration, maxIterations, invocationId }\`\n` +
-		`- \`__ctx.shared.data\` — root context, readable at any depth\n` +
-		`- Variables persist across iterations. The sandbox is shared — \`__\`-prefixed variables are convention for shared state between agents.\n\n` +
-		`Write one \`\`\`javascript fenced block per response. Stop and wait for the result.`
-	);
+	// 5. Program — conditional, only when programContent is provided (LAST)
+	if (programContent) {
+		sections.push(`<rlm-program>\n${programContent}\n</rlm-program>`);
+	}
+
+	return sections.join("\n\n");
 }
 
 /**
@@ -97,13 +135,4 @@ export function buildModelTable(
 		`\n\nUsage: \`await rlm("query", context, { model: "fast" })\`\n` +
 		`Default (no model specified): uses the same model as the current agent.`
 	);
-}
-
-/**
- * Wrap globalDocs content for inclusion in system prompts.
- * Returns empty string if globalDocs is undefined/empty.
- */
-export function formatGlobalDocs(globalDocs?: string): string {
-	if (!globalDocs) return "";
-	return `\n\n## Sandbox Globals\n\n${globalDocs}`;
 }

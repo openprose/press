@@ -393,7 +393,7 @@ describe("rlm", () => {
 
 		await rlm("test", undefined, { callLLM });
 
-		expect(capturedSystemPrompt).not.toContain("---");
+		expect(capturedSystemPrompt).not.toContain("<rlm-program>");
 	});
 
 	it("pluginBodies: not passed to child rlm() agents", async () => {
@@ -654,8 +654,8 @@ describe("rlm", () => {
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("You are a test app.");
 		expect(childPrompt).toContain("Do test things.");
-		// Child should also get the Environment section from buildChildRepl
-		expect(childPrompt).toContain("## Environment");
+		// Child should also get the environment section
+		expect(childPrompt).toContain("<rlm-environment>");
 	});
 
 	it("app option: unknown app name rejects with available list", async () => {
