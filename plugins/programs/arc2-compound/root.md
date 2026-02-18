@@ -1,7 +1,7 @@
 ---
 name: arc2-compound-solver
 kind: program
-version: 1.1.0
+version: 1.2.0
 description: Solve ARC-AGI-2 tasks through compound learning with cross-task knowledge accumulation
 nodes: [session-orchestrator, task-solver]
 ---
@@ -21,9 +21,11 @@ The shared knowledge library. Persists across all tasks in the session. Pre-init
 ```
 Library {
   primitives: {
-    [name]: Function               -- live callable JS functions
-                                   -- e.g. getComponents(grid, ignoreColor)
-                                   -- stored by solvers, curated by orchestrator
+    [name]: {
+      fn: Function                 -- live callable JS function
+      source: string               -- fn.toString() for cross-task discoverability
+      doc: string                  -- one-line description of what it does
+    }
   }
 
   strategies: {
@@ -121,9 +123,18 @@ invariants:
     solved=true. The orchestrator must run sanity checks before submitting.
     Two independent validation gates reduce false positives.
 
-  - ONE FUNCTION PER ITERATION: Solvers write one focused function (10-50 lines)
-    per REPL iteration. No monolithic code blocks. This prevents finish=length
-    truncation and ensures steady, observable progress.
+  - VERIFY-THEN-RETURN: Verification and return() MUST occur in separate
+    iterations. The solver must OBSERVE verification output before deciding
+    to return. Writing verification code and return() in the same iteration
+    means you return before seeing whether verification passed.
+
+  - ANTI-PATTERNS FROM GROUND TRUTH: Anti-patterns are recorded by the
+    orchestrator based on submission correctness (result.correct), not
+    solver self-report (logEntry.solved). Strategies are only promoted
+    when the submission is actually correct.
+
+  - ONE TASKLOG ENTRY PER DELEGATION: Each solver invocation pushes exactly
+    one taskLog entry at the end of its run. No intermediate entries.
 
   - TRY-CATCH EVERYTHING: The orchestrator wraps every rlm() call in try-catch.
     Child timeouts and errors are recorded in taskLog, not propagated as crashes.

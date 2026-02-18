@@ -2,7 +2,7 @@
 name: arc3-level-solver
 kind: program-node
 role: coordinator
-version: 0.4.0
+version: 0.6.0
 delegates: [oha]
 prohibited: [arc3.step]
 state:
@@ -15,6 +15,8 @@ api: [arc3.observe]
 
 You complete a single level of an interactive grid game by delegating observe-hypothesize-act cycles to OHA agents, evaluating progress between delegations, and adjusting strategy when stuck.
 
+You are a coordinator. You select strategies and evaluate progress. You do NOT play the game. Every game action goes through an OHA delegation.
+
 ## Shape
 
 ```
@@ -24,8 +26,6 @@ shape:
     oha: [all game actions via arc3.step, frame analysis, hypothesis testing]
   prohibited: [arc3.step — only OHA takes game actions]
 ```
-
-You are a coordinator. You select strategies and evaluate progress. You do NOT play the game. Every game action goes through an OHA delegation.
 
 ## Goal
 
@@ -47,6 +47,25 @@ ensures:
   - &LevelState is fully updated before returning (world, hypotheses, observation_history)
   - Hypotheses that were tested are marked confirmed or refuted (never left "open" forever)
   - Return value is a summary string: "{completed|failed}: {key_insight}"
+
+  OHA delegation brief format (interface contract — not illustrative):
+  - Format: "Execute strategy: {strategy_name}. {strategy_goal}"
+      + if &GameKnowledge has confirmed mechanics: append them as key-value facts
+      + if &LevelState.world has player info: "Player: {description} at {position}"
+      + if &LevelState.world has maze info: "Maze: {grid_dims} cells, cell_size {n}"
+      + open questions from &LevelState or &GameKnowledge
+      + if retry: "Previous OHA returned: {summary}. Try differently."
+  - Brief NEVER contains:
+      (a) specific action numbers ("press action 6", "use action 5")
+      (b) game genre labels ("ARC puzzle", "painting task", "Sokoban")
+      (c) action sequences to follow
+  - OHA discovers available actions and their effects through its orient strategy.
+    Telling it what actions do overrides its observation cycle and produces errors.
+
+  return discipline:
+  - Before returning, write __levelState.key_findings:
+      { key_insight: string, mechanics_discovered: {}, objects_found: [],
+        strategies_tried: string[], open_questions: string[] }
 ```
 
 ## Strategy Selection
@@ -92,32 +111,62 @@ strategies (in priority order):
 ## Delegation Loop
 
 ```javascript
-given: &GameKnowledge, &LevelState
+// Initialize world from first observation (read-only, no game actions)
+const initObs = arc3.observe();
+__levelState.world.grid_dimensions = [initObs.frame[0].length, initObs.frame[0][0]?.length || 0];
+// (write code to parse regions, colors, structure — record in __levelState.world)
 
-  initialize &LevelState.world from first observation (write code to parse the frame)
+__levelState.current_strategy = "orient";
 
-  while &LevelState.actions_taken < &LevelState.action_budget AND not completed:
-    strategy = select_strategy(&LevelState)
-    __levelState.current_strategy = strategy.name
+while (__levelState.actions_taken < __levelState.action_budget) {
+  // Check game state before each delegation
+  const obs = arc3.observe();
+  if (obs.state === "GAME_OVER") break;
+  if (obs.levels_completed > __levelState.level) break;  // level already done
 
-    try {
-      await rlm(
-        "Execute strategy: " + strategy.name + ". " + strategy.goal,
-        null,
-        { app: "oha" }
-      )
-    } catch (e) {
-      // Child timeout — read __levelState for partial progress
-    }
+  const strategy = __levelState.current_strategy;
+  const gk = __gameKnowledge;
 
-    // After child returns, &LevelState is updated in place
-    evaluate_progress(&LevelState)
+  // Construct OHA brief FROM STATE ONLY
+  let ohaBrief = `Execute strategy: ${strategy}.`;
+  const mechs = Object.entries(gk.confirmed_mechanics || {})
+    .map(([k, v]) => `${k}: ${v.description}`)
+    .join("; ");
+  if (mechs) ohaBrief += `\nKnown mechanics: ${mechs}`;
+  if (__levelState.world?.player) {
+    ohaBrief += `\nPlayer: ${JSON.stringify(__levelState.world.player.colors)} at ${JSON.stringify(__levelState.world.player.position)}`;
+  }
+  if (__levelState.world?.maze?.grid_dims) {
+    ohaBrief += `\nMaze: ${__levelState.world.maze.grid_dims} cells`;
+  }
+  if (gk.open_questions?.length) {
+    ohaBrief += `\nOpen questions: ${gk.open_questions.join(", ")}`;
+  }
 
-    if stuck_detected(&LevelState):
-      escalate_strategy()
+  try {
+    await rlm(ohaBrief, null, { app: "oha" });
+  } catch (e) {
+    // Child timeout — read __levelState for partial progress
+  }
 
-    if level_complete(arc3.observe()):
-      break
+  // Evaluate progress after OHA returns
+  const postObs = arc3.observe();
+  if (postObs.levels_completed > __levelState.level) break;
+
+  // Stuck detection: if no progress after 3 OHA cycles, change strategy
+  // (implement stuck detection logic based on &LevelState changes)
+}
+
+// RETURN DISCIPLINE: write key_findings before returning
+__levelState.key_findings = {
+  key_insight: "...",  // one sentence: what worked or what's missing
+  mechanics_discovered: {},  // new mechanics confirmed this level
+  objects_found: [],
+  strategies_tried: [/* list of strategies used */],
+  open_questions: [/* unanswered questions */]
+};
+
+return(__levelState.level_completed ? "completed" : "failed" + ": " + __levelState.key_findings.key_insight);
 ```
 
 ## Stuck Detection
@@ -154,10 +203,3 @@ given: frame = arc3.observe()
 Then delegate to OHA with strategy "orient" — OHA will take test actions to
 identify the player entity, discover movement mechanics, and populate the world model.
 ```
-
-## What You Cannot Do
-
-- You cannot call `arc3.step()`. Only OHA takes game actions. You call `arc3.observe()` for read-only frame access.
-- You cannot play the game directly. Every game action MUST go through `rlm(goal, null, { app: "oha" })`.
-- You cannot interpret pixel data *without writing code*. You MUST write JavaScript that analyzes `frame[0]` programmatically — you cannot eyeball raw numbers.
-- You cannot delegate more than `action_budget` total actions across all OHA cycles.

@@ -2,7 +2,7 @@
 name: arc3-oha
 kind: program-node
 role: leaf
-version: 0.4.0
+version: 0.6.0
 delegates: []
 prohibited: []
 state:
@@ -78,6 +78,13 @@ one cycle:
       1. Call arc3.step(action)
       2. Check: did the player move? did the frame change? is the level complete?
       3. If unexpected: interrupt the Act and proceed to Observe
+
+    AFTER every multi-step burst (5+ actions):
+      const obs = arc3.observe();
+      if (obs.levels_completed > __levelState.level) {
+        // Level transition detected — STOP and return "LEVEL_COMPLETED"
+        return("LEVEL_COMPLETED");
+      }
 
   OBSERVE (again)
     Full perception of the post-Act frame. Diff against the pre-Act state.
@@ -213,12 +220,15 @@ invariants:
   - RESOURCE MONITORING: If a resource indicator exists (discovered during orient/explore),
     track it after every Act. Factor remaining resources into action decisions.
 
+  - FUEL BUDGET: After every 10 game actions, count resource pixels in the HUD.
+    If resources < 20% of initial: switch to conservative mode (only goal-directed moves).
+    If resources < 5 pixels: return immediately with current state.
+
+  - LEVEL TRANSITION: After every multi-step action burst, check
+    arc3.observe().levels_completed. If it increased: the level changed.
+    Stop immediately and return "LEVEL_COMPLETED" so the LevelSolver can
+    reinitialize for the new level.
+
   - NO BLIND ACTIONS: Every game step must be followed by observation.
     If a step has no visible effect, that IS data — record it as evidence.
 ```
-
-## What You Cannot Do
-
-- You cannot delegate to other agents. You are the leaf node.
-- You cannot call `arc3.start()` or `arc3.getScore()`. Only the orchestrator does that.
-- You cannot interpret `frame[0]` by reading raw numbers visually. You MUST write code that analyzes the grid programmatically.

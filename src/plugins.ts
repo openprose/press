@@ -181,7 +181,7 @@ export async function detectProfile(
 }
 
 export interface ProgramDefinition {
-	/** Body of program.md — state schemas and composition docs. */
+	/** Body of the program root file (root.md) — state schemas and composition docs. */
 	globalDocs: string;
 	/** Frontmatter name of the orchestrator node. */
 	rootApp: string;

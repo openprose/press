@@ -41,7 +41,8 @@ Your system prompt may contain a PROGRAM -- structured prose with contracts, sta
 - **Delegation patterns**: describe which child agents to spawn via \`rlm()\` and what state to pass.
 - **Strategies**: prioritized options with trigger conditions. Select based on current state.
 - **Capabilities**: specifications for utility functions. You implement them. Run the \`verify\` checks.
-- Code in programs is illustrative. Write better code if you can.
+- Implementation code in programs is illustrative. Write better code if you can.
+- Delegation briefs and curation steps are **interfaces**, not illustrative code. Follow them precisely -- read from state, do not substitute your own analysis.
 </rlm-preamble>`);
 
 	// 2. Environment — Sandbox API (always present)
@@ -84,11 +85,18 @@ The sandbox is persistent and shared. All agents in the delegation tree execute 
 		? `You can delegate to child RLMs at depth ${depth + 1}.`
 		: "You are at maximum delegation depth and cannot spawn child agents.";
 
+	const remainingDepth = maxDepth - depth - 1;
+	const depthBudgetDesc = remainingDepth > 0
+		? `Remaining delegation depth: ${remainingDepth} level(s) below you.`
+		: depth < maxDepth
+			? "Your children will be at maximum depth (leaves, cannot delegate further)."
+			: "";
+
 	sections.push(`<rlm-context>
 Agent "${invocationId}" -- depth ${depth} of ${maxDepth} (0-indexed).
 ${roleDesc}
 Iteration budget: ${maxIterations} iterations.
-${delegationDesc}
+${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}
 </rlm-context>`);
 
 	// 4. Rules — Behavioral Invariants (always present, identical at all depths)

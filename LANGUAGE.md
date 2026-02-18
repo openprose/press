@@ -67,19 +67,38 @@ The language has almost no syntax. It's structured markdown with a few conventio
 
 Programs teach the agent HOW TO LEARN, not WHAT TO LEARN. Domain-specific knowledge (game mechanics, API behavior, environmental rules) is discovered through interaction and recorded in state — never hardcoded in the program. The program provides the epistemological framework; the agent fills it with empirical content.
 
+### 9. Delegation Discipline
+
+When a parent delegates to a child via `rlm()`, the query string is an **interface** — not illustrative code. The child has its own program that teaches it how to observe, analyze, and act. The parent's brief provides **facts from state** and a **goal**; the child's program provides methodology.
+
+A good brief contains facts the parent read from `&`-state variables:
+- The goal (what to achieve)
+- Confirmed knowledge (from state, with confidence levels)
+- Open questions (what the child should investigate)
+- If retry: what failed and what to try differently
+
+A bad brief contains the parent's own analysis:
+- Action-level instructions ("press action 6", "click on cells")
+- Domain interpretation ("this is an ARC puzzle", "Sokoban-style")
+- Tactical advice that overrides the child's strategy selection
+
+When a brief contains action instructions, it short-circuits the child's observation cycle. The child follows the brief's tactics instead of its own program — producing shape violations, wasted iterations, and wrong game models that persist across the entire delegation.
+
+Declare brief formats in `ensures:` contracts to make the interface binding. The brief template should read from state variables, never from the parent's own frame analysis.
+
 ---
 
 ## Syntax Reference
 
-### Program File
+### Root File
 
-The composition root. Declares shared state and how nodes connect.
+The composition root (`root.md`). Declares the component catalog, shared state schemas, and composition principles. Its body becomes `globalDocs` — visible to every agent at every depth.
 
 ```yaml
 ---
 name: arc3-solver
 kind: program
-version: 0.3.0
+version: 0.6.0
 description: Solve ARC-3 interactive grid games through observation, hypothesis, and action
 nodes: [game-solver, level-solver, oha]
 ---
@@ -318,29 +337,84 @@ capability: diffFrames(before, after) -> diff
     - diff.player_delta matches the actual displacement of the player cluster
 ```
 
-### Composition
+### Component Catalog
 
-How the nodes connect. Shows state flow direction with `&`.
+The root file declares available components with explicit interface contracts. Each component specifies what it needs from its caller and what it produces — so any composing agent can satisfy the contract regardless of which topology is chosen.
 
 ```
-GameSolver
-  writes &GameKnowledge (once, at init)
-  for each level:
-    writes &LevelState (fresh per attempt)
-    delegates -> LevelSolver
-    reads &LevelState after return
-    curates &GameKnowledge from &LevelState
+### level-solver
 
-LevelSolver
-  reads &GameKnowledge for prior knowledge
-  reads/writes &LevelState
-  loop:
-    delegates -> OHA
-    reads &LevelState after return
+  role: coordinator
+  app: "level-solver"
 
-OHA
-  reads/writes &LevelState
-  one cycle: Observe → Hypothesize → Act (multi-step) → Observe → Record
+  requires from caller:
+    - &GameKnowledge exists (may be empty)
+    - &LevelState exists with level, attempt, action_budget set
+
+  produces for caller:
+    - &LevelState.world: initialized from first observation
+    - &LevelState.key_findings: structured summary
+    - return string: "{completed|failed}: {key_insight}"
+
+  does NOT produce:
+    - game actions (prohibited)
+```
+
+The `requires/produces/does NOT produce` contract is the component's interface. A composing agent reads this to decide: can I call this component directly? What responsibilities do I inherit if I skip it?
+
+### Composition Vocabulary
+
+A small set of composition styles that agents select from when delegating. Grounded in observable state conditions.
+
+```
+styles:
+
+  direct
+    Delegate straight to a leaf component.
+    when: task is well-understood, budget is thin, mechanics confirmed
+    caller must: satisfy the leaf's "requires from caller" directly
+
+  coordinated
+    Interpose a coordinator between yourself and the leaf.
+    when: discovery needed, multiple strategy cycles expected
+    caller must: satisfy the coordinator's "requires from caller"
+
+  exploratory
+    Delegate with minimal brief. Let the child discover.
+    when: no prior knowledge, first encounter
+    combine with: direct or coordinated
+
+  targeted
+    Delegate with rich brief from confirmed &-state.
+    when: retrying with accumulated knowledge
+    combine with: direct or coordinated
+```
+
+The first two (direct/coordinated) select topology — how deep is the subtree. The last two (exploratory/targeted) select brief richness — how much context to pass. They are orthogonal and composable.
+
+### Composition Principles
+
+Invariants that govern when and how to compose, regardless of which components are selected.
+
+```
+principles:
+
+  CURATION IS THE RETURN ON COMPOSITION
+    Delegation only pays off if knowledge flows upward after return.
+    If you delegate without curating, the delegation's value is zero.
+
+  COLLAPSE IS THE DEFAULT FAILURE MODE
+    Without deliberate effort, agents absorb their children's work.
+    A coordinator that "just takes a few actions" will take a hundred.
+    Delegation is a commitment to abstraction separation.
+
+  BUDGET PROPORTIONALITY
+    Match composition depth to remaining budgets.
+    Thin budgets → direct. Rich budgets → coordinated.
+
+  SATISFY REQUIRES BEFORE DELEGATING
+    Check the component's "requires from caller" before calling rlm().
+    If you skip a coordinator, you inherit its responsibilities.
 ```
 
 ---
@@ -351,7 +425,7 @@ Programs live in `plugins/programs/{name}/`:
 
 ```
 plugins/programs/arc3/
-  program.md           # composition root — state schemas, node list, data flow
+  root.md              # composition root — component catalog, state schemas, composition principles
   game-solver.md       # orchestrator node
   level-solver.md      # coordinator node
   oha.md               # leaf node (ObserveHypothesizeAct)
