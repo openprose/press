@@ -36,7 +36,7 @@ import { generateSNIAHTasks } from "./datasets/s-niah.js";
 import { loadArcTasks, loadArcCompoundBundle } from "./datasets/arc.js";
 import { loadArc3Tasks } from "./datasets/arc3.js";
 import { Arc3Client } from "./arc3-client.js";
-import { loadStack, loadPlugins } from "../src/plugins.js";
+import { loadStack, loadPlugins, loadProgram } from "../src/plugins.js";
 import type { CallLLM, ModelEntry } from "../src/rlm.js";
 import { DEFAULT_MODEL_ALIASES } from "../src/models.js";
 import type { EvalResult, EvalTask, ScoringFunction } from "./types.js";
@@ -88,6 +88,7 @@ interface CliArgs {
 	maxBlocksPerIteration: number | null;
 	attempts: number;
 	game: string | null;
+	program: string | null;
 	traceActions: boolean;
 	traceChildren: boolean;
 	traceSnapshots: boolean;
@@ -110,6 +111,7 @@ Options:
   --model <provider/id>    Model to use (required)
   --profile <name>         Load a named driver profile (e.g. gemini-3-flash)
   --app <name>             Load a named app plugin (e.g. structured-data-aggregation)
+  --program <name>         Load a program from plugins/programs/<name>/ (mutually exclusive with --app)
   --drivers <list>         Comma-separated extra driver names (appended after profile drivers)
   --concurrency <n>        Parallel tasks (default: 5)
   --max-iterations <n>     Max REPL iterations (default: 15)
@@ -221,6 +223,7 @@ function parseArgs(argv: string[]): CliArgs {
 		maxBlocksPerIteration: args["max-blocks-per-iteration"] ? parseInt(args["max-blocks-per-iteration"], 10) : null,
 		attempts: parseInt(args.attempts ?? "1", 10),
 		game: args.game ?? null,
+		program: args.program ?? null,
 	};
 }
 
@@ -642,6 +645,9 @@ async function main(): Promise<void> {
 	if (args.rateLimit > 0) {
 		console.log(`Rate Limit:      ${args.rateLimit} req/s (burst: ${args.rateBurst})`);
 	}
+	if (args.program) {
+		console.log(`Program:         ${args.program}`);
+	}
 	if (args.profile) {
 		console.log(`Profile:         ${args.profile}`);
 	}
@@ -675,6 +681,28 @@ async function main(): Promise<void> {
 	}
 	console.log();
 
+	// Validate: --app and --program are mutually exclusive
+	if (args.app && args.program) {
+		console.error("Error: --app and --program cannot be used together (program provides its own root app)");
+		process.exit(1);
+	}
+
+	// Load program if specified
+	let programGlobalDocs = "";
+	let programChildApps: Record<string, string> = {};
+	let programRootBody = "";
+	if (args.program) {
+		console.log(`Loading program: ${args.program}...`);
+		const programDef = await loadProgram(args.program);
+		programRootBody = programDef.rootAppBody;
+		programGlobalDocs = programDef.globalDocs;
+		programChildApps = programDef.childApps;
+		console.log(`  Root app: ${programDef.rootApp}`);
+		console.log(`  Child apps: ${Object.keys(programDef.childApps).join(", ")}`);
+		console.log(`  Global docs: ${programDef.globalDocs.length} chars`);
+		console.log();
+	}
+
 	// Load plugins via stack (profile + drivers + app)
 	let pluginBodies: string | undefined;
 	const hasPlugins = args.profile || args.app || args.drivers.length > 0 || args.model;
@@ -682,7 +710,7 @@ async function main(): Promise<void> {
 		console.log("Loading plugins...");
 		const bodies = await loadStack({
 			profile: args.profile ?? undefined,
-			app: args.app ?? undefined,
+			app: args.app ?? undefined, // null in program mode — program provides root app
 			drivers: args.drivers.length > 0 ? args.drivers : undefined,
 			model: args.model,
 		});
@@ -696,6 +724,13 @@ async function main(): Promise<void> {
 			console.log("  No plugins loaded (no matching profile)");
 		}
 		console.log();
+	}
+
+	// In program mode, append root app body to plugin bodies (after any profile drivers)
+	if (programRootBody) {
+		pluginBodies = pluginBodies
+			? `${pluginBodies}\n\n---\n\n${programRootBody}`
+			: programRootBody;
 	}
 
 	// Load child app plugins (for delegation via `app` option)
@@ -735,6 +770,15 @@ async function main(): Promise<void> {
 
 	const startTime = Date.now();
 
+	// Merge globalDocs: benchmark + program (both visible at all depths)
+	const combinedGlobalDocs = [benchmarkConfig.globalDocs, programGlobalDocs]
+		.filter(Boolean)
+		.join("\n\n---\n\n") || undefined;
+
+	// Merge childApps: benchmark + program + CLI
+	const allChildApps = { ...benchmarkConfig.childApps, ...programChildApps, ...cliChildApps };
+	const hasChildApps = Object.keys(allChildApps).length > 0;
+
 	const result = await runEval(tasks, {
 		benchmark: args.benchmark,
 		model: args.model,
@@ -750,10 +794,8 @@ async function main(): Promise<void> {
 		...(benchmarkConfig.setupSandbox && { setupSandbox: benchmarkConfig.setupSandbox }),
 		...(benchmarkConfig.cleanupTask && { cleanupTask: benchmarkConfig.cleanupTask }),
 		...(benchmarkConfig.getResultMetadata && { getResultMetadata: benchmarkConfig.getResultMetadata }),
-		...(benchmarkConfig.globalDocs && { globalDocs: benchmarkConfig.globalDocs }),
-		...((benchmarkConfig.childApps || cliChildApps) && {
-			childApps: { ...benchmarkConfig.childApps, ...cliChildApps },
-		}),
+		...(combinedGlobalDocs && { globalDocs: combinedGlobalDocs }),
+		...(hasChildApps && { childApps: allChildApps }),
 		...(args.traceChildren && { traceChildren: true }),
 		...(args.traceSnapshots && { traceSnapshots: true }),
 		filter: args.filter ?? undefined,

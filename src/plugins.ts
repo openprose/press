@@ -180,6 +180,75 @@ export async function detectProfile(
 	return null;
 }
 
+export interface ProgramDefinition {
+	/** Body of program.md — state schemas and composition docs. */
+	globalDocs: string;
+	/** Frontmatter name of the orchestrator node. */
+	rootApp: string;
+	/** Full content of the orchestrator node including frontmatter (becomes root agent's system prompt supplement). */
+	rootAppBody: string;
+	/** Non-orchestrator node bodies keyed by app name (become child apps).
+	 *  Each node is registered by both its frontmatter name (e.g. "arc3-level-solver")
+	 *  and its short filename (e.g. "level-solver") for flexible delegation. */
+	childApps: Record<string, string>;
+}
+
+/**
+ * Load a program from plugins/programs/{name}/.
+ * Reads all .md files, identifies the program root (kind: program) and nodes (kind: program-node).
+ * Program nodes include their frontmatter in the agent's prompt (it's part of the spec —
+ * the agent sees its role, delegates, api, and prohibited fields).
+ * Returns the orchestrator content for the root agent, node content for child delegation,
+ * and the program root body for globalDocs (state schemas visible at all depths).
+ */
+export async function loadProgram(
+	name: string,
+	pluginsDir?: string,
+): Promise<ProgramDefinition> {
+	const dir = pluginsDir ?? DEFAULT_PLUGINS_DIR;
+	const programDir = join(dir, "programs", name);
+
+	const files = await readdir(programDir);
+	const mdFiles = files.filter((f) => f.endsWith(".md"));
+
+	let globalDocs = "";
+	let rootApp = "";
+	let rootAppBody = "";
+	const childApps: Record<string, string> = {};
+
+	for (const file of mdFiles) {
+		const content = await readFile(join(programDir, file), "utf-8");
+		const { frontmatter, body } = parseFrontmatter(content);
+
+		if (frontmatter.kind === "program") {
+			globalDocs = body;
+		} else if (frontmatter.kind === "program-node") {
+			const nodeName = frontmatter.name as string;
+			const shortName = file.replace(/\.md$/, "");
+			if (!nodeName) {
+				throw new Error(`Program node "${file}" in program "${name}" is missing a name in frontmatter`);
+			}
+			// Program nodes include frontmatter — the agent sees its role, delegates, api, prohibited
+			if (frontmatter.role === "orchestrator") {
+				rootApp = nodeName;
+				rootAppBody = content;
+			} else {
+				// Register by both full name and short filename for flexible delegation
+				childApps[nodeName] = content;
+				if (shortName !== nodeName) {
+					childApps[shortName] = content;
+				}
+			}
+		}
+	}
+
+	if (!rootApp) {
+		throw new Error(`Program "${name}" has no orchestrator node (role: orchestrator)`);
+	}
+
+	return { globalDocs, rootApp, rootAppBody, childApps };
+}
+
 /** Load drivers and app plugins, resolving from profile or model auto-detection. Returns concatenated bodies. */
 export async function loadStack(options: {
 	drivers?: string[];

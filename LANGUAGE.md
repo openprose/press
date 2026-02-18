@@ -10,8 +10,8 @@ Programs specify postconditions (`ensures`) and preconditions (`requires`), not 
 
 ```
 ensures:
-  - &GameKnowledge grows after every delegation (never lose confirmed findings)
-  - If a level fails twice: analyze WHY before retrying
+  - &Knowledge grows after every delegation (never lose confirmed findings)
+  - If a task fails twice: the retry MUST differ from prior attempts
 ```
 
 ### 2. State as Interface
@@ -20,9 +20,8 @@ Agents communicate through typed state schemas. The schema IS the interface — 
 
 ```
 LevelState {
-  level: number
   actions_taken: number
-  world: { player: { position: [r, c], pattern: number[][] }, ... }
+  world: { player: { position: [r, c] }, objects: { ... }, ... }
   hypotheses: { [id]: { claim: string, confidence: 0..1, status: "open" | "confirmed" | "refuted" } }
 }
 ```
@@ -33,9 +32,10 @@ Tell the agent what to achieve, not how to achieve it. Strategies are declared a
 
 ```
 strategies:
-  "explore"   when: maze coverage < 30%
-  "solve"     when: player pattern matches goal AND gatekeeper known
-  "retreat"   when: fuel < 20% OR budget < 10
+  "explore"      when: environment coverage < 30%
+  "test"         when: open hypotheses have untested predictions
+  "execute_plan" when: goal conditions appear satisfied
+  "investigate"  when: goal was reached but task did not complete
 ```
 
 ### 4. Model-Upgrade-Proof
@@ -63,6 +63,10 @@ Complex behavior emerges from a small set of reusable node types. A 3-tier game 
 
 The language has almost no syntax. It's structured markdown with a few conventions. If a human can read it and know what to build, so can a model.
 
+### 8. Discover, Don't Prescribe
+
+Programs teach the agent HOW TO LEARN, not WHAT TO LEARN. Domain-specific knowledge (game mechanics, API behavior, environmental rules) is discovered through interaction and recorded in state — never hardcoded in the program. The program provides the epistemological framework; the agent fills it with empirical content.
+
 ---
 
 ## Syntax Reference
@@ -75,8 +79,8 @@ The composition root. Declares shared state and how nodes connect.
 ---
 name: arc3-solver
 kind: program
-version: 0.2.0
-description: Solve ARC-3 interactive grid games
+version: 0.3.0
+description: Solve ARC-3 interactive grid games through observation, hypothesis, and action
 nodes: [game-solver, level-solver, oha]
 ---
 ```
@@ -85,19 +89,24 @@ nodes: [game-solver, level-solver, oha]
 
 A single agent in the network. Has a role, state dependencies, and a contract.
 
+The frontmatter is part of the program — it is included in the agent's system prompt, not stripped. The agent sees its own role, delegation targets, API access, and prohibitions at the top of its instructions.
+
 ```yaml
 ---
-name: arc3-game-solver
+name: arc3-level-solver
 kind: program-node
-role: orchestrator          # orchestrator | coordinator | leaf
-version: 0.2.0
-delegates: [level-solver]
+role: coordinator          # orchestrator | coordinator | leaf
+version: 0.4.0
+delegates: [oha]           # child app names this node delegates to
+prohibited: [arc3.step]    # sandbox APIs this node must NOT call
 state:
-  reads: [&GameKnowledge]
-  writes: [&GameKnowledge, &LevelState]
-api: [arc3.start, arc3.observe, arc3.getScore]
+  reads: [&GameKnowledge, &LevelState]
+  writes: [&LevelState]
+api: [arc3.observe]         # sandbox APIs this node may call
 ---
 ```
+
+`api` lists what the node CAN use. `prohibited` lists what it MUST NOT use. `delegates` lists who handles the prohibited capabilities. These three fields together define the node's boundary.
 
 ### The `&` Prefix — Pass by Reference
 
@@ -119,7 +128,7 @@ state:
 
 # In delegation patterns:
 delegate LevelSolver {
-  goal: "Complete level {n}/7. {knowledge_brief}"
+  goal: "Complete level {n}. {knowledge_brief}"
   &GameKnowledge   -- child reads __gameKnowledge directly
   &LevelState      -- child reads/writes __levelState directly
 }
@@ -136,17 +145,17 @@ requires:
 
 ensures:
   - &LevelState.world is initialized before any delegation
-  - If 3 consecutive cycles produce no change: change strategy
-  - Hypotheses tested are marked confirmed or refuted (never left "open" forever)
+  - If 3 consecutive cycles produce no observable change: change strategy
+  - Hypotheses that were tested are marked confirmed or refuted (never left "open" forever)
   - Return value is a summary string: "{completed|failed}: {key_insight}"
 ```
 
 ### State Schemas
 
-Typed data structures shared between agents. Field names are self-documenting. Comments use `--`.
+Typed data structures shared between agents. Field names are self-documenting. Comments use `--`. Schemas are templates — fields are populated through observation, not assumed to exist.
 
 ```
-GameKnowledge {
+Knowledge {
   confirmed_mechanics: {
     [name]: {
       description: string
@@ -169,7 +178,7 @@ for each level:
   __levelState = { level: n, attempt: k, actions_taken: 0, action_budget: 40 }
 
   result = delegate LevelSolver {
-    goal: "Complete level {n}/7. {knowledge_brief}"
+    goal: "Complete level {n}. {knowledge_brief}"
     &GameKnowledge
     &LevelState
   }
@@ -177,9 +186,9 @@ for each level:
   curate(&GameKnowledge, &LevelState)
 
   if &LevelState.completed:
-    proceed to next level
+    proceed
   else if attempts < 2:
-    retry with enriched brief
+    retry with enriched brief (must differ from prior attempt)
   else:
     record failure, move on
 ```
@@ -200,25 +209,57 @@ given: &LevelState (written by child)
 
 ### Strategies
 
-Prioritized options with trigger conditions and budgets. The agent selects based on current state.
+Prioritized options with trigger conditions. The agent selects based on current state.
 
 ```
 strategies (in priority order):
 
   1. "orient"
      when: actions_taken == 0
-     goal: identify player, parse HUD, catalog visible objects
-     budget: 4 actions
+     goal: learn basic controls and perceptual structure
 
   2. "explore"
-     when: maze coverage < 30% OR unknown objects exist
-     goal: map the environment, find interactive objects
-     budget: min(15, remaining_budget / 2)
+     when: environment coverage < 30% OR unidentified objects exist
+     goal: map the environment, find interactable objects
 
-  3. "solve"
-     when: player pattern matches goal AND gatekeeper known
-     goal: navigate to gatekeeper
-     budget: remaining actions
+  3. "test_hypothesis"
+     when: open hypotheses have untested predictions
+     goal: test the highest-value hypothesis
+
+  4. "execute_plan"
+     when: goal conditions appear satisfied
+     goal: navigate to goal, complete the task
+
+  5. "investigate"
+     when: goal was reached but task did not complete
+     goal: discover what preconditions were not met
+
+  6. "retreat"
+     when: resources critically low
+     goal: attempt completion with current state
+```
+
+### Shape
+
+Declares the node's execution boundary: what it does directly, what it delegates, and what sandbox APIs it must not call. Without explicit shape declarations, models take the path of least resistance — calling sandbox APIs directly instead of delegating to children.
+
+```
+shape:
+  self: [select strategy, evaluate progress, curate findings]
+  delegates:
+    oha: [game actions, frame analysis, hypothesis testing]
+  prohibited: [arc3.step]
+```
+
+`prohibited` names sandbox APIs that exist and are callable but that this node must not use. `delegates` maps child app names to the capabilities they own. Together, these establish a hard boundary: "this work belongs to my children, not to me."
+
+Why this matters: LLMs gravitate toward the simplest path. If a coordinator node can see `arc3.step()` in the sandbox, it will call it directly rather than composing a delegation via `rlm()`. `prohibited` makes the boundary explicit — the model sees "I can call this, but my program forbids it."
+
+Frontmatter shorthand (visible to the agent when program nodes include frontmatter):
+
+```yaml
+delegates: [oha]
+prohibited: [arc3.step]
 ```
 
 ### Invariants
@@ -227,9 +268,54 @@ Constraints that must hold at all times, not just at boundaries.
 
 ```
 invariants:
-  - MOVEMENT TRACKING: Track position by delta, not by color scan
-  - SCALE AWARENESS: Normalize patterns before comparing (HUD and player may differ in scale)
-  - FUEL IS FINITE: Every action costs fuel. Monitor and factor into decisions.
+  - POSITION TRACKING: Track position by movement delta, not by visual scan
+      (visual scan produces false positives when multiple objects share colors)
+  - RESOURCE MONITORING: Track resource consumption after every action
+  - NO BLIND ACTIONS: Every action must be preceded and followed by observation
+```
+
+### Capabilities
+
+Declare WHAT a utility function must do — inputs, outputs, invariants — not HOW. The model builds the implementation. Include a `verify` clause: a set of concrete assertions the model can (and should) run after implementing the function, to confirm correctness.
+
+```
+capability: shortestPath(map, start, goal) -> path | null
+
+  requires:
+    - map: { [key]: "passable" | "blocked" | "unknown" }
+    - start and goal are keys in map
+
+  ensures:
+    - if a path through non-blocked cells exists: returns it
+    - if no path exists: returns null
+    - returned path has minimum length among all valid paths
+
+  verify:
+    - path[0] == start AND path[last] == goal
+    - every cell in path: map[cell] != "blocked"
+    - consecutive cells differ by exactly 1 in exactly one coordinate
+    - path contains no duplicates
+```
+
+The `verify` clause is executable: the agent should write assertions that check these conditions after implementing the function. A capability whose implementation passes all `verify` checks is correct. A capability that fails a check must be fixed before proceeding.
+
+Capabilities are NOT provided implementations. They are specifications. The model writes the code. A better model writes better code. But any correct implementation must pass the verify checks.
+
+```
+capability: diffFrames(before, after) -> diff
+
+  requires:
+    - before, after: number[][] of same dimensions
+
+  ensures:
+    - identifies all cells where before[r][c] != after[r][c]
+    - computes the displacement of the player entity (if any)
+    - detects objects that appeared or disappeared
+
+  verify:
+    - every entry in diff.changed_cells: before[r][c] != after[r][c]
+    - no cell where before[r][c] != after[r][c] is missing from diff.changed_cells
+    - diff.player_delta matches the actual displacement of the player cluster
 ```
 
 ### Composition
@@ -254,24 +340,7 @@ LevelSolver
 
 OHA
   reads/writes &LevelState
-  one atomic step: observe, hypothesize, act, diff
-```
-
-### Capabilities (Leaf Nodes)
-
-Declare WHAT the agent must be able to do, not HOW. The model builds the implementation.
-
-```
-required capabilities:
-
-  findPlayer(frame, lastKnownPos)
-    -- Find the player by movement delta, not color.
-
-  diffFrames(before, after)
-    -- Cell-by-cell comparison. Returns changed cells and player delta.
-
-  comparePatterns(patternA, patternB)
-    -- Handle scale differences. Normalize before comparing.
+  one cycle: Observe → Hypothesize → Act (multi-step) → Observe → Record
 ```
 
 ---
@@ -288,4 +357,4 @@ plugins/programs/arc3/
   oha.md               # leaf node (ObserveHypothesizeAct)
 ```
 
-Each file is a standalone markdown document with YAML frontmatter. The frontmatter declares metadata (name, kind, role, version, state dependencies). The body is the program — contracts, schemas, patterns, and illustrative code that the model may improve upon.
+Each file is a standalone markdown document with YAML frontmatter. For program nodes, the frontmatter is part of the program spec — it declares the node's identity, delegation targets, API access, and prohibitions. The loader includes frontmatter in the agent's system prompt so the agent sees its own boundary constraints. The body contains contracts, schemas, patterns, and illustrative code that the model may improve upon.

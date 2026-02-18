@@ -1,18 +1,20 @@
 ---
 name: arc3-solver
 kind: program
-version: 0.2.0
+version: 0.4.0
 description: Solve ARC-3 interactive grid games through observation, hypothesis, and action
 nodes: [game-solver, level-solver, oha]
 ---
 
 # ARC-3 Solver
 
-A 3-tier RLM program for playing interactive grid games with unknown rules.
+A 3-tier RLM program for playing interactive grid games with unknown rules. The agent discovers all game mechanics through experimentation — nothing about how the game works is assumed.
 
 ## Shared State
 
 State prefixed with `&` lives in the sandbox as a `__camelCase` variable (e.g., `&GameKnowledge` → `__gameKnowledge`). All agents read and write it directly — no serialization into prompts or return values.
+
+Schemas are templates. Fields are populated through observation — their existence is not guaranteed until the agent discovers the corresponding game element.
 
 ### &GameKnowledge
 
@@ -34,11 +36,11 @@ GameKnowledge {
       visual: {
         colors: number[]
         size: [h, w]
-        pattern: number[][]     -- pixel pattern at native resolution
+        pattern: number[][]
         is_multicolor: boolean
       }
-      behavior: string           -- what it does when interacted with
-      locations_seen: [r, c][]   -- where it's been found
+      behavior: string
+      locations_seen: [r, c][]
     }
   }
 
@@ -46,13 +48,15 @@ GameKnowledge {
     [level]: {
       completed: boolean
       actions_used: number
-      key_insight: string        -- "what made this level solvable?" or "why did it fail?"
-      strategies_tried: string[] -- to avoid repetition
+      key_insight: string
+      strategies_tried: string[]
+      maze_snapshot: { cells, grid_dims }  -- persisted for retry attempts
+      known_objects: { [id]: { type, position, interacted } }
     }
   }
 
-  open_questions: string[]       -- things to investigate next
-  refuted_beliefs: string[]      -- things we used to believe that turned out wrong
+  open_questions: string[]
+  refuted_beliefs: string[]
 }
 ```
 
@@ -66,6 +70,7 @@ LevelState {
   attempt: number
   actions_taken: number
   action_budget: number
+  current_strategy: string
 
   world: {
     grid_dimensions: [rows, cols]
@@ -74,7 +79,7 @@ LevelState {
     player: {
       position: [r, c]
       size: [h, w]
-      pattern: number[][]        -- the player's current pixel pattern
+      pattern: number[][]
       colors: number[]
     }
 
@@ -89,15 +94,23 @@ LevelState {
     }
 
     maze: {
+      cell_size: number          -- pixels per cell (discovered, typically 5)
+      grid_origin: [r, c]       -- pixel coords of cell (0,0)
+      grid_dims: [rows, cols]   -- number of cells
       cells: { [r_c]: "floor" | "wall" | "unknown" }
-      blocked_moves: { [r_c]: direction[] }  -- walls we've bumped into
+      blocked_moves: { [r_c]: direction[] }
     }
 
     hud: {
-      goal_pattern: number[][]       -- the target pattern (bottom-left box)
-      gatekeeper_pattern: number[][] -- the pattern on the goal gate (bottom-right box)
-      fuel_remaining: number         -- estimated from fuel bar pixels
-      fuel_max: number
+      regions: {
+        [name]: {
+          position: [r, c, h, w]
+          pattern: number[][]
+          interpretation: string -- what the agent believes this shows
+        }
+      }
+      resource_level: number     -- estimated from observation (0..1)
+      resource_max: number
     }
   }
 
@@ -108,15 +121,15 @@ LevelState {
       evidence_against: string[]
       confidence: 0..1
       status: "open" | "confirmed" | "refuted"
-      tests_remaining: string[]  -- specific actions that would test this
+      tests_remaining: string[]
     }
   }
 
   observation_history: {
-    action: number
-    before: { player_pos, objects_snapshot }
-    after: { player_pos, objects_snapshot }
-    diff: string                 -- human-readable description of what changed
+    action: number | string      -- action code or description
+    before: { player_pos, world_snapshot }
+    after: { player_pos, world_snapshot }
+    diff: string
     hypothesis_updates: string[]
   }[]
 }
@@ -125,25 +138,29 @@ LevelState {
 ## Composition
 
 ```
-GameSolver
+GameSolver (app: "arc3-game-solver")
   writes &GameKnowledge (once, at init)
   for each level:
     writes &LevelState (fresh per attempt)
-    delegates -> LevelSolver
+    delegates -> LevelSolver via rlm(goal, null, { app: "level-solver" })
     reads &LevelState after return
     curates &GameKnowledge from &LevelState
 
-LevelSolver
+LevelSolver (app: "level-solver")
   reads &GameKnowledge for prior knowledge
   reads/writes &LevelState
   loop until complete or budget exhausted:
-    delegates -> ObserveHypothesizeAct
+    selects strategy, writes to &LevelState.current_strategy
+    delegates -> OHA via rlm(goal, null, { app: "oha" })
     reads &LevelState after return
     evaluates progress, adjusts strategy if stuck
 
-ObserveHypothesizeAct
+OHA (app: "oha")
   reads/writes &LevelState
-  one atomic step:
-    observes, hypothesizes, acts, observes again
-    writes diffs and hypothesis updates to &LevelState
+  one cycle:
+    Observe:    parse the current frame, update &LevelState.world
+    Hypothesize: update hypotheses with latest evidence, select action intent
+    Act:        execute a coherent action sequence (may be many game steps)
+    Observe:    parse the frame again, diff against pre-Act state
+    Record:     write diffs and hypothesis updates to &LevelState
 ```
