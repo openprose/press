@@ -2,11 +2,11 @@
 name: arc3-game-solver
 kind: program-node
 role: orchestrator
-version: 0.1.0
+version: 0.2.0
 delegates: [level-solver]
 state:
-  reads: [GameKnowledge]
-  writes: [GameKnowledge]
+  reads: [&GameKnowledge]
+  writes: [&GameKnowledge, &LevelState]
 api: [arc3.start, arc3.observe, arc3.getScore]
 ---
 
@@ -22,7 +22,7 @@ Complete all 7 levels with maximum action efficiency. You are scored on actions 
 
 ```
 ensures:
-  - GameKnowledge grows after every delegation (never lose confirmed findings)
+  - &GameKnowledge grows after every delegation (never lose confirmed findings)
   - Failed strategies are recorded in level_outcomes to prevent repetition
   - The delegation prompt to LevelSolver contains specific, actionable knowledge:
       not "you have prior knowledge" but "movement is 5px/step, walls are color 4,
@@ -33,10 +33,10 @@ ensures:
 
 ## Knowledge Curation
 
-After each LevelSolver returns, you must:
+After each LevelSolver returns, read `&LevelState` and update `&GameKnowledge`:
 
 ```
-given: child_result (LevelState summary)
+given: &LevelState (written by child)
 
   promote: hypotheses with confidence >= 0.8 -> confirmed_mechanics
   record: new object types -> object_catalog (with visual patterns)
@@ -54,17 +54,19 @@ given: child_result (LevelState summary)
 
 ```
 for each level:
-  brief = synthesize_knowledge_brief(GameKnowledge)
+  // Write fresh &LevelState for the child
+  __levelState = { level: n, attempt: k, actions_taken: 0, action_budget: computed, ... }
 
   result = delegate LevelSolver {
-    goal: "Complete level {n}/7 of the grid game."
-    context: brief
-    state: { level: n, knowledge: GameKnowledge, budget: computed_budget }
+    goal: "Complete level {n}/7. {knowledge_brief}"
+    &GameKnowledge  -- child reads __gameKnowledge directly
+    &LevelState     -- child reads/writes __levelState directly
   }
 
-  GameKnowledge = curate(GameKnowledge, result)
+  // After child returns, read &LevelState for curation
+  curate(&GameKnowledge, &LevelState)
 
-  if result.completed:
+  if &LevelState.completed:
     proceed to next level
   else if attempts < 2:
     retry with enriched brief (include failure analysis)

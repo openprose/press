@@ -2,11 +2,11 @@
 name: arc3-oha
 kind: program-node
 role: leaf
-version: 0.1.0
+version: 0.2.0
 delegates: []
 state:
-  reads: [LevelState]
-  writes: [LevelState]
+  reads: [&LevelState]
+  writes: [&LevelState]
 api: [arc3.step, arc3.observe]
 ---
 
@@ -16,26 +16,25 @@ You are the only agent that takes actions in the game. You execute one atomic cy
 
 ## Goal
 
-Execute the strategy assigned in `__levelState.current_strategy`, stay within the action constraint, and return an updated LevelState with everything you learned.
+Execute the strategy assigned in `&LevelState.current_strategy`, stay within the action constraint, and write all observations and hypothesis updates back to `&LevelState`.
 
 ## Contract
 
 ```
 requires:
-  - __levelState exists with a populated world model
-  - __levelState.current_strategy specifies what to do
-  - action constraint is defined (max actions for this cycle)
+  - &LevelState exists at __levelState with a populated world model
+  - &LevelState.current_strategy specifies what to do
 
 ensures:
   - Every action is preceded by an observation and followed by an observation
-  - The before/after diff is recorded in observation_history (never skip this)
+  - The before/after diff is recorded in &LevelState.observation_history (never skip this)
   - Player position is tracked by MOVEMENT DELTA, not by re-scanning colors
       (colors appear on multiple objects — position-by-color is unreliable)
-  - New objects discovered are added to world.objects with their pixel pattern
+  - New objects discovered are added to &LevelState.world.objects with their pixel pattern
   - Hypotheses are updated after every action (not just at the end)
   - If an action has no visible effect: record this as evidence (walls, boundaries, cooldowns)
   - Never take the same action from the same position twice unless testing a hypothesis
-  - Return the updated LevelState as a JSON string
+  - &LevelState is updated in place (the caller reads it after you return)
 ```
 
 ## Perception
@@ -110,7 +109,7 @@ invariants:
 
 ## Hypothesis Lifecycle
 
-Hypotheses are first-class objects. Every observation updates them.
+Hypotheses are first-class objects stored in `&LevelState.hypotheses`. Every observation updates them.
 
 ```
 lifecycle:
@@ -141,7 +140,7 @@ lifecycle:
 
 ### Seed Hypotheses
 
-On level 1, propose these (on later levels, prior knowledge replaces them):
+On level 1, propose these (on later levels, `&GameKnowledge` replaces them):
 
 ```
 initial_hypotheses:
@@ -156,7 +155,7 @@ initial_hypotheses:
 ## Action Selection
 
 ```
-given: strategy, LevelState, hypotheses
+given: &LevelState.current_strategy, &LevelState, &LevelState.hypotheses
 
   if strategy == "orient":
     take one action per direction (1,2,3,4), observe and diff each
@@ -182,7 +181,7 @@ given: strategy, LevelState, hypotheses
   if strategy == "transform":
     compare player pattern to goal pattern (using comparePatterns with scale normalization)
     identify what needs to change (shape? color? both?)
-    find nearest shape/color changer from object_catalog
+    find nearest shape/color changer from &GameKnowledge.object_catalog
     navigate to it, interact, observe the transformation
     re-compare after transformation — did it help?
 
@@ -200,7 +199,7 @@ given: strategy, LevelState, hypotheses
 The core puzzle of each level: make the player's visual pattern match the goal pattern shown in the HUD, then reach the gatekeeper.
 
 ```
-given: player.pattern, hud.goal_pattern, hud.gatekeeper_pattern
+given: &LevelState.world.player.pattern, &LevelState.world.hud.goal_pattern
 
   step 1: extract both patterns at native resolution
   step 2: normalize to common dimensions (handle scale differences)
@@ -213,20 +212,6 @@ given: player.pattern, hud.goal_pattern, hud.gatekeeper_pattern
   the gatekeeper shows what the EXIT looks like.
   the goal pattern shows what the PLAYER should look like.
   compare player against GOAL, not against gatekeeper.
-```
-
-## Return Protocol
-
-Return the updated LevelState as a JSON string. Include everything — the caller needs it for the next cycle.
-
-```
-return JSON.stringify({
-  actions_taken: LevelState.actions_taken,
-  world: LevelState.world,
-  hypotheses: LevelState.hypotheses,
-  observation_history: LevelState.observation_history,
-  strategy_result: "completed" | "progress" | "stuck" | "budget_exhausted"
-})
 ```
 
 ## What You Cannot Do

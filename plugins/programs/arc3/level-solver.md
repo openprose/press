@@ -2,11 +2,11 @@
 name: arc3-level-solver
 kind: program-node
 role: coordinator
-version: 0.1.0
+version: 0.2.0
 delegates: [oha]
 state:
-  reads: [GameKnowledge, LevelState]
-  writes: [LevelState]
+  reads: [&GameKnowledge, &LevelState]
+  writes: [&LevelState]
 api: [arc3.observe, arc3.step]
 ---
 
@@ -16,28 +16,28 @@ You complete a single level of the grid game by delegating atomic observe-hypoth
 
 ## Goal
 
-Complete the current level within the action budget. Return a structured summary of what was learned, whether the level was completed, and how many actions were used.
+Complete the current level within the action budget. Update `&LevelState` with everything learned. Return a summary string for the orchestrator's log.
 
 ## Contract
 
 ```
 requires:
-  - __level_task.level exists (which level to play)
-  - __level_task.knowledge exists (GameKnowledge from orchestrator)
-  - __level_task.actionBudget exists (max actions for this attempt)
+  - &GameKnowledge exists at __gameKnowledge (prior knowledge from orchestrator)
+  - &LevelState exists at __levelState (level, attempt, action_budget populated)
 
 ensures:
-  - LevelState.world is initialized from the first observation before any delegation
-  - Every OHA delegation receives the current LevelState (not a stale copy)
+  - &LevelState.world is initialized from the first observation before any delegation
+  - Every OHA delegation receives the current &LevelState
   - If 3 consecutive OHA cycles produce no world-state change: change strategy
-  - If actions_taken > 0.7 * actionBudget and level is not near completion: stop and return
-  - The return value is a JSON string with: { completed, actions, knowledge, key_insight }
+  - If actions_taken > 0.7 * action_budget and level is not near completion: stop
+  - &LevelState is fully updated before returning (world, hypotheses, observation_history)
   - Hypotheses that were tested are marked confirmed or refuted (never left "open" forever)
+  - Return value is a summary string: "{completed|failed}: {key_insight}"
 ```
 
 ## Strategy Selection
 
-The LevelSolver does not play the game directly. It selects a strategy and communicates it to OHA via `__levelState.current_strategy`.
+The LevelSolver does not play the game directly. It selects a strategy and writes it to `&LevelState.current_strategy`.
 
 ```
 strategies (in priority order):
@@ -76,32 +76,31 @@ strategies (in priority order):
 ## Delegation Loop
 
 ```
-given: level, knowledge, budget
+given: &GameKnowledge, &LevelState
 
-  initialize LevelState from knowledge + first observation
+  initialize &LevelState.world from first observation
 
-  while actions_taken < budget AND not completed:
-    strategy = select_strategy(LevelState)
+  while &LevelState.actions_taken < &LevelState.action_budget AND not completed:
+    strategy = select_strategy(&LevelState)
+    __levelState.current_strategy = strategy
 
-    result = delegate OHA {
+    delegate OHA {
       goal: strategy.goal
-      state: LevelState
-      constraints: { max_actions: strategy.budget }
+      &LevelState  -- child reads/writes __levelState directly
     }
 
-    LevelState = merge(LevelState, result)
-
-    if stuck_detected(LevelState):
+    // After child returns, &LevelState is updated in place
+    if stuck_detected(&LevelState):
       escalate_strategy()
 
-    if level_complete(observation):
+    if level_complete(arc3.observe()):
       break
 ```
 
 ## Stuck Detection
 
 ```
-given: LevelState, last_3_delegations
+given: &LevelState, last_3_delegations
 
   stuck if ANY:
     - player_position unchanged for 3 delegations
@@ -129,31 +128,12 @@ given: frame = arc3.observe()
     - HUD region (bottom rows, contains goal pattern + gatekeeper pattern + fuel bar)
     - visible objects (non-background, non-player, non-HUD connected components)
 
-  store in LevelState.world
-  set LevelState.current_strategy = "orient"
+  store in &LevelState.world
+  set &LevelState.current_strategy = "orient"
 ```
 
 ## What You Cannot Do
 
 - You cannot interpret pixel data *without writing code*. You MUST write JavaScript that analyzes `frame[0]` programmatically — you cannot eyeball raw numbers.
 - You cannot skip the initialization step. The first OHA delegation must have a populated world model.
-- You cannot delegate more than `actionBudget` total actions across all OHA cycles.
-
-## Return Protocol
-
-When the level ends (completed or budget exhausted), return:
-
-```
-return JSON.stringify({
-  completed: boolean,
-  actions: LevelState.actions_taken,
-  knowledge: {
-    mechanics: extract_confirmed(LevelState.hypotheses),
-    objectTypes: LevelState.world.objects,
-    hazards: extract_hazards(LevelState),
-    rules: extract_rules(LevelState),
-    openQuestions: extract_unresolved(LevelState.hypotheses)
-  },
-  key_insight: "one sentence: what made this level solvable, or why it wasn't"
-})
-```
+- You cannot delegate more than `action_budget` total actions across all OHA cycles.

@@ -1,7 +1,7 @@
 ---
 name: arc3-solver
 kind: program
-version: 0.1.0
+version: 0.2.0
 description: Solve ARC-3 interactive grid games through observation, hypothesis, and action
 nodes: [game-solver, level-solver, oha]
 ---
@@ -12,7 +12,9 @@ A 3-tier RLM program for playing interactive grid games with unknown rules.
 
 ## Shared State
 
-### GameKnowledge
+State prefixed with `&` lives in the sandbox as a `__camelCase` variable (e.g., `&GameKnowledge` → `__gameKnowledge`). All agents read and write it directly — no serialization into prompts or return values.
+
+### &GameKnowledge
 
 Persists across levels. The orchestrator curates this between delegations.
 
@@ -54,7 +56,7 @@ GameKnowledge {
 }
 ```
 
-### LevelState
+### &LevelState
 
 Exists for the duration of one level attempt. Created fresh by LevelSolver.
 
@@ -124,20 +126,24 @@ LevelState {
 
 ```
 GameSolver
+  writes &GameKnowledge (once, at init)
   for each level:
-    delegates -> LevelSolver(GameKnowledge, level, budget)
-    receives <- { LevelState.hypotheses, LevelState.world, outcome }
-    curates GameKnowledge from results
+    writes &LevelState (fresh per attempt)
+    delegates -> LevelSolver
+    reads &LevelState after return
+    curates &GameKnowledge from &LevelState
 
 LevelSolver
+  reads &GameKnowledge for prior knowledge
+  reads/writes &LevelState
   loop until complete or budget exhausted:
-    delegates -> ObserveHypothesizeAct(LevelState)
-    receives <- updated LevelState
+    delegates -> ObserveHypothesizeAct
+    reads &LevelState after return
     evaluates progress, adjusts strategy if stuck
 
 ObserveHypothesizeAct
+  reads/writes &LevelState
   one atomic step:
-    reads LevelState
     observes, hypothesizes, acts, observes again
-    writes updated LevelState
+    writes diffs and hypothesis updates to &LevelState
 ```
