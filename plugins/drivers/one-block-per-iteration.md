@@ -1,14 +1,16 @@
 ---
 name: one-block-per-iteration
 kind: driver
-version: 0.2.0
-description: One code block per response — harness-enforced, extra blocks discarded
+version: 0.3.0
+description: One code block per response — harness-enforced, extra blocks discarded (text-block path only)
 author: sl
 tags: [reliability, weak-model]
 requires: []
 ---
 
 ## One Block Per Iteration (MANDATORY)
+
+**This driver applies to models on the text-block code path (non-anthropic models).** Anthropic models enforce single-block execution mechanically via tool calls with `disable_parallel_tool_use` and do not need this driver.
 
 Each response must contain **exactly one** ```javascript code block.
 

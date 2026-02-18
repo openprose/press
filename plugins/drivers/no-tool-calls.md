@@ -1,14 +1,16 @@
 ---
 name: no-tool-calls
 kind: driver
-version: 0.1.0
-description: Strongly prohibit tool/function call blocks — for models that hallucinate them
+version: 0.2.0
+description: Strongly prohibit tool/function call blocks — for models that hallucinate them (text-block path only)
 author: sl
 tags: [reliability, gemini, weak-model]
 requires: []
 ---
 
 ## No Tool Calls
+
+**This driver applies to models on the text-block code path (non-anthropic models).** Anthropic models use the tool-call driver with `disable_parallel_tool_use` and should NOT load this driver.
 
 You do NOT have access to any tools or functions. Do NOT generate tool call blocks, function call blocks, or any structured tool invocation format.
 
