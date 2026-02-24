@@ -735,20 +735,21 @@ function renderEventIterCard(iterNum, iterData, depth, invocationId, invocations
   const children = [];
   for (const [childId, d] of delegations) {
     if (d.spawn && d.spawn.invocationId === invocationId) {
-      // Check if child was spawned around this iteration by looking at child invocation data
       const childInv = invocations.get(childId);
       children.push({ childId, spawn: d.spawn, returnEv: d.returnEv, errorEv: d.errorEv, childInv });
     }
   }
-  if (children.length > 0 && iterNum === findDelegationIter(ie, children)) {
+  // Filter to children whose spawn timestamp falls within this iteration's time window
+  const iterChildren = children.filter(c => matchesIteration(c.spawn, ie, iterNum, invocationId, invocations));
+  if (iterChildren.length > 0) {
     const panel = document.createElement('div');
     panel.className = 'children-panel';
     const details = document.createElement('details');
     const summary = document.createElement('summary');
-    summary.innerHTML = `Children (${children.length})`;
+    summary.innerHTML = `Children (${iterChildren.length})`;
     details.appendChild(summary);
 
-    for (const child of children) {
+    for (const child of iterChildren) {
       const item = document.createElement('div');
       item.className = 'child-item';
       const childDetails = document.createElement('details');
@@ -817,10 +818,18 @@ function renderEventIterCard(iterNum, iterData, depth, invocationId, invocations
   return card;
 }
 
-// Find which root iteration the delegations belong to (heuristic: show on last iteration)
-function findDelegationIter(iterEnd, children) {
-  if (!iterEnd) return 0;
-  return iterEnd.iteration;
+// Check if a delegation:spawn belongs to a specific iteration by comparing timestamps.
+// A spawn belongs to the iteration whose iteration:start <= spawn.timestamp <= iteration:end.
+function matchesIteration(spawn, iterEnd, iterNum, invocationId, invocations) {
+  if (!spawn) return false;
+  // Find the iteration:start timestamp for this iteration from the invocation data
+  const inv = invocations.get(invocationId);
+  if (!inv) return iterNum === 0;
+  // Use the previous iteration's iterEnd timestamp as lower bound, or 0 for first iteration
+  const prevIter = inv.iterations.get(iterNum - 1);
+  const lowerBound = prevIter && prevIter.iterEnd ? prevIter.iterEnd.timestamp : 0;
+  const upperBound = iterEnd ? iterEnd.timestamp : Infinity;
+  return spawn.timestamp >= lowerBound && spawn.timestamp <= upperBound;
 }
 
 // ── Iteration Timeline (legacy trace format) ──

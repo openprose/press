@@ -22,7 +22,11 @@ export class RlmObserver implements RlmEventSink {
 		const handlers = this.handlers.get(event.type);
 		if (handlers) {
 			for (const handler of handlers) {
-				(handler as EventHandler<typeof event>)(event);
+				try {
+					(handler as EventHandler<typeof event>)(event);
+				} catch {
+					// Handler faults must not propagate into the engine
+				}
 			}
 		}
 	}
