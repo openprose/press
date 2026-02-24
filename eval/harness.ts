@@ -39,10 +39,6 @@ export interface HarnessConfig {
 	attempts?: number;
 	/** Pre-loaded app plugin bodies keyed by name, available for child agents via `app` option. */
 	childApps?: Record<string, string>;
-	/** When true, child rlm() traces are captured in parent trace entries. */
-	traceChildren?: boolean;
-	/** When true, sandbox variable snapshots are captured after each iteration. */
-	traceSnapshots?: boolean;
 	/** Reasoning effort level for OpenRouter reasoning tokens. */
 	reasoningEffort?: string;
 	/** Create per-task sandbox globals. Called before rlm() for each task. */
@@ -129,8 +125,6 @@ export async function runEval(
 						getResultMetadata: config.getResultMetadata,
 						globalDocs: config.globalDocs,
 						childApps: config.childApps,
-						traceChildren: config.traceChildren,
-						traceSnapshots: config.traceSnapshots,
 						reasoningEffort: config.reasoningEffort,
 					});
 					attemptScores.push(result.score);
@@ -148,7 +142,6 @@ export async function runEval(
 						expected: task.expected,
 						score: 0,
 						iterations: 0,
-						trace: [],
 						wallTimeMs: 0,
 						charCount: { input: 0, output: 0 },
 						error: err instanceof Error ? err.message : String(err),
@@ -224,8 +217,6 @@ interface SingleTaskConfig {
 	getResultMetadata?: (task: EvalTask) => Record<string, unknown> | undefined;
 	globalDocs?: string;
 	childApps?: Record<string, string>;
-	traceChildren?: boolean;
-	traceSnapshots?: boolean;
 	reasoningEffort?: string;
 }
 
@@ -234,7 +225,7 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 		task, callLLM, scoringFn, maxIterations, maxDepth,
 		pluginBodies, models, setupSandbox, cleanupTask,
 		getResultMetadata, globalDocs, childApps,
-		traceChildren, traceSnapshots, reasoningEffort,
+		reasoningEffort,
 	} = cfg;
 	const startTime = Date.now();
 
@@ -264,8 +255,6 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 			sandboxGlobals,
 			globalDocs,
 			childApps,
-			traceChildren,
-			traceSnapshots,
 			reasoningEffort,
 		});
 
@@ -279,7 +268,6 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 			expected: task.expected,
 			score,
 			iterations: result.iterations,
-			trace: result.trace,
 			wallTimeMs,
 			charCount: { input: totalInputChars, output: totalOutputChars },
 			metadata,
@@ -288,8 +276,6 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 		const wallTimeMs = Date.now() - startTime;
 		const errMsg = err instanceof Error ? err.message : String(err);
 
-		// Preserve trace data from all RLM failures (max-iteration, callLLM errors, etc.)
-		const trace = err instanceof RlmError ? err.trace : [];
 		const iterations = err instanceof RlmError ? err.iterations : 0;
 		const metadata = getResultMetadata?.(task);
 
@@ -299,7 +285,6 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 			expected: task.expected,
 			score: 0,
 			iterations,
-			trace,
 			wallTimeMs,
 			charCount: { input: totalInputChars, output: totalOutputChars },
 			error: errMsg,

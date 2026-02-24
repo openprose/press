@@ -23,7 +23,17 @@ interface TaskAnalysis {
 	wallTimeMs: number;
 }
 
+// Legacy result files may still contain a `trace` array from before trace removal.
+interface LegacyTraceEntry {
+	reasoning: string;
+	code: string[];
+	output: string;
+	error: string | null;
+}
+
 function analyzeTask(result: EvalResult): TaskAnalysis {
+	const trace: LegacyTraceEntry[] = (result as unknown as Record<string, unknown>).trace as LegacyTraceEntry[] ?? [];
+
 	let totalCodeBlocks = 0;
 	let totalCodeLines = 0;
 	let rlmCallCount = 0;
@@ -32,14 +42,13 @@ function analyzeTask(result: EvalResult): TaskAnalysis {
 	let errorCount = 0;
 	let eagerReturn = false;
 
-	for (let i = 0; i < result.trace.length; i++) {
-		const entry = result.trace[i];
+	for (let i = 0; i < trace.length; i++) {
+		const entry = trace[i];
 		totalCodeBlocks += entry.code.length;
 
 		for (const block of entry.code) {
 			totalCodeLines += block.split("\n").length;
 
-			// Count rlm() calls (but not the string "rlm" in comments/strings)
 			const rlmMatches = block.match(/\brlm\s*\(/g);
 			if (rlmMatches) rlmCallCount += rlmMatches.length;
 
@@ -48,7 +57,6 @@ function analyzeTask(result: EvalResult): TaskAnalysis {
 			}
 			if (/\b(?:let|const)\s/.test(block)) usesLetConst = true;
 
-			// Check for return in first trace entry
 			if (i === 0 && /\breturn[\s(]/.test(block)) eagerReturn = true;
 		}
 
@@ -61,7 +69,7 @@ function analyzeTask(result: EvalResult): TaskAnalysis {
 		iterations: result.iterations,
 		totalCodeBlocks,
 		totalCodeLines,
-		codeBlocksPerIteration: result.trace.length > 0 ? totalCodeBlocks / result.trace.length : 0,
+		codeBlocksPerIteration: trace.length > 0 ? totalCodeBlocks / trace.length : 0,
 		hasRlmCall: rlmCallCount > 0,
 		rlmCallCount,
 		hasConsoleLog,

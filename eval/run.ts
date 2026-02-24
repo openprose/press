@@ -90,8 +90,6 @@ interface CliArgs {
 	game: string | null;
 	program: string | null;
 	traceActions: boolean;
-	traceChildren: boolean;
-	traceSnapshots: boolean;
 	reasoningEffort: string;
 }
 
@@ -129,10 +127,7 @@ Options:
   --with-labels            OOLONG: use labeled context (context_window_text_with_labels)
   --model-alias <spec>     Register a model alias: alias=model[:tag1,tag2] (repeatable)
   --child-app <name>       Load a named app plugin for child delegation (repeatable)
-  --trace-children         Capture child agent traces in parent trace entries
-  --trace-snapshots        Capture sandbox variable snapshots per iteration
   --trace-actions          ARC-3: record action log per task
-  --trace-full             Enable all trace options above
   --reasoning-effort <s>   Reasoning effort: xhigh, high, medium, low, minimal, none (default: medium)
   --filter <expr>          OOLONG: filter tasks by field values (comma=AND, pipe=OR)
                            e.g. "task_group=TASK_TYPE.NUMERIC_ONE_CLASS"
@@ -167,13 +162,7 @@ function parseArgs(argv: string[]): CliArgs {
 			flags.add("with-labels");
 		} else if (arg === "--trace-actions") {
 			flags.add("trace-actions");
-		} else if (arg === "--trace-children") {
-			flags.add("trace-children");
-		} else if (arg === "--trace-snapshots") {
-			flags.add("trace-snapshots");
 		} else if (arg === "--trace-full") {
-			flags.add("trace-children");
-			flags.add("trace-snapshots");
 			flags.add("trace-actions");
 		} else if (arg.startsWith("--") && i + 1 < argv.length) {
 			const key = arg.slice(2);
@@ -214,8 +203,6 @@ function parseArgs(argv: string[]): CliArgs {
 		rateBurst: parseInt(args["rate-burst"] ?? "10", 10),
 		withLabels: flags.has("with-labels"),
 		traceActions: flags.has("trace-actions"),
-		traceChildren: flags.has("trace-children"),
-		traceSnapshots: flags.has("trace-snapshots"),
 		filter: args.filter ?? null,
 		selectedProblems: args["selected-problems"]
 			? args["selected-problems"].split(",").map((s) => s.trim())
@@ -628,12 +615,6 @@ function printConfig(args: CliArgs): void {
 	if (args.traceActions) {
 		console.log(`Trace Actions:   yes (recording action log per task)`);
 	}
-	if (args.traceChildren) {
-		console.log(`Trace Children:  yes (capturing child agent traces)`);
-	}
-	if (args.traceSnapshots) {
-		console.log(`Trace Snapshots: yes (capturing env snapshots per iteration)`);
-	}
 	if (args.attempts > 1) {
 		console.log(`Attempts:        ${args.attempts} (pass@${args.attempts})`);
 	}
@@ -813,8 +794,6 @@ async function main(): Promise<void> {
 		getResultMetadata: benchmarkConfig.getResultMetadata,
 		globalDocs: combinedGlobalDocs,
 		childApps: hasChildApps ? allChildApps : undefined,
-		traceChildren: args.traceChildren,
-		traceSnapshots: args.traceSnapshots,
 		reasoningEffort: args.reasoningEffort !== "none" ? args.reasoningEffort : undefined,
 		filter: args.filter ?? undefined,
 		onProgress: printProgress,

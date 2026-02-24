@@ -182,18 +182,6 @@ async function main() {
 		...(Object.keys(models).length > 0 && { models }),
 	});
 
-	for (const entry of result.trace) {
-		if (entry.reasoning) {
-			console.log(entry.reasoning);
-		}
-		if (entry.code.length > 0) {
-			console.log(`\n--- REPL Output ---`);
-			if (entry.output) console.log(entry.output);
-			if (entry.error) console.log(`ERROR: ${entry.error}`);
-			console.log(`--- End REPL ---\n`);
-		}
-	}
-
 	console.log(`\n===== ANSWER =====`);
 	console.log(result.answer);
 	console.log(`==================`);

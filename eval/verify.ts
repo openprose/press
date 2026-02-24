@@ -78,7 +78,6 @@ const sampleResult: EvalResult = {
 	expected: "test",
 	score: 1,
 	iterations: 1,
-	trace: [],
 	wallTimeMs: 100,
 	charCount: { input: 0, output: 0 },
 };

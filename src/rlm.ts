@@ -33,52 +33,28 @@ export interface RlmOptions {
 	globalDocs?: string;
 	/** Keyed by name; looked up when a parent calls `rlm(query, ctx, { app: "name" })`. */
 	childApps?: Record<string, string>;
-	traceChildren?: boolean;
-	traceSnapshots?: boolean;
 	reasoningEffort?: string;
 }
 
 export interface RlmResult {
 	answer: string;
 	iterations: number;
-	trace: TraceEntry[];
 }
 
-export interface TraceEntry {
-	reasoning: string;
-	code: string[];
-	output: string;
-	error: string | null;
-	children?: ChildTrace[];
-	envSnapshot?: Record<string, unknown>;
-}
-
-export interface ChildTrace {
-	query: string;
-	depth: number;
-	answer: string | null;
-	iterations: number;
-	trace: TraceEntry[];
-	error?: string;
-}
-
-/** Error with partial trace for diagnostics. */
 export class RlmError extends Error {
-	readonly trace: TraceEntry[];
 	readonly iterations: number;
 
-	constructor(message: string, trace: TraceEntry[], iterations: number) {
+	constructor(message: string, iterations: number) {
 		super(message);
 		this.name = "RlmError";
-		this.trace = trace;
 		this.iterations = iterations;
 	}
 }
 
 /** Thrown when the iteration limit is reached. */
 export class RlmMaxIterationsError extends RlmError {
-	constructor(maxIterations: number, trace: TraceEntry[]) {
-		super(`RLM reached max iterations (${maxIterations}) without returning an answer`, trace, maxIterations);
+	constructor(maxIterations: number) {
+		super(`RLM reached max iterations (${maxIterations}) without returning an answer`, maxIterations);
 		this.name = "RlmMaxIterationsError";
 	}
 }
@@ -120,8 +96,6 @@ export async function rlm(query: string, context: string | undefined, options: R
 		sandboxGlobals: options.sandboxGlobals,
 		globalDocs: options.globalDocs,
 		childApps: options.childApps,
-		traceChildren: options.traceChildren ?? false,
-		traceSnapshots: options.traceSnapshots ?? false,
 		reasoningEffort: options.reasoningEffort,
 	};
 
@@ -134,8 +108,6 @@ export async function rlm(query: string, context: string | undefined, options: R
 			env.set(name, value);
 		}
 	}
-
-	const childTraceSlot: { current: ChildTrace[] | null } = { current: null };
 
 	const snapshotExcludeKeys = new Set(SNAPSHOT_EXCLUDE_KEYS);
 	snapshotExcludeKeys.add('rlm');
@@ -306,20 +278,14 @@ export async function rlm(query: string, context: string | undefined, options: R
 		}
 
 		const messages: Array<{ role: string; content: string; meta?: Record<string, unknown> }> = [{ role: "user", content: query }];
-		const trace: TraceEntry[] = [];
 
 		for (let iteration = 0; iteration < effectiveMaxIterations; iteration++) {
-			if (opts.traceChildren) {
-				childTraceSlot.current = [];
-			}
-
 			let response: CallLLMResponse;
 			try {
 				response = await callLLM(messages, effectiveSystemPrompt, effectiveReasoningEffort ? { reasoningEffort: effectiveReasoningEffort } : undefined);
 			} catch (err) {
 				throw new RlmError(
 					err instanceof Error ? err.message : String(err),
-					trace,
 					iteration,
 				);
 			}
@@ -386,26 +352,9 @@ export async function rlm(query: string, context: string | undefined, options: R
 						break;
 					}
 					const answer = typeof returnValue === "object" ? JSON.stringify(returnValue) : String(returnValue);
-					const entry: TraceEntry = { reasoning, code: codeBlocks, output: combinedOutput, error: combinedError };
-					if (opts.traceChildren && childTraceSlot.current && childTraceSlot.current.length > 0) {
-						entry.children = childTraceSlot.current;
-					}
-					if (opts.traceSnapshots) {
-						entry.envSnapshot = env.snapshot(snapshotExcludeKeys);
-					}
-					trace.push(entry);
-					return { answer, iterations: iteration + 1, trace };
+					return { answer, iterations: iteration + 1 };
 				}
 			}
-
-			const entry: TraceEntry = { reasoning, code: codeBlocks, output: combinedOutput, error: combinedError };
-			if (opts.traceChildren && childTraceSlot.current && childTraceSlot.current.length > 0) {
-				entry.children = childTraceSlot.current;
-			}
-			if (opts.traceSnapshots) {
-				entry.envSnapshot = env.snapshot(snapshotExcludeKeys);
-			}
-			trace.push(entry);
 
 			// Build iteration context for the next turn (if there will be one)
 			const nextIterContext = (effectiveMaxIterations > 1 && iteration + 1 < effectiveMaxIterations)
@@ -439,7 +388,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 			}
 		}
 
-		throw new RlmMaxIterationsError(effectiveMaxIterations, trace);
+		throw new RlmMaxIterationsError(effectiveMaxIterations);
 	}
 
 	env.set("rlm", (q: string, c?: string, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; app?: string; reasoning?: string }): Promise<string> => {
@@ -492,35 +441,9 @@ export async function rlm(query: string, context: string | undefined, options: R
 			: `${callerInvocationId}.${childDepthLabel}`;
 
 		const promise = (async () => {
-			// Isolate parent's trace accumulator from child's per-iteration reset.
-			const parentTraceSlot = childTraceSlot.current;
-			childTraceSlot.current = null;
 			try {
 				const result = await rlmInternal(q, c, savedDepth + 1, childLineage, childInvocationId, callerInvocationId, resolvedSystemPrompt, modelCallLLM, rlmOpts?.maxIterations, rlmOpts?.reasoning);
-				childTraceSlot.current = parentTraceSlot;
-				if (opts.traceChildren && childTraceSlot.current) {
-					childTraceSlot.current.push({
-						query: q,
-						depth: savedDepth + 1,
-						answer: result.answer,
-						iterations: result.iterations,
-						trace: result.trace,
-					});
-				}
 				return result.answer;
-			} catch (err) {
-				childTraceSlot.current = parentTraceSlot;
-				if (opts.traceChildren && childTraceSlot.current && err instanceof RlmError) {
-					childTraceSlot.current.push({
-						query: q,
-						depth: savedDepth + 1,
-						answer: null,
-						iterations: err.iterations,
-						trace: err.trace,
-						error: err.message,
-					});
-				}
-				throw err;
 			} finally {
 				activeDepth = savedDepth;
 			}

@@ -1,5 +1,3 @@
-import type { TraceEntry } from "../src/rlm.js";
-
 export interface EvalTask {
 	id: string;
 	query: string;
@@ -14,7 +12,6 @@ export interface EvalResult {
 	expected: string | string[];
 	score: number;
 	iterations: number;
-	trace: TraceEntry[];
 	wallTimeMs: number;
 	charCount: { input: number; output: number };
 	error?: string;
