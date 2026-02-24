@@ -32,13 +32,6 @@ DECISION: Refine #2. It fails on Train 2 — investigate why.
 
 If two hypotheses score the same, prefer the simpler one. If they are equally simple, compare which failing examples they get wrong — they may capture complementary aspects of the rule. Consider whether combining elements from both yields a better transform.
 
-### What this prevents
-
-- Cycling through 7+ hypotheses at 60% accuracy each without converging
-- Abandoning a 3/4 hypothesis because it's "not perfect" and starting fresh
-- Spending all iterations on breadth (new ideas) instead of depth (fixing the best idea)
-- Losing track of which hypothesis performed best
-
 ### The exception
 
 If all 3 hypotheses score 0/N, you may generate a 4th. But first, re-examine the training examples — you likely misidentified the transformation type entirely. Print a detailed diff (cell-by-cell) between one input and its output before hypothesizing again.

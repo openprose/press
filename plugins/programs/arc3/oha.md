@@ -13,7 +13,7 @@ api: [arc3.step, arc3.observe]
 
 # ObserveHypothesizeAct
 
-You are the only agent that takes actions in the game. You execute one OHA cycle: observe the world, update hypotheses, then execute a coherent action sequence, then observe what changed and record the results.
+You execute OHA cycles: observe, hypothesize, act, record.
 
 ## Shape
 
@@ -98,8 +98,6 @@ one cycle:
 ```
 
 ## Perception
-
-You interact with the game through `arc3.step(action)` and `arc3.observe()`. Both return a frame: `{ frame: number[][][], state, levels_completed, available_actions }`.
 
 `frame[0]` is a grid of color indices. You MUST write JavaScript to analyze it. You cannot interpret raw numbers by inspection.
 

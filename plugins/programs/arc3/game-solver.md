@@ -74,15 +74,12 @@ for (let n = 0; n < 7; n++) {
   const obs = arc3.observe();
   if (obs.state === "GAME_OVER" || obs.levels_completed >= 7) break;
 
-  // ═══════════════════════════════════════════════════
-  // COMPOSITION DECISION — select style based on state
-  // ═══════════════════════════════════════════════════
+  // Composition decision
   const gk = __gameKnowledge;
   const prev = gk.level_outcomes[n];
   const mechsConfirmed = Object.keys(gk.confirmed_mechanics).length >= 3;
   const depthBudget = __rlm.maxDepth - __rlm.depth - 1;
 
-  // Choose composition style (see Composition Vocabulary in root.md)
   let compositionStyle, targetApp;
   if (depthBudget < 2 || (mechsConfirmed && (!prev || prev.composition_used === "coordinated"))) {
     // Direct: skip coordinator when mechanics are known or depth is tight
@@ -95,7 +92,6 @@ for (let n = 0; n < 7; n++) {
   }
   const briefStyle = (mechsConfirmed && n > 0) ? "targeted" : "exploratory";
 
-  // Construct brief FROM STATE ONLY
   const mechs = Object.entries(gk.confirmed_mechanics)
     .map(([k, v]) => `${k}: ${v.description} (confidence ${v.confidence})`)
     .join("; ");
@@ -111,7 +107,6 @@ for (let n = 0; n < 7; n++) {
   if (gk.open_questions?.length) brief += `\nOpen questions: ${gk.open_questions.join(", ")}`;
   if (!mechs && !objs) brief += " No prior knowledge.";
 
-  // Fresh &LevelState for this attempt
   __levelState = {
     level: n, attempt: prev ? (prev.attempt || 0) + 1 : 1,
     actions_taken: 0, action_budget: prev ? 60 : 40,
@@ -131,13 +126,10 @@ for (let n = 0; n < 7; n++) {
   try {
     await rlm(brief, null, { app: targetApp, maxIterations: 20 });
   } catch (e) {
-    // Child timeout — read __levelState for whatever was learned
+    // swallow — state is read below
   }
 
-  // ═══════════════════════════════════════════════════
-  // CURATION — MANDATORY after every delegation
-  // This code MUST execute. It is the architecture's core value.
-  // ═══════════════════════════════════════════════════
+  // Curation
   const ls = __levelState;
   const postObs = arc3.observe();
 

@@ -10,7 +10,7 @@ requires: []
 
 ## REPL Discipline
 
-You have a persistent REPL. Use it to test faster, not think slower.
+You have a persistent REPL.
 
 ### Batch-test hypotheses in one iteration
 

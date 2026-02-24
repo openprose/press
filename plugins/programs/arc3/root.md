@@ -8,13 +8,7 @@ nodes: [game-solver, level-solver, oha]
 
 # ARC-3 Solver
 
-An RLM program for playing interactive grid games with unknown rules. The agent discovers all game mechanics through experimentation — nothing about how the game works is assumed.
-
-The orchestrator composes available components based on the current situation. The composition may vary per level — simple levels with confirmed mechanics may use fewer tiers than complex discovery levels.
-
 ## Components
-
-Available components for composition. Each declares what it needs and what it produces, so any composing agent can satisfy the contract regardless of topology.
 
 ### game-solver
 
@@ -118,8 +112,6 @@ state:
 
 ## Composition Vocabulary
 
-When delegating, select a composition style based on the current situation. These are composable — a `coordinated` delegation may internally use `direct` delegations to its own children.
-
 ```
 styles:
 
@@ -152,8 +144,6 @@ styles:
 ```
 
 ## Composition Principles
-
-These govern when and how to compose. They are grounded in observable state, not abstractions.
 
 ```
 principles:

@@ -54,18 +54,12 @@ Start the game, define utilities, probe each action once:
 
 ```javascript
 // CHECK: Is the game already running? (re-scout mode)
-let initFrame;
-try {
-  initFrame = arc3.observe();
-  if (initFrame && initFrame.frame) {
-    console.log("GAME ALREADY RUNNING (re-scout mode). Skipping start and mechanic probing.");
-    console.log("State:", initFrame.state, "Levels:", initFrame.levels_completed, "Actions so far:", arc3.actionCount);
-    // Skip to Phase 3 (mapping) — do NOT call arc3.start()
-  } else {
-    initFrame = await arc3.start();
-    console.log("Game started fresh.");
-  }
-} catch(e) {
+let initFrame = arc3.observe();
+if (initFrame?.frame) {
+  console.log("GAME ALREADY RUNNING (re-scout mode). Skipping start and mechanic probing.");
+  console.log("State:", initFrame.state, "Levels:", initFrame.levels_completed, "Actions so far:", arc3.actionCount);
+  // Skip to Phase 3 (mapping) — do NOT call arc3.start()
+} else {
   initFrame = await arc3.start();
   console.log("Game started fresh.");
 }

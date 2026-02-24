@@ -2,7 +2,7 @@
 name: json-stringify-return
 kind: driver
 version: 0.1.0
-description: Return JSON.stringify(value) for structured data — prevents serialization bugs
+description: Prevents silent [object Object] truncation when harness receives raw arrays/objects
 author: sl
 tags: [format, reliability, arc]
 requires: []

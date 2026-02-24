@@ -55,15 +55,7 @@ ensures:
 
 ## The Environment
 
-All shared state lives on `globalThis`. The harness pre-loaded it before you started:
-
-- `__arcTasks` -- Object keyed by task ID. Each value: `{ train, test }` with grid arrays.
-- `__arcTaskIds` -- Array of all task IDs in dataset order.
-- `__arcLibrary` -- The shared knowledge library (starts with empty shape).
-- `__arcCurrentTask` -- ID of the task being solved (you set this before delegation).
-- `__arcSubmit` -- The submission API. Each task gets exactly 2 submissions (hard limit).
-
-**You read from and write to `globalThis` directly.** Children do the same. The sandbox is the shared memory.
+See Harness-Injected Globals in root.md. All shared state lives on `globalThis`. You and children read/write it directly.
 
 ## Setup (First Iteration)
 
@@ -370,24 +362,8 @@ if (allDone) {
 
 ## Iteration Management
 
-You have ~100 iterations. Each task cycle costs 1-2 orchestrator iterations (setup + delegate + curate). Solver gets ~18 iterations per task. For N tasks: pass@1 = ~2*N orchestrator iterations, pass@2 = ~2 * N_failed.
-
-**Combine operations.** The solver delegation, submission decision, curation, and advancement should all happen in a single code block per task. Aim for 1-2 orchestrator iterations per task.
-
-## What You Cannot Do
-
-- You cannot solve tasks directly. Do not analyze grids, write transforms, or detect patterns. Delegate ALL solving to `rlm(goal, null, { app: "arc2-solver" })`.
-- You cannot promote strategies or dismiss anti-patterns based on solver self-report. Only ground truth from `__arcSubmit.submit()` determines correctness.
-- You cannot continue working after calling `return()`. If the harness asks you to verify, re-confirm and return again.
+Combine the solver delegation, submission decision, curation, and index advancement into a single code block per task. Aim for 1-2 orchestrator iterations per task.
 
 ## Critical Rules
 
-1. **One task per iteration.** Process one task per code block. STOP after advancing the index.
-2. **Always delegate.** Do not try to solve tasks yourself. The solver does pattern discovery.
-3. **try-catch everything.** Child crashes must not crash the session.
-4. **Sanity check before submission.** Validate dimensions, colors, non-triviality.
-5. **Ground-truth curation.** Promote strategies only on correct submission. Record anti-patterns on wrong submission or failed sanity.
-6. **Diagnostic retries.** Tell the retry solver what was tried and what failed.
-7. **Pass by reference.** Read/write `globalThis`. Never serialize the library into child prompts.
-8. **Return format.** `return(JSON.stringify(__arcSubmit.getResults()))`.
-9. **Log progress.** Every iteration should print a progress summary.
+1. **Log progress.** Every iteration should print a progress summary.

@@ -38,17 +38,6 @@ console.log("GAP:", "...");             // what's missing between what I have an
 
 ### Step 3: Bridge the gap (iteration 3+)
 
-The GAP determines your approach:
-
-| Gap | Approach |
-|-----|----------|
-| No gap — data has everything I need | Filter, count, compute directly in code |
-| Data has raw items but no labels/categories | **Classify items via `rlm()` fanout**, then compute on results |
-| Data is too large to process directly | Chunk and delegate via `rlm()` |
-| Data format is unclear after 2 iterations | Sample 3 items from different positions, compare structure |
+The GAP determines your approach. See the gap-approach table in `exploration-budget` for the full mapping. The short version: no gap means compute directly; missing labels means classify via `rlm()` fanout; too-large data means chunk and delegate.
 
 **The most common gap:** the question asks about labels that don't exist in the data. This means you need to CREATE the labels by classifying items. Use `rlm()` with batched parallel calls to classify, then count the results in code. Do not search the data for labels that aren't there.
-
-### What this prevents
-
-The failure pattern this addresses: spending 10+ iterations searching for labels/fields that the data doesn't contain, because you assumed the question implies the data has pre-annotated labels. It doesn't. If the question says "compare label frequencies" and the data has raw items without labels, you must classify first, count second.

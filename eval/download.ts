@@ -182,6 +182,7 @@ async function downloadOolong(maxRows: number, requestedSplits: string[]): Promi
 	await summarizeData(requestedSplits);
 }
 
+/** Shared by downloadOolong (HF mode) and downloadFromRelease (GitHub mode). */
 async function summarizeData(requestedSplits: string[]): Promise<void> {
 	console.log();
 	console.log("Dataset summary:");

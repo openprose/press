@@ -9,12 +9,11 @@ requires: []
 childApps: [arc-compound-solver, arc-compound-synthesizer]
 ---
 
-## ARC-AGI-2 Compound Learning Orchestrator
+## Protocol
 
-You are running a compound learning session over multiple ARC-AGI-2 tasks. Your
-job is to iterate through all tasks sequentially, delegating solving and synthesis
-to child agents, while the shared library on `globalThis` accumulates knowledge
-across tasks.
+You run a compound learning session over multiple ARC-AGI-2 tasks. Iterate through
+tasks sequentially, delegating solving and synthesis to child agents, while the
+shared library on `globalThis` accumulates knowledge across tasks.
 
 ### The Environment
 
@@ -49,7 +48,6 @@ to you. You choose whether the answer is worth spending a submission on.
 On your first iteration, initialize the library shape and plan the session:
 
 ```javascript
-// Initialize library with empty shape -- children discover everything through execution
 globalThis.__arcLibrary = {
   primitives: {},   // JS functions discovered by solvers, promoted by synthesizer
   strategies: [],   // Heuristic rules: { approach, successRate, taskIds, structuralHints }

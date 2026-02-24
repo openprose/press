@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-// Usage: npx tsx eval/verify.ts
+/**
+ * Standalone smoke test for eval subsystem imports and scoring functions.
+ * Not part of the vitest suite — run directly: npx tsx eval/verify.ts
+ * Validates that scoring functions, dataset generators, and harness imports
+ * resolve correctly without needing downloaded data or API keys.
+ */
 
 import { exactMatch, oolongScore, f1Score, multipleChoice } from "./scoring.js";
 import { generateSNIAHTasks, CONTEXT_LENGTHS } from "./datasets/s-niah.js";

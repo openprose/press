@@ -1,3 +1,9 @@
+/**
+ * Thin wrapper over fromOpenRouterCompatible that hardcodes the OpenRouter
+ * base URL. Kept as a separate module so eval/run.ts and tests can import a
+ * concise factory without repeating the base URL, and so tests can mock fetch
+ * against a stable import path (see test/eval-openrouter-routing.test.ts).
+ */
 import type { CallLLM } from "../../src/rlm.js";
 import { fromOpenRouterCompatible } from "../../src/drivers/openrouter-compatible.js";
 

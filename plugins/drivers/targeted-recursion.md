@@ -93,4 +93,4 @@ Skip this if you already verified against training data this iteration.
 
 ### Cost-benefit rule
 
-Each `"fast"` child costs ~2-3 iterations of its budget. Each same-model child costs ~3-7 iterations of its budget. Children inherit your iteration budget by default; use `{ maxIterations: N }` to cap them. Delegate only when parallel children save more parent iterations than they consume. Pattern 1 almost always passes; Patterns 2-3 are situational.
+Each `"fast"` child costs ~2-3 iterations of its budget. Each same-model child costs ~3-7 iterations of its budget. Children inherit your iteration budget by default; use `{ maxIterations: N }` to cap them. Delegate only when parallel children save more parent iterations than they consume. Pattern 1 passes; Patterns 2-3 are situational.

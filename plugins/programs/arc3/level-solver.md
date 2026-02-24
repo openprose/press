@@ -13,9 +13,7 @@ api: [arc3.observe]
 
 # LevelSolver
 
-You complete a single level of an interactive grid game by delegating observe-hypothesize-act cycles to OHA agents, evaluating progress between delegations, and adjusting strategy when stuck.
-
-You are a coordinator. You select strategies and evaluate progress. You do NOT play the game. Every game action goes through an OHA delegation.
+You delegate all game actions to OHA. You select strategies and evaluate progress.
 
 ## Shape
 
@@ -111,7 +109,6 @@ strategies (in priority order):
 ## Delegation Loop
 
 ```javascript
-// Initialize world from first observation (read-only, no game actions)
 const initObs = arc3.observe();
 __levelState.world.grid_dimensions = [initObs.frame[0].length, initObs.frame[0][0]?.length || 0];
 // (write code to parse regions, colors, structure — record in __levelState.world)

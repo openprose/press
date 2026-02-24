@@ -103,24 +103,14 @@ console.log(`\nStructural: sameSize=${sameSize}`);
 
 You are a computer that programs itself. The training pairs ARE the specification. Write code to discover the transformation rule.
 
-### Capabilities
+### Suggested Utilities
 
-Implement these as needed. Store reusable implementations on `__arcLibrary.primitives` with source and doc (see Library Integration below).
+Implement as needed. Store reusable implementations on `__arcLibrary.primitives` with source and doc (see Library Integration below).
 
-```
-capability: gridsEqual(a, b) -> boolean
-  Compare two grids cell-by-cell. Returns true iff dimensions match and every cell is identical.
-
-capability: diffGrids(gridA, gridB) -> diff
-  Identify all cells where values differ. Compute change statistics (count, color transitions).
-
-capability: findComponents(grid, ignoreColors) -> components[]
-  Flood-fill to find connected components of non-ignored colors (4-connected).
-  Each component: bounds {r, c, h, w}, cells [[r,c]...], color, pattern[][].
-
-capability: detectSymmetry(grid) -> symmetries
-  Check for horizontal, vertical, diagonal reflection and 90/180/270 rotation.
-```
+- `gridsEqual(a, b) -> boolean` — Compare two grids cell-by-cell. True iff dimensions match and every cell is identical.
+- `diffGrids(gridA, gridB) -> diff` — Identify cells where values differ. Compute change statistics (count, color transitions).
+- `findComponents(grid, ignoreColors) -> components[]` — Flood-fill connected components of non-ignored colors (4-connected). Each: bounds, cells, color, pattern.
+- `detectSymmetry(grid) -> symmetries` — Check horizontal, vertical, diagonal reflection and 90/180/270 rotation.
 
 ### Exploration Approaches
 
@@ -282,13 +272,6 @@ return(JSON.stringify({
   answer: testOutput,
 }));
 ```
-
-## What You Cannot Do
-
-- You cannot call `__arcSubmit.submit()`, `__arcSubmit.remaining()`, or `__arcSubmit.getResults()`. Only the orchestrator submits.
-- You cannot delegate to child agents. You are the leaf node.
-- You cannot interpret grids by reading raw numbers visually. You MUST write JavaScript that analyzes them programmatically.
-- You cannot write verification code and return() in the same iteration.
 
 ## Critical Rules
 

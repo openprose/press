@@ -1,15 +1,4 @@
-/**
- * OpenRouter-compatible CallLLM driver with OpenAI-format tool calls.
- *
- * Talks to any API that uses the OpenAI chat completions format:
- * OpenRouter, OpenAI, Groq, Together, Ollama, vLLM, etc.
- *
- * Uses a single `execute_code` tool with `parallel_tool_calls: false`
- * to guarantee exactly one code execution per LLM response.
- *
- * Retries with exponential backoff, request timeouts, per-request
- * timing/logging to stderr, and both HTTP-level and JSON-level error handling.
- */
+// OpenAI chat-completions driver (tool-call mode).
 
 import type { CallLLM, CallLLMOptions, CallLLMResponse } from "../rlm.js";
 import { EXECUTE_CODE_TOOL, TOOL_CHOICE } from "../system-prompt.js";
@@ -46,19 +35,13 @@ interface ChatCompletionResponse {
 }
 
 export interface OpenRouterCompatibleOptions {
-	/** API base URL (e.g. "https://openrouter.ai/api/v1", "https://api.openai.com/v1"). */
+	/** e.g. "https://openrouter.ai/api/v1", "https://api.openai.com/v1" */
 	baseUrl: string;
-	/** Bearer token for the Authorization header. */
 	apiKey: string;
-	/** Model ID to send in the request body. */
 	model: string;
-	/** Request timeout in milliseconds (default 120000). */
 	timeoutMs?: number;
-	/** Number of retries on 429/5xx (default 3). */
 	maxRetries?: number;
-	/** max_tokens for the response (default 16384). */
 	maxTokens?: number;
-	/** Reasoning effort level (default: none). Set to enable OpenRouter reasoning tokens. */
 	reasoningEffort?: string;
 }
 
@@ -72,20 +55,9 @@ async function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Translate the engine's flat message array into OpenAI chat completions format
- * with tool_calls / tool role messages.
- *
- * The engine maintains messages as `{ role: string; content: string }`. When the
- * engine uses the tool-call path, assistant messages contain the full reasoning
- * text followed by a tool-call marker, and the subsequent user message contains
- * the tool result. This driver uses a convention to detect tool-call history:
- *
- * - Assistant messages starting with `__TOOL_CALL__` are tool-call responses
- *   (format: `__TOOL_CALL__\n<tool_use_id>\n<reasoning>\n__CODE__\n<code>`)
- * - User messages starting with `__TOOL_RESULT__` are tool results
- *   (format: `__TOOL_RESULT__\n<tool_use_id>\n<content>`)
- *
- * Plain string messages (initial user query) are passed through as-is.
+ * Translate the engine's flat message array into OpenAI chat completions format.
+ * Recognizes __TOOL_CALL__ / __TOOL_RESULT__ markers to reconstruct tool_calls
+ * and tool-role messages.
  */
 export function translateMessages(
 	engineMessages: Array<{ role: string; content: string; meta?: Record<string, unknown> }>,
@@ -141,12 +113,6 @@ export function translateMessages(
 	return result;
 }
 
-/**
- * Create a CallLLM function that calls any OpenAI-compatible chat completions API
- * with tool-call-based REPL execution.
- *
- * Returns `CallLLMResponse` objects: `{ reasoning, code, toolUseId }`.
- */
 export function fromOpenRouterCompatible(options: OpenRouterCompatibleOptions): CallLLM {
 	const {
 		baseUrl,
@@ -158,7 +124,6 @@ export function fromOpenRouterCompatible(options: OpenRouterCompatibleOptions): 
 		reasoningEffort: defaultReasoningEffort,
 	} = options;
 
-	// Normalize: strip trailing slash so we can append /chat/completions reliably.
 	const base = baseUrl.replace(/\/+$/, "");
 	const endpoint = `${base}/chat/completions`;
 
@@ -268,7 +233,6 @@ export function fromOpenRouterCompatible(options: OpenRouterCompatibleOptions): 
 					const args = JSON.parse(toolCall.function.arguments);
 					code = args.code ?? null;
 				} catch {
-					// Malformed JSON in arguments — treat as no code
 					code = null;
 				}
 			}
@@ -309,19 +273,6 @@ const KNOWN_PROVIDERS: Record<string, ProviderConfig> = {
 	},
 };
 
-/**
- * Convenience factory that parses a "provider/model" string and routes to the
- * right base URL and API key automatically.
- *
- * Examples:
- *   fromProviderModel("openrouter/google/gemini-3-flash-preview")
- *   fromProviderModel("openai/gpt-4o")
- *   fromProviderModel("custom/my-model", { baseUrl: "http://localhost:11434/v1", apiKey: "ollama" })
- *
- * For known providers (openrouter, openai), the base URL is inferred and the
- * API key is read from the corresponding environment variable. Both can be
- * overridden via the options parameter.
- */
 export function fromProviderModel(
 	providerSlashModel: string,
 	options?: { apiKey?: string; baseUrl?: string; timeoutMs?: number; reasoningEffort?: string },

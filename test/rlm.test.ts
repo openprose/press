@@ -11,20 +11,19 @@ function mockToolCallLLM(responses: CallLLMResponse[]): CallLLM {
 	};
 }
 
-/** Shorthand: create a CallLLMResponse with minimal boilerplate. */
 function tc(code: string, toolUseId = "t"): CallLLMResponse {
 	return { reasoning: "", code, toolUseId };
 }
 
 describe("rlm", () => {
-	it("simple return: verified on second iteration", async () => {
+	it("simple return", async () => {
 		const callLLM = mockToolCallLLM([tc('return "hello"', "t1"), tc('return "hello"', "t2")]);
 		const result = await rlm("test query", undefined, { callLLM });
 		expect(result.answer).toBe("hello");
 		expect(result.iterations).toBe(2);
 	});
 
-	it("multi-iteration: LLM needs two turns to produce answer", async () => {
+	it("multi-iteration", async () => {
 		const callLLM = mockToolCallLLM([tc('console.log("thinking...")', "t1"), tc('return "done"', "t2")]);
 		const result = await rlm("test query", undefined, { callLLM });
 		expect(result.answer).toBe("done");
@@ -41,14 +40,14 @@ describe("rlm", () => {
 		expect(result.iterations).toBe(2);
 	});
 
-	it("error recovery: first code throws, second succeeds", async () => {
+	it("error recovery", async () => {
 		const callLLM = mockToolCallLLM([tc('throw new Error("oops")', "t1"), tc('return "recovered"', "t2")]);
 		const result = await rlm("test query", undefined, { callLLM });
 		expect(result.answer).toBe("recovered");
 		expect(result.iterations).toBe(2);
 	});
 
-	it("max iterations throws when return is never called", async () => {
+	it("max iterations throws", async () => {
 		const callLLM = mockToolCallLLM([
 			tc('console.log("loop 1")', "t1"),
 			tc('console.log("loop 2")', "t2"),
@@ -57,19 +56,19 @@ describe("rlm", () => {
 		await expect(rlm("test query", undefined, { callLLM, maxIterations: 3 })).rejects.toThrow("max iterations");
 	});
 
-	it("context injection: context string is accessible as variable", async () => {
+	it("context accessible as variable", async () => {
 		const callLLM = mockToolCallLLM([tc("return context", "t1"), tc("return context", "t2")]);
 		const result = await rlm("test query", "my context data", { callLLM });
 		expect(result.answer).toBe("my context data");
 	});
 
-	it("return stringifies non-string values", async () => {
+	it("return stringifies non-strings", async () => {
 		const callLLM = mockToolCallLLM([tc("return 42", "t1"), tc("return 42", "t2")]);
 		const result = await rlm("test query", undefined, { callLLM });
 		expect(result.answer).toBe("42");
 	});
 
-	it("trace structure: entries have reasoning, code, output, error", async () => {
+	it("trace structure", async () => {
 		const callLLM = mockToolCallLLM([
 			{ reasoning: "Let me compute.", code: 'console.log("step 1")', toolUseId: "t1" },
 			{ reasoning: "Done.", code: 'return "final"', toolUseId: "t2" },
@@ -85,14 +84,14 @@ describe("rlm", () => {
 		expect(result.trace[1].code[0]).toContain("return");
 	});
 
-	it("variable persistence across iterations via bare assignment", async () => {
+	it("bare assignment persists across iterations", async () => {
 		const callLLM = mockToolCallLLM([tc("x = 42", "t1"), tc("return x", "t2")]);
 		const result = await rlm("test query", undefined, { callLLM });
 		expect(result.answer).toBe("42");
 		expect(result.iterations).toBe(2);
 	});
 
-	it("recursive rlm(): child query returns answer to parent", async () => {
+	it("rlm(): child returns to parent", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "child query") {
@@ -105,7 +104,7 @@ describe("rlm", () => {
 		expect(result.answer).toBe("child answer");
 	});
 
-	it("child at max depth: full REPL but cannot delegate", async () => {
+	it("child at max depth: REPL without delegation", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			systemPrompts.push(systemPrompt);
@@ -122,15 +121,13 @@ describe("rlm", () => {
 
 		const result = await rlm("parent query", undefined, { callLLM, maxDepth: 1 });
 		expect(result.answer).toBe("child answer");
-		// Child at maxDepth is a full REPL agent with environment docs
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("console.log");
 		expect(childPrompt).toContain("return(value)");
-		// But orientation says they're at max depth
 		expect(childPrompt).toContain("maximum delegation depth");
 	});
 
-	it("rlm() at max depth rejects with clear error", async () => {
+	it("rlm() at max depth rejects", async () => {
 		const callLLM: CallLLM = async (messages) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "parent query") {
@@ -150,21 +147,21 @@ describe("rlm", () => {
 		})).rejects.toThrow("max iterations");
 	});
 
-	it("trace captures error information from failed code blocks", async () => {
+	it("trace captures errors", async () => {
 		const callLLM = mockToolCallLLM([tc('throw new Error("test error")', "t1"), tc('return "ok"', "t2")]);
 		const result = await rlm("test query", undefined, { callLLM });
 
 		expect(result.trace[0].error).toContain("test error");
 	});
 
-	it("variable persistence across iterations via let/const", async () => {
+	it("let/const persists across iterations", async () => {
 		const callLLM = mockToolCallLLM([tc("let x = 42", "t1"), tc("return x", "t2")]);
 		const result = await rlm("test query", undefined, { callLLM });
 		expect(result.answer).toBe("42");
 		expect(result.iterations).toBe(2);
 	});
 
-	it("output from code blocks is fed back to LLM as tool result", async () => {
+	it("output fed back as tool result", async () => {
 		let secondCallMessages: Array<{ role: string; content: string }> | undefined;
 		let callIndex = 0;
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
@@ -184,7 +181,7 @@ describe("rlm", () => {
 		expect(lastMsg.role).toBe("user");
 	});
 
-	it("__rlm: root invocation has depth 0 and correct lineage", async () => {
+	it("__rlm: root depth 0, correct lineage", async () => {
 		const callLLM: CallLLM = async (_messages, _systemPrompt) => {
 			return { reasoning: "", code: 'console.log(JSON.stringify(__rlm))\nreturn "done"', toolUseId: "t" };
 		};
@@ -195,8 +192,6 @@ describe("rlm", () => {
 			maxIterations: 10,
 		});
 
-		// The first iteration triggers early-return interception, second iteration returns
-		// We need to capture from trace output
 		const allOutput = result.trace.map((t) => t.output).join("\n");
 		const parsed = JSON.parse(allOutput.split("\n").find((l) => l.startsWith("{"))!);
 		expect(parsed.depth).toBe(0);
@@ -205,7 +200,7 @@ describe("rlm", () => {
 		expect(parsed.lineage).toEqual(["my query"]);
 	});
 
-	it("__rlm: child invocation has depth 1 and lineage includes parent query", async () => {
+	it("__rlm: child depth 1, parent in lineage", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "child task") {
@@ -216,11 +211,10 @@ describe("rlm", () => {
 
 		const result = await rlm("parent task", undefined, { callLLM, maxDepth: 3 });
 
-		// Child was called with depth >= 1; parent gets child's answer
 		expect(result.answer).toBe("child done");
 	});
 
-	it("__rlm: iteration field updates each loop", async () => {
+	it("__rlm: iteration increments", async () => {
 		let callIndex = 0;
 		const callLLM: CallLLM = async (_messages, _systemPrompt) => {
 			callIndex++;
@@ -236,7 +230,7 @@ describe("rlm", () => {
 		expect(iters).toEqual([0, 1, 2]);
 	});
 
-	it("__rlm: object is frozen (mutation has no effect)", async () => {
+	it("__rlm: frozen", async () => {
 		const callLLM = mockToolCallLLM([
 			{ reasoning: "", code: '__rlm.depth = 99\nconsole.log("depth=" + __rlm.depth)', toolUseId: "t1" },
 			tc('return "done"', "t2"),
@@ -247,7 +241,7 @@ describe("rlm", () => {
 		expect(allOutput).toContain("depth=0");
 	});
 
-	it("__rlm: lineage array is frozen", async () => {
+	it("__rlm: lineage frozen", async () => {
 		const callLLM = mockToolCallLLM([
 			{ reasoning: "", code: 'try { __rlm.lineage.push("hacked") } catch(e) { console.log("lineage frozen: " + e.message) }\nreturn "done"', toolUseId: "t1" },
 			tc('return "done"', "t2"),
@@ -257,7 +251,7 @@ describe("rlm", () => {
 		expect(allOutput).toContain("lineage frozen:");
 	});
 
-	it("context: child does not clobber parent context", async () => {
+	it("context: child isolation", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "child query") {
@@ -274,7 +268,7 @@ describe("rlm", () => {
 		expect(result.answer).toBe("parent context");
 	});
 
-	it("unawaited rlm() is auto-awaited by sandbox", async () => {
+	it("unawaited rlm() auto-awaited", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "fire and forget") {
@@ -294,7 +288,7 @@ describe("rlm", () => {
 		expect(result.answer).toBe("no warning");
 	});
 
-	it("parallel rlm(): awaited parallel calls work correctly", async () => {
+	it("parallel rlm() via Promise.all", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "task A") {
@@ -310,7 +304,7 @@ describe("rlm", () => {
 		expect(result.answer).toBe("result A + result B");
 	});
 
-	it("pluginBodies: appended to root system prompt when provided", async () => {
+	it("pluginBodies: in root prompt", async () => {
 		let capturedSystemPrompt = "";
 		const callLLM: CallLLM = async (_messages, systemPrompt) => {
 			capturedSystemPrompt = systemPrompt;
@@ -326,7 +320,7 @@ describe("rlm", () => {
 		expect(capturedSystemPrompt).toContain("Do special things.");
 	});
 
-	it("pluginBodies: not appended when undefined", async () => {
+	it("pluginBodies: absent when undefined", async () => {
 		let capturedSystemPrompt = "";
 		const callLLM: CallLLM = async (_messages, systemPrompt) => {
 			capturedSystemPrompt = systemPrompt;
@@ -338,7 +332,7 @@ describe("rlm", () => {
 		expect(capturedSystemPrompt).not.toContain("<rlm-program>");
 	});
 
-	it("pluginBodies: not passed to child rlm() agents", async () => {
+	it("pluginBodies: not in child prompt", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			systemPrompts.push(systemPrompt);
@@ -346,7 +340,6 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			// Parent spawns a child
 			return { reasoning: "", code: 'const r = await rlm("child task")\nreturn r', toolUseId: "tp" };
 		};
 
@@ -362,7 +355,7 @@ describe("rlm", () => {
 		expect(childPrompt).not.toContain("Do special things.");
 	});
 
-	it("pluginBodies: not passed to max-depth children", async () => {
+	it("pluginBodies: not in max-depth child", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			systemPrompts.push(systemPrompt);
@@ -388,7 +381,7 @@ describe("rlm", () => {
 		expect(childPrompt).not.toContain("Do special things.");
 	});
 
-	it("model selection: rlm() child uses the specified model's callLLM", async () => {
+	it("model selection: child uses specified model", async () => {
 		let fastModelCalled = false;
 		const defaultCallLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
@@ -415,7 +408,7 @@ describe("rlm", () => {
 		expect(result.answer).toBe("FAST_MODEL response");
 	});
 
-	it("model selection: invalid model alias produces error containing 'Unknown model alias'", async () => {
+	it("model selection: invalid alias errors", async () => {
 		let callIndex = 0;
 		const defaultCallLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
@@ -438,7 +431,7 @@ describe("rlm", () => {
 		expect(allOutput).toContain("Unknown model alias");
 	});
 
-	it("sandboxGlobals: custom globals are accessible from agent code", async () => {
+	it("sandboxGlobals: accessible from agent code", async () => {
 		const mockObj = { greet: (name: string) => "hello " + name };
 		const callLLM = mockToolCallLLM([
 			tc('return myApi.greet("world")', "t1"),
@@ -451,7 +444,7 @@ describe("rlm", () => {
 		expect(result.answer).toBe("hello world");
 	});
 
-	it("globalDocs: included in root system prompt", async () => {
+	it("globalDocs: in root prompt", async () => {
 		let capturedSystemPrompt = "";
 		const callLLM: CallLLM = async (_messages, systemPrompt) => {
 			capturedSystemPrompt = systemPrompt;
@@ -467,7 +460,7 @@ describe("rlm", () => {
 		expect(capturedSystemPrompt).toContain("The `myApi` global provides X and Y.");
 	});
 
-	it("globalDocs: included in child system prompt (without customSystemPrompt)", async () => {
+	it("globalDocs: in child prompt", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			systemPrompts.push(systemPrompt);
@@ -484,13 +477,11 @@ describe("rlm", () => {
 			globalDocs: "The `myApi` global provides X and Y.",
 		});
 
-		// Root prompt has globalDocs
 		expect(systemPrompts[0]).toContain("The `myApi` global provides X and Y.");
-		// Child prompt also has globalDocs
 		expect(systemPrompts[1]).toContain("The `myApi` global provides X and Y.");
 	});
 
-	it("globalDocs: included in child system prompt (with customSystemPrompt)", async () => {
+	it("globalDocs: in child prompt with customSystemPrompt", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			systemPrompts.push(systemPrompt);
@@ -507,13 +498,12 @@ describe("rlm", () => {
 			globalDocs: "The `myApi` global provides X and Y.",
 		});
 
-		// Child with custom systemPrompt also has globalDocs
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("You are a helper.");
 		expect(childPrompt).toContain("The `myApi` global provides X and Y.");
 	});
 
-	it("globalDocs: included in max-depth child system prompt", async () => {
+	it("globalDocs: in max-depth child prompt", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			systemPrompts.push(systemPrompt);
@@ -533,14 +523,12 @@ describe("rlm", () => {
 			globalDocs: "The `myApi` global provides X and Y.",
 		});
 
-		// Root prompt has globalDocs
 		expect(systemPrompts[0]).toContain("The `myApi` global provides X and Y.");
-		// Max-depth child also has globalDocs
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("The `myApi` global provides X and Y.");
 	});
 
-	it("globalDocs + sandboxGlobals: child can use documented sandbox global", async () => {
+	it("globalDocs + sandboxGlobals: child uses documented global", async () => {
 		const mockApi = { greet: (name: string) => "hello " + name };
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
@@ -564,7 +552,7 @@ describe("rlm", () => {
 		expect(result.answer).toBe("hello world");
 	});
 
-	it("globalDocs: not present in system prompt when not provided", async () => {
+	it("globalDocs: absent when not provided", async () => {
 		let capturedSystemPrompt = "";
 		const callLLM: CallLLM = async (_messages, systemPrompt) => {
 			capturedSystemPrompt = systemPrompt;
@@ -576,7 +564,7 @@ describe("rlm", () => {
 		expect(capturedSystemPrompt).not.toContain("## Sandbox Globals");
 	});
 
-	it("app option: child receives app plugin as system prompt", async () => {
+	it("app: child receives app prompt", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			systemPrompts.push(systemPrompt);
@@ -596,11 +584,10 @@ describe("rlm", () => {
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("You are a test app.");
 		expect(childPrompt).toContain("Do test things.");
-		// Child should also get the environment section
 		expect(childPrompt).toContain("<rlm-environment>");
 	});
 
-	it("app option: unknown app name rejects with available list", async () => {
+	it("app: unknown name errors with list", async () => {
 		let callIndex = 0;
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
@@ -622,7 +609,7 @@ describe("rlm", () => {
 		expect(allOutput).toContain("other-app");
 	});
 
-	it("app option: app + systemPrompt are concatenated", async () => {
+	it("app + systemPrompt concatenated", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			systemPrompts.push(systemPrompt);
@@ -645,7 +632,7 @@ describe("rlm", () => {
 		expect(childPrompt).toContain("Extra instructions.");
 	});
 
-	it("childApps: not visible to root agent", async () => {
+	it("childApps: not in root prompt", async () => {
 		let capturedSystemPrompt = "";
 		const callLLM: CallLLM = async (_messages, systemPrompt) => {
 			capturedSystemPrompt = systemPrompt;
@@ -661,7 +648,7 @@ describe("rlm", () => {
 		expect(capturedSystemPrompt).not.toContain("Do test things.");
 	});
 
-	it("globalDocs vs pluginBodies: plugins are root-only, globalDocs is everywhere", async () => {
+	it("pluginBodies root-only, globalDocs everywhere", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			systemPrompts.push(systemPrompt);
@@ -679,17 +666,15 @@ describe("rlm", () => {
 			globalDocs: "The `myApi` global provides X.",
 		});
 
-		// Root has both
 		expect(systemPrompts[0]).toContain("## My Plugin");
 		expect(systemPrompts[0]).toContain("The `myApi` global provides X.");
 
-		// Child has globalDocs but NOT pluginBodies
 		expect(systemPrompts[1]).not.toContain("## My Plugin");
 		expect(systemPrompts[1]).toContain("The `myApi` global provides X.");
 	});
 
 	describe("traceChildren", () => {
-		it("child trace captured when traceChildren is true", async () => {
+		it("captured when true", async () => {
 			const callLLM: CallLLM = async (messages, _systemPrompt) => {
 				const userMsg = messages[0]?.content || "";
 				if (userMsg === "child task") {
@@ -705,7 +690,6 @@ describe("rlm", () => {
 			});
 
 			expect(result.answer).toBe("child answer");
-			// The parent's trace entry that delegated should have children
 			const entryWithChildren = result.trace.find(t => t.children && t.children.length > 0);
 			expect(entryWithChildren).toBeDefined();
 			expect(entryWithChildren!.children).toHaveLength(1);
@@ -713,7 +697,7 @@ describe("rlm", () => {
 			expect(entryWithChildren!.children![0].trace.length).toBeGreaterThan(0);
 		});
 
-		it("child trace absent when traceChildren is false (default)", async () => {
+		it("absent when false (default)", async () => {
 			const callLLM: CallLLM = async (messages, _systemPrompt) => {
 				const userMsg = messages[0]?.content || "";
 				if (userMsg === "child task") {
@@ -729,13 +713,12 @@ describe("rlm", () => {
 			});
 
 			expect(result.answer).toBe("child answer");
-			// No trace entry should have children
 			for (const entry of result.trace) {
 				expect(entry.children).toBeUndefined();
 			}
 		});
 
-		it("failed child trace captured when traceChildren is true", async () => {
+		it("failed child captured", async () => {
 			const callLLM: CallLLM = async (messages, _systemPrompt) => {
 				const userMsg = messages[0]?.content || "";
 				if (userMsg === "doomed child") {
@@ -762,7 +745,7 @@ describe("rlm", () => {
 	});
 
 	describe("traceSnapshots", () => {
-		it("envSnapshot captured when traceSnapshots is true", async () => {
+		it("captured when true", async () => {
 			const callLLM = mockToolCallLLM([
 				tc("x = 42", "t1"),
 				{ reasoning: "", code: "x = 99\nreturn x", toolUseId: "t2" },
@@ -779,7 +762,7 @@ describe("rlm", () => {
 			expect(result.trace[1].envSnapshot!.x).toBe(99);
 		});
 
-		it("envSnapshot absent when traceSnapshots is false (default)", async () => {
+		it("absent when false (default)", async () => {
 			const callLLM = mockToolCallLLM([tc("x = 42", "t1"), tc("return x", "t2")]);
 
 			const result = await rlm("test", undefined, { callLLM });
@@ -789,7 +772,7 @@ describe("rlm", () => {
 			}
 		});
 
-		it("envSnapshot excludes sandboxGlobals keys", async () => {
+		it("excludes sandboxGlobals keys", async () => {
 			const mockApi = { greet: () => "hi" };
 			const callLLM = mockToolCallLLM([
 				{ reasoning: "", code: 'myVar = "hello"\nreturn myVar', toolUseId: "t1" },
@@ -811,7 +794,7 @@ describe("rlm", () => {
 	});
 
 	describe("tool-call specifics", () => {
-		it("null code: no-code tool response triggers warning", async () => {
+		it("null code triggers warning", async () => {
 			let secondCallMessages: Array<{ role: string; content: string }> | undefined;
 			let callIndex = 0;
 			const callLLM: CallLLM = async (messages, _systemPrompt) => {
@@ -830,7 +813,7 @@ describe("rlm", () => {
 			expect(lastMsg.content).toContain("[WARNING] No code was executed");
 		});
 
-		it("conversation history uses __TOOL_CALL__ / __TOOL_RESULT__ markers", async () => {
+		it("__TOOL_CALL__ / __TOOL_RESULT__ markers", async () => {
 			let secondCallMessages: Array<{ role: string; content: string }> | undefined;
 			let callIndex = 0;
 			const callLLM: CallLLM = async (messages, _systemPrompt) => {
@@ -845,7 +828,6 @@ describe("rlm", () => {
 			await rlm("test query", undefined, { callLLM });
 
 			expect(secondCallMessages).toBeDefined();
-			// Check assistant message has __TOOL_CALL__ marker
 			const assistantMsg = secondCallMessages!.find(m => m.role === "assistant" && m.content.startsWith("__TOOL_CALL__"));
 			expect(assistantMsg).toBeDefined();
 			expect(assistantMsg!.content).toContain("tool-123");
@@ -853,14 +835,13 @@ describe("rlm", () => {
 			expect(assistantMsg!.content).toContain("__CODE__");
 			expect(assistantMsg!.content).toContain('console.log("hello")');
 
-			// Check user message has __TOOL_RESULT__ marker
 			const toolResultMsg = secondCallMessages!.find(m => m.role === "user" && m.content.startsWith("__TOOL_RESULT__"));
 			expect(toolResultMsg).toBeDefined();
 			expect(toolResultMsg!.content).toContain("tool-123");
 			expect(toolResultMsg!.content).toContain("hello");
 		});
 
-		it("max iterations throws with tool-call responses", async () => {
+		it("max iterations throws", async () => {
 			const callLLM = mockToolCallLLM([
 				{ reasoning: "Step 1.", code: 'console.log("loop 1")', toolUseId: "t1" },
 				{ reasoning: "Step 2.", code: 'console.log("loop 2")', toolUseId: "t2" },
@@ -871,7 +852,7 @@ describe("rlm", () => {
 	});
 
 	describe("reasoning details round-trip", () => {
-		it("reasoningDetails from CallLLMResponse round-trips through message history", async () => {
+		it("reasoningDetails round-trip", async () => {
 			const mockDetails = [
 				{ type: "reasoning.text", id: "rd_abc123", format: "anthropic-claude-v1", index: 0, text: "I'm thinking about this..." },
 			];
@@ -904,7 +885,7 @@ describe("rlm", () => {
 			expect(assistantMsg!.meta!.reasoningDetails).toEqual(mockDetails);
 		});
 
-		it("messages without reasoningDetails have no meta field", async () => {
+		it("no reasoningDetails: no meta", async () => {
 			let secondCallMessages: Array<{ role: string; content: string; meta?: Record<string, unknown> }> | undefined;
 			let callIndex = 0;
 

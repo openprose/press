@@ -42,13 +42,11 @@ if (__f && (__f.state === "WIN" || __f.state === "GAME_OVER")) {
 }
 
 // Check 3: Fuel critically low (< 6 = 3 moves left)
-const __fuel = (() => {
-  let n = 0; const g = __f.frame[0];
-  for (let r = 0; r < 64; r++)
-    for (let c = 0; c < 64; c++)
-      if (g[r][c] === 11) n++;
-  return n;
-})();
+let __fuel = 0;
+const __fg = __f.frame[0];
+for (let r = 0; r < 64; r++)
+  for (let c = 0; c < 64; c++)
+    if (__fg[r][c] === 11) __fuel++;
 if (__fuel < 6) {
   console.log(`FUEL CRITICAL (${__fuel}px) — RETURNING SCORE NOW`);
   const score = await arc3.getScore();
@@ -65,7 +63,7 @@ console.log(`Fuel: ${__fuel}px (~${Math.floor(__fuel/2)} moves)`);
 // === END RETURN GUARD ===
 ```
 
-This guard goes ABOVE all other code. Do not skip it. Do not modify it. Every code block. Every time. No exceptions.
+This guard goes ABOVE all other code. **Paste it verbatim at the top of every code block you write.** Do not skip it. Do not modify it. Every code block. Every time. No exceptions. The strategy steps below show `// [paste full return guard]` as a placeholder — always expand it to the full guard above.
 
 ### Variable Persistence Warning
 
@@ -125,14 +123,6 @@ function findMarker(g) {
   const avgR = marker.reduce((s, p) => s + p[0], 0) / marker.length;
   const avgC = marker.reduce((s, p) => s + p[1], 0) / marker.length;
   return { row: Math.round(avgR), col: Math.round(avgC), count: marker.length };
-}
-
-function findRectangle(g, colorBorder) {
-  // Find a rectangle outlined in the given border color (typically 5, or 0/1 after activation).
-  // Returns the bounding box of the rectangle interior.
-  const pos = getEntityPosition(g, colorBorder);
-  if (!pos) return null;
-  return pos;
 }
 
 function countColor(g, color) {
@@ -254,7 +244,7 @@ The game follows a two-step level completion pattern:
 
 1. **Absorb the marker:** Navigate the entity (color 12) to the color 0/1 marker cluster. On contact, the marker disappears and the two rectangles activate (their borders change color).
 
-2. **Enter the target rectangle:** After marker absorption, navigate the entity into the target rectangle. On Level 1, this is Rect 1 at approximately r9-15 c33-39, entered from above (via the c34-38 corridor going UP). On Level 2+, the rectangle positions change — use `findRectangle()` and BFS to compute the route.
+2. **Enter the target rectangle:** After marker absorption, navigate the entity into the target rectangle. On Level 1, this is Rect 1 at approximately r9-15 c33-39, entered from above (via the c34-38 corridor going UP). On Level 2+, the rectangle positions change — use `getEntityPosition()` and BFS to compute the route.
 
 **CRITICAL for Level 1:** Approach Rect 1 from ABOVE (via the c34-38 corridor going UP). Approaching from below (r15-16) will NOT work — the color 5 interior blocks entry. After absorbing the marker, navigate to c34-38 alignment, then UP repeatedly until `levels_completed` increases.
 
@@ -262,13 +252,13 @@ The game follows a two-step level completion pattern:
 
 **Marker respawning:** After absorbing the marker, the marker respawns after some number of actions (~10-19, exact threshold unknown). You must enter the target rectangle BEFORE it respawns. **Use `findBestAbsorptionPoint()` to choose the rect entry point with the shortest return path from the marker.** If the best return path is ≤10 steps: use marker-first strategy. If >10 steps: use rect-first strategy (navigate near the rect first, then go get the marker, sprint back). **ALWAYS measure the respawn timer** — after absorption, check for marker reappearance after each action and log the exact count.
 
-### Teleport/Portal Mechanics (discovered in v0.5.0)
+### Teleport/Portal Mechanics
 
 The maze contains portal/teleport mechanics:
 
 1. **Boundary wrapping:** Moving past the grid edge (row 63 or col 63) may wrap the entity to the opposite side (row 0 or col 0). Coordinates will jump from ~60s to ~0s.
 
-2. **In-maze portals:** Certain positions teleport the entity to a distant location. In v0.5.0, moving UP from inside Rect 1 after Level 1 completion teleported the entity to r35-36 c29-33.
+2. **In-maze portals:** Certain positions teleport the entity to a distant location. Moving UP from inside Rect 1 after Level 1 completion has teleported the entity to r35-36 c29-33.
 
 **After ANY movement, check your position.** If the entity's coordinates jump by more than 5 pixels (one step), a teleport occurred. Re-map your position and re-plan your route. Do NOT assume the old route is still valid.
 
@@ -283,7 +273,7 @@ Before moving, ALWAYS compute the shortest path:
 5. If `path === null`: there is NO navigable route. Do NOT try heuristic navigation. Instead, re-scout or try a different target entry point.
 6. If path exists: execute the actions in order, checking position after each step.
 
-**This replaces the heuristic try-and-backtrack approach.** In v0.5.0, heuristic navigation burned 50 blocked moves on Level 2 with zero progress. BFS would have computed the path (or confirmed none exists) in zero game actions.
+**This replaces the heuristic try-and-backtrack approach.** Heuristic navigation has burned 50 blocked moves on Level 2 with zero progress. BFS computes the path (or confirms none exists) in zero game actions.
 
 ### Available Child Apps
 
@@ -298,43 +288,20 @@ Before moving, ALWAYS compute the shortest path:
 5. **Plan routes before moving.** Compute BFS to marker, then BFS from marker to rectangle. Only absorb the marker when the rect route is confirmed.
 6. **Map 1 iteration, then navigate.** Spend at most 1 iteration scanning the grid after the scout report, then start BFS-guided navigation immediately.
 7. **Fuel budgeting.** You start with 84 fuel (42 moves). Budget: ~7 for scout, ~12 for level 1, ~20 for level 2. The maze may contain fuel refueling stations — when fuel increases by >4 pixels between actions, log the entity's position (that's a fuel station).
-8. **MANDATORY delegation for Level 2+.** After completing Level 1, you MUST delegate scouting to the `arc3-scout` child (Step 4) before navigating Level 2. Do NOT attempt to self-navigate a new level. The maze layout changes completely on level transitions, and heuristic navigation wastes too many actions. You can self-navigate Level 1 (simple maze), but Level 2+ requires a scout report + BFS pathfinding before any movement. In v0.5.0, skipping delegation on Level 2 resulted in 106 wasted actions and 0 progress.
+8. **MANDATORY delegation for Level 2+.** After completing Level 1, you MUST delegate scouting to the `arc3-scout` child (Step 4) before navigating Level 2. Do NOT attempt to self-navigate a new level. The maze layout changes completely on level transitions, and heuristic navigation wastes too many actions. You can self-navigate Level 1 (simple maze), but Level 2+ requires a scout report + BFS pathfinding before any movement. Skipping delegation on Level 2 has resulted in 106 wasted actions and zero progress.
 9. **Blocked-move detection.** If you get blocked 3+ times in the same area, STOP moving immediately. Re-compute BFS from current position. If BFS returns null (no path), delegate a re-scout or try a different target entry point. Never burn more than 6 actions on blocked moves — that is 12 fuel wasted for zero progress.
 10. **Fuel refueling.** The maze contains fuel pickup locations. When fuel increases by more than 4 pixels between actions, log the entity's position — that is a fuel station. Plan routes through known fuel stations when fuel is low.
-11. **Fresh grid before BFS.** NEVER execute a BFS path computed on a previous iteration's grid. Always call `arc3.observe()` immediately before `bfsPath()` and use THAT grid. Level transitions change the maze completely — a path valid on the old grid is 100% invalid on the new grid. In v0.6.0, executing a stale BFS path wasted 7 actions (14 fuel) with zero progress.
+11. **Fresh grid before BFS.** NEVER execute a BFS path computed on a previous iteration's grid. Always call `arc3.observe()` immediately before `bfsPath()` and use THAT grid. Level transitions change the maze completely — a path valid on the old grid is 100% invalid on the new grid. Executing a stale BFS path has wasted 7 actions (14 fuel) with zero progress.
 12. **Entity position verification after level transition.** After `levels_completed` increases, the entity teleports to a new position on a new maze. Before ANY navigation, call `arc3.observe()`, find the entity with `getEntityPosition()`, and verify the entity exists. If entity is null, execute one action to advance past a transition frame, then re-observe.
 13. **Measure marker respawn timer.** After absorbing the marker, count every action until the marker reappears (check with `findMarker()` after each `arc3.step()`). Log: `MARKER RESPAWNED after N post-absorption actions`. This measurement is CRITICAL for planning — it determines the maximum return path length.
-14. **Adaptive navigation order (MANDATORY for Level 2+).** Before absorbing the marker, compute `findBestAbsorptionPoint()` to find the rect entry with the shortest return path from marker. If `returnPath.length <= 10`: marker-first (go to marker, absorb, sprint to rect). If `returnPath.length > 10`: rect-first (go to rect entry, then to marker, absorb, sprint back). **In v0.7.0, the agent used marker-first with a 19-step return path — the marker respawned and Level 2 was lost.** The rect-first strategy would have positioned the entity closer to the rect before absorbing.
+14. **Adaptive navigation order (MANDATORY for Level 2+).** Before absorbing the marker, compute `findBestAbsorptionPoint()` to find the rect entry with the shortest return path from marker. If `returnPath.length <= 10`: marker-first (go to marker, absorb, sprint to rect). If `returnPath.length > 10`: rect-first (go to rect entry, then to marker, absorb, sprint back). **Tested: marker-first with a 19-step return path caused the marker to respawn and Level 2 was lost.** The rect-first strategy positions the entity closer to the rect before absorbing.
 
 ### Strategy
 
 #### Step 1: Delegate Initial Scouting
 
 ```javascript
-// === RETURN GUARD (MANDATORY) ===
-if (typeof __iter === 'undefined') __iter = 0;
-__iter++;
-console.log(`--- Iteration ${__iter} of ~30 ---`);
-if (__iter >= 25) {
-  const score = await arc3.getScore();
-  return(JSON.stringify(score));
-}
-const __f = arc3.observe();
-if (__f && (__f.state === "WIN" || __f.state === "GAME_OVER")) {
-  const score = await arc3.getScore();
-  return(JSON.stringify(score));
-}
-const __fuel = (() => {
-  let n = 0; const g = __f.frame[0];
-  for (let r = 0; r < 64; r++) for (let c = 0; c < 64; c++) if (g[r][c] === 11) n++;
-  return n;
-})();
-if (__fuel < 6) {
-  const score = await arc3.getScore();
-  return(JSON.stringify(score));
-}
-console.log(`Fuel: ${__fuel}px (~${Math.floor(__fuel/2)} moves)`);
-// === END RETURN GUARD ===
+// === RETURN GUARD (MANDATORY — paste full guard from "The Return Protocol" above) ===
 
 console.log("Delegating game scouting to child agent...");
 const scoutReport = await rlm(
@@ -442,7 +409,7 @@ console.log("Actions used:", arc3.actionCount);
 
 #### Step 3: Adaptive Navigate — Marker + Rectangle (Level Completion)
 
-**CRITICAL (Rule #14):** Before absorbing the marker, compute `findBestAbsorptionPoint()` to determine the best navigation order. This replaces the old "always marker-first" approach that failed on Level 2 in v0.7.0.
+**CRITICAL (Rule #14):** Before absorbing the marker, compute `findBestAbsorptionPoint()` to determine the best navigation order.
 
 ```javascript
 // === RETURN GUARD (MANDATORY) ===
@@ -500,23 +467,12 @@ if (!roundTrip.entry) {
   // Execute all three segments with respawn timer measurement (Rule #13)
 }
 
-// === RESPAWN TIMER MEASUREMENT (Rule #13) ===
-// After absorbing the marker, count every action:
-// let postAbsorbCount = 0;
-// for each step after absorption:
-//   postAbsorbCount++;
-//   const curMarker = findMarker(result.frame[0]);
-//   if (curMarker) {
-//     console.log(`MARKER RESPAWNED after ${postAbsorbCount} post-absorption actions`);
-//     break;
-//   }
-
 console.log("Actions used:", arc3.actionCount, "Levels:", arc3.observe().levels_completed);
 ```
 
 #### Step 4: On Level Completion — Re-Scout (MANDATORY for Level 2+)
 
-**THIS STEP IS NOT OPTIONAL.** When `levels_completed` increases, you MUST execute Step 4 before attempting any navigation. In v0.5.0, skipping delegation on Level 2 resulted in 106 wasted actions and 0 progress. The scout plugin has a re-scout mode that uses at most 5 game actions.
+**THIS STEP IS NOT OPTIONAL.** When `levels_completed` increases, you MUST execute Step 4 before attempting any navigation. Skipping delegation on Level 2 has resulted in 106 wasted actions and zero progress. The scout plugin has a re-scout mode that uses at most 5 game actions.
 
 ```javascript
 // === RETURN GUARD (MANDATORY) ===
@@ -610,19 +566,7 @@ if (roundTrip.returnPath && roundTrip.returnPath.length <= 10) {
 **If you reach this step, return NOW.**
 
 ```javascript
-// === RETURN GUARD (MANDATORY) ===
-if (typeof __iter === 'undefined') __iter = 0;
-__iter++;
-if (__iter >= 25) {
-  const score = await arc3.getScore();
-  return(JSON.stringify(score));
-}
-const __f = arc3.observe();
-if (__f && (__f.state === "WIN" || __f.state === "GAME_OVER")) {
-  const score = await arc3.getScore();
-  return(JSON.stringify(score));
-}
-// === END RETURN GUARD ===
+// === RETURN GUARD (MANDATORY — paste full guard from "The Return Protocol" above) ===
 
 const score = await arc3.getScore();
 console.log("Returning score:", JSON.stringify(score));
@@ -636,7 +580,7 @@ return(JSON.stringify(score));
 - **`return()` format:** Always `return(JSON.stringify(await arc3.getScore()))`.
 - **Level 1 pattern:** Absorb marker → navigate to c34-38 → go UP into Rect 1 from above.
 - **Level 2+ pattern:** Re-scout (MANDATORY) → compute `findBestAbsorptionPoint()` → choose marker-first or rect-first → navigate → absorb → sprint to rect. Do NOT skip the re-scout.
-- **Adaptive order (MANDATORY for L2+):** If best return path ≤10 steps: marker-first. If >10: rect-first (go to rect entry, then marker, absorb, sprint back). In v0.7.0, marker-first with 19-step return = Level 2 lost.
+- **Adaptive order (MANDATORY for L2+):** If best return path ≤10 steps: marker-first. If >10: rect-first (go to rect entry, then marker, absorb, sprint back). Tested: marker-first with 19-step return = Level 2 lost.
 - **BFS always:** Never navigate without computing BFS first. Zero game actions to compute. Eliminates blocked moves.
 - **Fuel stations:** When fuel increases by >4px between actions, log the position. Plan routes through fuel stations on later levels.
 - **Teleport detection:** After each move, verify entity position. If jump > 5px, a teleport occurred — re-plan route.

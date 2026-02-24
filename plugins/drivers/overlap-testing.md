@@ -16,4 +16,4 @@ When your transformation involves elements that can overlap, layer, or be applie
 
 2. **Test all variants against ALL training examples.** Do not assume one ordering is correct — implement both, run them on every training pair, and keep the one that produces exact matches.
 
-3. **Watch for training-test divergence.** A rule that works on training data may fail on test if training examples happen not to contain the ambiguous case. Before returning, ask: "Does the test input contain overlaps or orderings not present in training? If so, which variant is more principled?"
+3. **Check test input for unseen cases.** A rule that works on training data may fail on test if training examples do not contain the ambiguous case. Before returning, check whether the test input contains overlaps or orderings not present in training. If so, select the variant that handles unseen overlap configurations.

@@ -78,7 +78,6 @@ export class Arc3Client {
 		return this._lastFrame.state === "WIN" || this._lastFrame.state === "GAME_OVER";
 	}
 
-	/** Open a scorecard and reset the game. Returns the initial frame. */
 	async start(): Promise<Arc3Frame> {
 		// Open scorecard
 		const cardRes = await this._request("POST", "/api/scorecard/open", {});
@@ -97,7 +96,6 @@ export class Arc3Client {
 		return frame;
 	}
 
-	/** Send an action and return the resulting frame. */
 	async step(action: number, x?: number, y?: number): Promise<Arc3Frame> {
 		if (!this._lastFrame) throw new Error("Call start() before step()");
 		if (this.completed) throw new Error("Game already completed");
@@ -127,19 +125,16 @@ export class Arc3Client {
 		return frame;
 	}
 
-	/** Return the last received frame without making an API call. */
 	observe(): Arc3Frame | null {
 		return this._lastFrame;
 	}
 
-	/** Fetch the scorecard summary. */
 	async getScore(): Promise<Arc3Scorecard> {
 		if (!this._scorecardId) throw new Error("No scorecard open");
 		const res = await this._request("GET", `/api/scorecard/${this._scorecardId}`);
 		return res as unknown as Arc3Scorecard;
 	}
 
-	/** Close the scorecard. Idempotent. */
 	async cleanup(): Promise<void> {
 		if (this._closed || !this._scorecardId) return;
 		this._closed = true;
@@ -148,7 +143,7 @@ export class Arc3Client {
 				card_id: this._scorecardId,
 			});
 		} catch {
-			// Best-effort cleanup
+			// intentionally empty
 		}
 	}
 

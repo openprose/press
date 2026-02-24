@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseFrontmatter, loadPlugins, loadProfile, detectProfile, loadStack } from "../src/plugins.js";
 
 describe("parseFrontmatter", () => {
-	it("extracts frontmatter and body correctly", () => {
+	it("extracts frontmatter and body", () => {
 		const content = `---
 name: test-plugin
 kind: driver
@@ -25,14 +25,14 @@ This is the body.`;
 		expect(body).toContain("This is the body.");
 	});
 
-	it("handles content with no frontmatter", () => {
+	it("no frontmatter", () => {
 		const content = "# Just a heading\n\nSome text.";
 		const { frontmatter, body } = parseFrontmatter(content);
 		expect(frontmatter).toEqual({});
 		expect(body).toBe(content);
 	});
 
-	it("parses block-style YAML arrays", () => {
+	it("block-style YAML arrays", () => {
 		const content = `---
 name: test-profile
 drivers:
@@ -47,7 +47,7 @@ Body text.`;
 		expect(frontmatter.drivers).toEqual(["driver-a", "driver-b", "driver-c"]);
 	});
 
-	it("parses inline JSON arrays", () => {
+	it("inline JSON arrays", () => {
 		const content = `---
 name: test
 models: ["google/gemini*", "google/gemini-flash*"]
@@ -61,7 +61,7 @@ Body.`;
 });
 
 describe("loadPlugins", () => {
-	it("loads drivers by name from plugins/drivers/, strips frontmatter, concatenates bodies", async () => {
+	it("loads and concatenates drivers", async () => {
 		const result = await loadPlugins(["await-discipline", "return-format-discipline"], "drivers");
 		expect(result).toContain("## Await Discipline");
 		expect(result).toContain("## Return Format");
@@ -70,7 +70,7 @@ describe("loadPlugins", () => {
 		expect(result).toContain("\n\n---\n\n");
 	});
 
-	it("loads apps by name from plugins/apps/", async () => {
+	it("loads apps", async () => {
 		const result = await loadPlugins(["structured-data-aggregation"], "apps");
 		expect(result).toContain("## Aggregation Protocol");
 		expect(result).not.toContain("name: structured-data-aggregation");
@@ -79,7 +79,7 @@ describe("loadPlugins", () => {
 });
 
 describe("loadProfile", () => {
-	it("loads a profile and returns correct driver names and model globs", async () => {
+	it("loads profile with drivers and model globs", async () => {
 		const profile = await loadProfile("gemini-3-flash");
 		expect(profile.drivers).toEqual([
 			"await-discipline",
@@ -94,7 +94,7 @@ describe("loadProfile", () => {
 });
 
 describe("detectProfile", () => {
-	it("matches model string against profile globs and returns correct profile", async () => {
+	it("matches model to profile", async () => {
 		const result = await detectProfile("google/gemini-3-flash-preview");
 		expect(result).not.toBeNull();
 		expect(result!.name).toBe("gemini-3-flash");
@@ -102,20 +102,20 @@ describe("detectProfile", () => {
 		expect(result!.drivers).toContain("verify-before-return");
 	});
 
-	it("matches model with provider prefix (openrouter/google/...)", async () => {
+	it("matches with provider prefix", async () => {
 		const result = await detectProfile("openrouter/google/gemini-3-flash-preview");
 		expect(result).not.toBeNull();
 		expect(result!.name).toBe("gemini-3-flash");
 	});
 
-	it("returns null when no profile matches", async () => {
+	it("null when no match", async () => {
 		const result = await detectProfile("anthropic/claude-sonnet-4-20250514");
 		expect(result).toBeNull();
 	});
 });
 
 describe("loadStack", () => {
-	it("with explicit profile + app, returns concatenated drivers then app", async () => {
+	it("profile + app: drivers then app", async () => {
 		const result = await loadStack({
 			profile: "gemini-3-flash",
 			app: "structured-data-aggregation",
@@ -128,7 +128,7 @@ describe("loadStack", () => {
 		expect(driverPos).toBeLessThan(appPos);
 	});
 
-	it("with model auto-detection, loads correct profile's drivers", async () => {
+	it("model auto-detection", async () => {
 		const result = await loadStack({
 			model: "openrouter/google/gemini-3-flash-preview",
 		});
@@ -137,7 +137,7 @@ describe("loadStack", () => {
 		expect(result).toContain("## Verify Before Return");
 	});
 
-	it("with extra drivers, deduplicates against profile drivers", async () => {
+	it("deduplicates drivers", async () => {
 		const result = await loadStack({
 			profile: "gemini-3-flash",
 			app: "structured-data-aggregation",
@@ -147,7 +147,7 @@ describe("loadStack", () => {
 		expect(matches).toHaveLength(1);
 	});
 
-	it("with no profile/model/drivers, returns just the app body", async () => {
+	it("app only", async () => {
 		const result = await loadStack({
 			app: "structured-data-aggregation",
 		});
@@ -155,12 +155,12 @@ describe("loadStack", () => {
 		expect(result).not.toContain("## Await Discipline");
 	});
 
-	it("with no profile/model/drivers/app, returns empty string", async () => {
+	it("empty when nothing specified", async () => {
 		const result = await loadStack({});
 		expect(result).toBe("");
 	});
 
-	it("with model that does not match any profile and no explicit drivers, returns empty string", async () => {
+	it("empty when model unmatched", async () => {
 		const result = await loadStack({
 			model: "anthropic/claude-sonnet-4-20250514",
 		});

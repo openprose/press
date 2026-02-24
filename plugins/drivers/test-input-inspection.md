@@ -35,10 +35,4 @@ console.log("TRAIN COLORS:", trainInputs.map(t => [...new Set(t.flat())].sort())
 
 Log it explicitly: `console.log("WARNING: test diverges from training — [specific difference]");`
 
-Factor this into your hypothesis. A transform that passes training by exploiting a coincidence (all training grids are the same size, all have exactly 3 objects) will fail on test.
-
-### What this prevents
-
-- Building a 1D algorithm when the test requires 2D (arc-4e34c42c)
-- Producing output with wrong dimensions (5x4 vs 5x6 in arc-89565ca0)
-- Discovering training-test divergence at iteration 19 instead of iteration 6
+Factor this into your hypothesis. A transform that passes training by exploiting a coincidence (all training grids are the same size, all have exactly 3 objects) will fail on test. Known examples: arc-4e34c42c (1D training, 2D test), arc-89565ca0 (dimension mismatch 5x4 vs 5x6).

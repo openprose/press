@@ -25,7 +25,6 @@ class TokenBucket {
 				this.tokens -= 1;
 				return;
 			}
-			// Wait until at least one token is available
 			const waitMs = Math.ceil((1 - this.tokens) / this.refillRate);
 			await new Promise((resolve) => setTimeout(resolve, waitMs));
 		}

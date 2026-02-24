@@ -8,11 +8,24 @@ export interface RlmEnvironment {
 	snapshot(excludeKeys?: Set<string>, maxBytes?: number): Record<string, unknown>;
 }
 
+/** Keys injected into every sandbox context (console, require, timers, web APIs). */
+export const SANDBOX_BUILTINS = new Set([
+	"console",
+	"require",
+	"setTimeout",
+	"setInterval",
+	"clearTimeout",
+	"clearInterval",
+	"URL",
+	"URLSearchParams",
+	"TextEncoder",
+	"TextDecoder",
+]);
+
 export class JsEnvironment implements RlmEnvironment {
 	private context: vm.Context;
 	private maxOutput: number;
 
-	// Per-exec output buffer; swapped in exec() for isolation.
 	private activeOutput: string[] = [];
 
 	private declaredNames = new Set<string>();
@@ -47,9 +60,7 @@ export class JsEnvironment implements RlmEnvironment {
 	}
 
 	async exec(code: string): Promise<{ output: string; error: string | null; returnValue?: unknown }> {
-		// Each exec gets its own output buffer. Save/restore ensures
-		// nested exec calls (e.g. child rlm inside parent exec) don't
-		// clobber the parent's output.
+		// Save/restore for nested exec (child rlm inside parent).
 		const myOutput: string[] = [];
 		const previousOutput = this.activeOutput;
 		this.activeOutput = myOutput;
@@ -171,9 +182,7 @@ export class JsEnvironment implements RlmEnvironment {
 				node.type === "ExpressionStatement" &&
 				(node as any).expression.type === "CallExpression"
 			) {
-				// Auto-await top-level function calls to prevent unawaited async calls.
-				// This is safe because: (1) code runs inside an async wrapper, and
-				// (2) `await nonPromise` is a no-op in JavaScript.
+				// Safe: code runs inside async wrapper; await on non-Promise is a no-op.
 				const expr = (node as any).expression;
 				segments.push(code.slice(cursor, expr.start));
 				segments.push(`await ${code.slice(expr.start, node.end)}`);

@@ -8,9 +8,9 @@ tags: [arc, arc3, delegation, orchestrator, multi-agent]
 requires: []
 ---
 
-## ARC-3 Orchestrator (Multi-Agent v2)
+## Protocol
 
-You play a 7-level interactive grid game via the `arc3` sandbox API. You don't know the rules. Your job is to **delegate each level** to a level-manager agent and **accumulate knowledge** across levels so later levels benefit from earlier discoveries.
+You play a 7-level interactive grid game via the `arc3` sandbox API. You don't know the rules. Delegate each level to a level-manager agent and accumulate knowledge across levels so later levels benefit from earlier discoveries.
 
 ### CRITICAL CONSTRAINTS
 
@@ -174,8 +174,6 @@ if (post.state === "WIN" || post.state === "GAME_OVER") {
 2. Check `arc3.observe().state`. If WIN or GAME_OVER, return scorecard.
 3. Proceed to next outer iteration to delegate the next level.
 
-**You MUST NOT call `arc3.step()` from the orchestrator -- you do not have access to it.** You CANNOT interpret `frame[0]` data -- you lack the perceptual toolkit. The orchestrator is a manager, not a player. Always delegate.
-
 ### Knowledge Transfer Architecture
 
 - **Parent -> Child:** Set `__level_task = { level, knowledge, actionBudget }` before `rlm()`. The child reads it.
@@ -186,8 +184,8 @@ if (post.state === "WIN" || post.state === "GAME_OVER") {
 1. Call `arc3.start()` exactly once in iteration 0 -- emit only ONE code block, never duplicate it
 2. Delegate exactly one level per outer iteration using `app: "arc3-level-manager"` -- never `systemPrompt`
 3. Pass knowledge to child via `__level_task`. Read knowledge from child's RETURN STRING (parse as JSON) -- never from sandbox variables
-4. NEVER call `arc3.step()` from the orchestrator -- you do not have access to it
-5. NEVER read, analyze, print, or inspect `frame[0]` -- you lack the vision toolkit to interpret it
+4. NEVER call `arc3.step()` from the orchestrator (see CRITICAL CONSTRAINTS)
+5. NEVER read or inspect `frame[0]` (see CRITICAL CONSTRAINTS)
 6. Max 2 completion attempts per level, then exploration-only (enforced by `__levelAttempts`)
 7. Curate knowledge between levels: promote confirmed discoveries, remove contradicted ones
 8. Return the scorecard JSON on WIN or GAME_OVER

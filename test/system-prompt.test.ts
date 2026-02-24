@@ -4,7 +4,7 @@ import { buildModelTable, buildSystemPrompt } from "../src/system-prompt.js";
 const BASE_OPTS = {
 	canDelegate: true,
 	invocationId: "root",
-	parentId: null as string | null,
+	parentId: null,
 	depth: 0,
 	maxDepth: 3,
 	maxIterations: 10,
@@ -12,7 +12,7 @@ const BASE_OPTS = {
 };
 
 describe("buildSystemPrompt", () => {
-	it("contains all 4 mandatory XML sections", () => {
+	it("4 mandatory XML sections", () => {
 		const result = buildSystemPrompt(BASE_OPTS);
 		expect(result).toContain("<rlm-preamble>");
 		expect(result).toContain("</rlm-preamble>");
@@ -30,7 +30,7 @@ describe("buildSystemPrompt", () => {
 		expect(result).not.toContain("</rlm-program>");
 	});
 
-	it("includes <rlm-program> when programContent provided", () => {
+	it("<rlm-program> when programContent provided", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, programContent: "## My Plugin\nDo things." });
 		expect(result).toContain("<rlm-program>");
 		expect(result).toContain("## My Plugin");
@@ -38,49 +38,49 @@ describe("buildSystemPrompt", () => {
 		expect(result).toContain("</rlm-program>");
 	});
 
-	it("includes rlm() docs when canDelegate is true", () => {
+	it("rlm() docs when canDelegate", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: true });
 		expect(result).toContain("await rlm(query, context?, options?)");
 		expect(result).toContain("Must be awaited");
 	});
 
-	it("excludes rlm() docs when canDelegate is false", () => {
+	it("no rlm() docs when !canDelegate", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: false });
 		expect(result).not.toContain("await rlm(query, context?, options?)");
 	});
 
-	it("includes globalDocs in environment when provided", () => {
+	it("globalDocs when provided", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, globalDocs: "The `foo` global does X." });
 		expect(result).toContain("## Sandbox Globals");
 		expect(result).toContain("The `foo` global does X.");
 	});
 
-	it("excludes globalDocs when not provided", () => {
+	it("no globalDocs when omitted", () => {
 		const result = buildSystemPrompt(BASE_OPTS);
 		expect(result).not.toContain("## Sandbox Globals");
 	});
 
-	it("includes modelTable in environment when canDelegate and provided", () => {
+	it("modelTable when canDelegate", () => {
 		const table = buildModelTable({ fast: { tags: ["speed"], description: "A fast model" } });
 		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: true, modelTable: table });
 		expect(result).toContain("## Available Models");
 		expect(result).toContain("fast");
 	});
 
-	it("excludes modelTable when canDelegate is false", () => {
+	it("no modelTable when !canDelegate", () => {
 		const table = buildModelTable({ fast: { tags: ["speed"], description: "A fast model" } });
 		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: false, modelTable: table });
 		expect(result).not.toContain("## Available Models");
 	});
 
-	it("renders context with root orchestrator role at depth 0", () => {
+	it("context: root at depth 0", () => {
 		const result = buildSystemPrompt(BASE_OPTS);
 		expect(result).toContain("You are the root orchestrator.");
 		expect(result).toContain('Agent "root"');
 		expect(result).toContain("depth 0 of 3");
 	});
 
-	it("renders context with parent info at depth > 0", () => {
+	it("context: child at depth > 0", () => {
 		const result = buildSystemPrompt({
 			...BASE_OPTS,
 			invocationId: "d1-c0",
@@ -92,7 +92,7 @@ describe("buildSystemPrompt", () => {
 		expect(result).toContain("depth 1 of 3");
 	});
 
-	it("contains key preamble concepts: contracts, state schemas, shape", () => {
+	it("preamble: contracts, state schemas, shape", () => {
 		const result = buildSystemPrompt(BASE_OPTS);
 		expect(result).toContain("Contracts");
 		expect(result).toContain("ensures:");
@@ -101,31 +101,31 @@ describe("buildSystemPrompt", () => {
 		expect(result).toContain("prohibited");
 	});
 
-	it("contains key environment concepts: return, console.log, require", () => {
+	it("environment: return, console.log, require", () => {
 		const result = buildSystemPrompt(BASE_OPTS);
 		expect(result).toContain("return(value)");
 		expect(result).toContain("console.log()");
 		expect(result).toContain("require()");
 	});
 
-	it("contains key rules: one block, await, verify", () => {
+	it("rules: one block, await, verify", () => {
 		const result = buildSystemPrompt(BASE_OPTS);
 		expect(result).toContain("One execute_code tool call per response");
 		expect(result).toContain("await");
 		expect(result).toContain("verifying via");
 	});
 
-	it("shows delegation possible when canDelegate is true", () => {
+	it("delegation possible when canDelegate", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: true, depth: 0 });
 		expect(result).toContain("You can delegate to child RLMs at depth 1.");
 	});
 
-	it("shows cannot delegate when canDelegate is false", () => {
+	it("cannot delegate when !canDelegate", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: false, depth: 3, maxDepth: 3 });
 		expect(result).toContain("maximum delegation depth and cannot spawn child agents");
 	});
 
-	it("truncates long root task in lineage", () => {
+	it("truncates long lineage", () => {
 		const longQuery = "x".repeat(300);
 		const result = buildSystemPrompt({ ...BASE_OPTS, depth: 1, parentId: "root", lineage: [longQuery, "child query"] });
 		expect(result).toContain("...");
@@ -134,7 +134,7 @@ describe("buildSystemPrompt", () => {
 });
 
 describe("buildModelTable", () => {
-	it("renders a markdown table with aliases, tags, and descriptions", () => {
+	it("renders markdown table", () => {
 		const models = {
 			fast: { tags: ["speed", "cheap"], description: "A fast model for simple tasks" },
 			smart: { tags: ["reasoning"], description: "A powerful model for complex tasks" },
@@ -150,15 +150,15 @@ describe("buildModelTable", () => {
 		expect(result).toContain('{ model: "fast" }');
 	});
 
-	it("returns empty string when models is undefined", () => {
+	it("empty when undefined", () => {
 		expect(buildModelTable(undefined)).toBe("");
 	});
 
-	it("returns empty string when models is an empty object", () => {
+	it("empty when empty object", () => {
 		expect(buildModelTable({})).toBe("");
 	});
 
-	it("renders dash for missing tags and description", () => {
+	it("dash for missing tags/description", () => {
 		const models = {
 			basic: {},
 		};

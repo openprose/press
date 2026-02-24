@@ -8,13 +8,7 @@ nodes: [session-orchestrator, task-solver]
 
 # ARC-2 Compound Learning Solver
 
-A 2-tier RLM program for solving ARC-AGI-2 grid transformation tasks. Tasks are processed sequentially. Knowledge accumulates across tasks via a shared library of primitives and strategies.
-
-The orchestrator composes the solver for each task, curates the library after every delegation, and manages submissions. The solver discovers transformation rules through hypothesis-driven exploration and code execution.
-
 ## Components
-
-Available components for composition. Each declares what it needs and what it produces, so the composing agent can satisfy the contract.
 
 ### session-orchestrator
 
@@ -86,8 +80,6 @@ state:
 
 ## Composition Principles
 
-These govern when and how to compose. The arc2-compound system is 2-tier (orchestrator + solver), so topology decisions are simple. The principles focus on what makes composition pay off.
-
 ```
 principles:
 
@@ -139,8 +131,6 @@ principles:
 ```
 
 ## Shared State
-
-State prefixed with `&` lives in the sandbox as a `__camelCase` variable. All agents read and write it directly.
 
 ### &Library
 

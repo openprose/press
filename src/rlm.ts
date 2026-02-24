@@ -4,9 +4,8 @@ import { buildModelTable, buildSystemPrompt } from "./system-prompt.js";
 export interface CallLLMResponse {
 	reasoning: string;
 	code: string | null;
-	/** Tool use ID from the API response, used to match tool results in conversation history. */
 	toolUseId?: string;
-	/** Structured reasoning blocks for round-tripping to the API (opaque — never inspected by the engine). */
+	/** Opaque; round-tripped to the API without inspection. */
 	reasoningDetails?: Array<Record<string, unknown>> | null;
 }
 
@@ -27,30 +26,15 @@ export interface RlmOptions {
 	callLLM: CallLLM;
 	maxIterations?: number;
 	maxDepth?: number;
-	/** Concatenated plugin bodies to append to the root agent's system prompt. */
 	pluginBodies?: string;
-	/** Named model aliases available for child delegation. */
 	models?: Record<string, ModelEntry>;
-	/** Extra globals to inject into the REPL sandbox. */
 	sandboxGlobals?: Record<string, unknown>;
-	/**
-	 * Documentation for sandbox globals, appended to the Environment section
-	 * of every agent's system prompt at every depth (root, children, flat).
-	 * Use this to document APIs injected via sandboxGlobals so that all agents
-	 * — including children spawned via rlm() — know they exist.
-	 */
+	/** Visible at all depths (root, children, flat). Document sandboxGlobals here. */
 	globalDocs?: string;
-	/**
-	 * Pre-loaded app plugin bodies keyed by name, available for child agents.
-	 * When a parent calls `rlm(query, context, { app: "name" })`, the named
-	 * app body is looked up here and used as the child's system prompt.
-	 */
+	/** Keyed by name; looked up when a parent calls `rlm(query, ctx, { app: "name" })`. */
 	childApps?: Record<string, string>;
-	/** When true, child rlm() traces are captured in parent trace entries. Default: false. */
 	traceChildren?: boolean;
-	/** When true, sandbox variable snapshots are captured after each iteration. Default: false. */
 	traceSnapshots?: boolean;
-	/** Reasoning effort level for OpenRouter reasoning tokens (default: none). */
 	reasoningEffort?: string;
 }
 
@@ -120,7 +104,6 @@ interface ContextStore {
 }
 
 
-/** Keys to exclude from environment snapshots (sandbox infrastructure, not user variables). */
 const SNAPSHOT_EXCLUDE_KEYS = new Set([
 	'console', 'require', 'setTimeout', 'setInterval',
 	'clearTimeout', 'clearInterval', 'URL', 'URLSearchParams',
@@ -249,14 +232,12 @@ export async function rlm(query: string, context: string | undefined, options: R
 		const callLLM = callLLMOverride ?? opts.callLLM;
 		const effectiveReasoningEffort = reasoningEffortOverride ?? opts.reasoningEffort;
 
-		// Children inherit parent's budget by default; parent can override via maxIterations option
 		const effectiveMaxIterations = maxIterationsOverride !== undefined
 			? Math.min(maxIterationsOverride, opts.maxIterations)
 			: opts.maxIterations;
 
 		const canDelegate = depth < opts.maxDepth;
 
-		// Build unified system prompt
 		let programContent: string | undefined;
 		if (customSystemPrompt) {
 			programContent = customSystemPrompt;
@@ -277,12 +258,10 @@ export async function rlm(query: string, context: string | undefined, options: R
 			modelTable,
 		});
 
-		// Initialize local store for this invocation
 		if (!contextStore.locals.has(invocationId)) {
 			contextStore.locals.set(invocationId, {});
 		}
 
-		// Set context in the local store for this invocation
 		if (context !== undefined) {
 			contextStore.locals.get(invocationId)!.context = context;
 		}
@@ -305,7 +284,6 @@ export async function rlm(query: string, context: string | undefined, options: R
 			invocationStack.pop();
 		}
 
-		/** Build an iteration context line for the next LLM turn. */
 		function buildIterationContext(nextIteration: number): string {
 			const remaining = effectiveMaxIterations - nextIteration;
 			if (remaining <= 1) {
@@ -434,8 +412,6 @@ export async function rlm(query: string, context: string | undefined, options: R
 				? buildIterationContext(iteration + 1) + "\n"
 				: "";
 
-			// Use __TOOL_CALL__ / __TOOL_RESULT__ markers so the driver can
-			// reconstruct the proper API message format
 			let outputMsg = combinedOutput || "(no output)";
 			if (combinedError) outputMsg += `\nERROR: ${combinedError}`;
 
@@ -486,7 +462,6 @@ export async function rlm(query: string, context: string | undefined, options: R
 					),
 				);
 			}
-			// App body comes first; if systemPrompt is also provided, concatenate
 			resolvedSystemPrompt = resolvedSystemPrompt
 				? appBody + "\n\n" + resolvedSystemPrompt
 				: appBody;
@@ -510,8 +485,6 @@ export async function rlm(query: string, context: string | undefined, options: R
 		const childLineage = [...((env.get("__rlm") as DelegationContext | undefined)?.lineage ?? [q]), q];
 		const callerInvocationId = (env.get("__rlm") as DelegationContext | undefined)?.invocationId ?? "root";
 
-		// Generate child invocation ID: "d{depth+1}-c{counter}"
-		// For nested children, prefix with parent's ID path
 		const childIndex = childCounter++;
 		const childDepthLabel = `d${savedDepth + 1}-c${childIndex}`;
 		const childInvocationId = callerInvocationId === "root"
@@ -519,9 +492,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 			: `${callerInvocationId}.${childDepthLabel}`;
 
 		const promise = (async () => {
-			// Save and isolate the parent's childTraceSlot so the child's
-			// rlmInternal (which resets childTraceSlot.current per-iteration)
-			// doesn't clobber the parent's accumulator — preventing circular refs.
+			// Isolate parent's trace accumulator from child's per-iteration reset.
 			const parentTraceSlot = childTraceSlot.current;
 			childTraceSlot.current = null;
 			try {

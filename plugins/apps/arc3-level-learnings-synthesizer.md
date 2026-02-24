@@ -77,11 +77,10 @@ return(JSON.stringify({ knowledge }));
 ```javascript
 // Parse input
 let input = {};
-try {
-  input = JSON.parse(context);
-} catch(e) {
-  // context might already be an object or malformed
-  try { input = typeof context === 'object' ? context : {}; } catch(e2) { input = {}; }
+if (typeof context === 'string') {
+  try { input = JSON.parse(context); } catch(e) { input = {}; }
+} else if (typeof context === 'object' && context !== null) {
+  input = context;
 }
 
 const level = input.level || 0;
@@ -134,9 +133,7 @@ if (react.rawObservations) {
   const obs = react.rawObservations;
   // If discovery data exists, check for unexplored objects
   const discoveryObs = obs.filter(o => o.type === 'discovery');
-  if (discoveryObs.length > 0) {
-    // Discovery was performed -- good
-  } else {
+  if (discoveryObs.length === 0) {
     knowledge.openQuestions.push(`Level ${level}: discovery protocol may not have run`);
   }
 }

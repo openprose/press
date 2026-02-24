@@ -10,7 +10,7 @@ requires: [arc-helper-library]
 
 ## Algorithmic Analysis
 
-You solve ARC by **writing code that discovers the pattern**, not by staring at grids and guessing. Every iteration should contain a dense block of algorithmic checks that narrows the hypothesis space. Think like a scientist: measure everything, eliminate impossibilities, converge on truth.
+You solve ARC by **writing code that discovers the pattern**, not by staring at grids and guessing. Every iteration should contain a dense block of algorithmic checks that narrows the hypothesis space.
 
 ### The Core Principle
 
@@ -94,55 +94,20 @@ for (let i = 0; i < train.length; i++) {
 }
 
 // === OBJECT COUNT ANALYSIS ===
+// See arc-helper-library for labelComponents() — use it here for connected component counting
 console.log("\n=== CONNECTED COMPONENTS ===");
 for (let i = 0; i < train.length; i++) {
-  const countObjs = (grid) => {
-    const H = grid.length, W = grid[0].length;
-    const seen = Array.from({length: H}, () => Array(W).fill(false));
-    let count = 0;
-    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
-      if (!seen[r][c] && grid[r][c] !== 0) {
-        count++;
-        const stack = [[r,c]], color = grid[r][c];
-        while (stack.length) {
-          const [cr,cc] = stack.pop();
-          if (cr<0||cr>=H||cc<0||cc>=W||seen[cr][cc]||grid[cr][cc]!==color) continue;
-          seen[cr][cc] = true;
-          stack.push([cr-1,cc],[cr+1,cc],[cr,cc-1],[cr,cc+1]);
-        }
-      }
-    }
-    return count;
-  };
+  const countObjs = (grid) => labelComponents(grid, 0).count;
   console.log(`Train ${i}: input objects=${countObjs(train[i].input)}, output objects=${countObjs(train[i].output)}`);
 }
 
 // === SYMMETRY CHECK ===
+// See arc-helper-library for testAllSymmetries(), reflectH(), reflectV(), rotate90(), etc.
 console.log("\n=== SYMMETRY TRANSFORMS ===");
 if (sameDims) {
-  const gridEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   for (let i = 0; i < train.length; i++) {
-    const inp = train[i].input, out = train[i].output;
-    const checks = {
-      identity: gridEqual(inp, out),
-      hFlip: gridEqual(inp.map(r => [...r].reverse()), out),
-      vFlip: gridEqual([...inp].reverse(), out),
-      rot90: (() => {
-        const H = inp.length, W = inp[0].length;
-        if (out.length !== W || out[0].length !== H) return false;
-        const rotated = Array.from({length: W}, (_, c) => Array.from({length: H}, (_, r) => inp[H-1-r][c]));
-        return gridEqual(rotated, out);
-      })(),
-      rot180: gridEqual([...inp].reverse().map(r => [...r].reverse()), out),
-      transpose: (() => {
-        const H = inp.length, W = inp[0].length;
-        if (out.length !== W || out[0].length !== H) return false;
-        const t = Array.from({length: W}, (_, c) => Array.from({length: H}, (_, r) => inp[r][c]));
-        return gridEqual(t, out);
-      })(),
-    };
-    const matches = Object.entries(checks).filter(([,v]) => v).map(([k]) => k);
-    console.log(`Train ${i}: ${matches.length > 0 ? matches.join(", ") : "none"}`);
+    const match = testAllSymmetries(train[i].input, train[i].output);
+    console.log(`Train ${i}: ${match ?? "none"}`);
   }
 }
 ```
@@ -265,29 +230,9 @@ function rowSignatures(grid) {
 
 **4. Bounding Box Relationship** — how do object positions change?
 ```javascript
-function objectBBoxes(grid, bg = 0) {
-  // Returns array of {color, minR, maxR, minC, maxC, area}
-  const H = grid.length, W = grid[0].length;
-  const seen = Array.from({length: H}, () => Array(W).fill(false));
-  const objects = [];
-  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
-    if (!seen[r][c] && grid[r][c] !== bg) {
-      const color = grid[r][c];
-      let minR=r, maxR=r, minC=c, maxC=c, area=0;
-      const stack = [[r,c]];
-      while (stack.length) {
-        const [cr,cc] = stack.pop();
-        if (cr<0||cr>=H||cc<0||cc>=W||seen[cr][cc]||grid[cr][cc]!==color) continue;
-        seen[cr][cc] = true;
-        area++; minR=Math.min(minR,cr); maxR=Math.max(maxR,cr);
-        minC=Math.min(minC,cc); maxC=Math.max(maxC,cc);
-        stack.push([cr-1,cc],[cr+1,cc],[cr,cc-1],[cr,cc+1]);
-      }
-      objects.push({ color, minR, maxR, minC, maxC, area, h: maxR-minR+1, w: maxC-minC+1 });
-    }
-  }
-  return objects;
-}
+// See arc-helper-library for labelComponents() and boundingBox().
+// Combine them to get per-object bounding boxes:
+// Use labelComponents(grid, bg) to get component IDs, then boundingBox(labels, (v) => v === id) per component.
 ```
 
 **5. Periodicity Detection** — is there a repeating unit?
@@ -339,24 +284,9 @@ console.log("Feature table:", JSON.stringify(features, null, 2));
 
 Alternate between **exploration** (dense analysis) and **synthesis** (building transforms from evidence):
 
-| Iteration | Mode | What to do |
-|-----------|------|------------|
-| 1 | Explore | Grand Survey: run 5-10 analyses, print structured results |
-| 2 | Explore | Targeted Deep Dive: follow up on the most promising signal from iter 1 |
-| 3 | Synthesize | Write `transform()` derived from mathematical evidence, test on ALL training pairs |
-| 4 | Explore | Analyze failures: for each failing example, run diff, print expected vs actual, identify the discrepancy mathematically |
-| 5+ | Synthesize | Refine transform, re-test, iterate |
+- **Iterations 1-2 (explore):** Grand Survey, then Targeted Deep Dive on the most promising signal.
+- **Iteration 3 (synthesize):** Write `transform()` derived from mathematical evidence; test on ALL training pairs.
+- **Iteration 4 (explore):** Analyze failures — diff each failing example, print expected vs actual, identify discrepancies mathematically.
+- **Iterations 5+ (synthesize):** Refine transform, re-test, iterate.
 
 At the **midpoint** of your budget, you should have a `transform()` that passes at least some training examples. If you don't, your analysis missed something — go back and run the checks you skipped.
-
-### What This Prevents
-
-- **Guessing from visual intuition** — you shouldn't hypothesize "it looks like a rotation" when you can compute `gridEqual(rotate90(input), output)` in one line
-- **One-check-per-iteration** — instead of testing one idea per iteration, test 10 ideas per iteration and eliminate 9
-- **Ignoring cross-example consistency** — a pattern that holds for 1 example but not all 4 is noise; only patterns consistent across ALL pairs matter
-- **Building transforms from vibes** — every `transform()` should trace back to a specific quantitative finding from your analysis
-- **Missing the simple explanation** — the grand survey catches color remaps, geometric transforms, and dimension relationships in iteration 1, before you over-complicate things
-
-### The Mindset
-
-You are not an artist looking at pretty grids. You are an algorithm designer reverse-engineering an unknown function `f(input) = output` from examples. Write code that computes properties of `f`, not code that implements your guess about `f`. Let the math tell you what `f` is.

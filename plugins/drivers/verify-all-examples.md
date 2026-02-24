@@ -48,13 +48,6 @@ SCOREBOARD:
 
 This prevents you from abandoning a 3/4 hypothesis for an untested one.
 
-### What this prevents
-
-- Analyzing only Train 0 in depth while ignoring Train 1-3
-- Believing a hypothesis works because it matches one example
-- Cycling through hypotheses without knowing which one scored best
-- Losing track of your best candidate when exploring alternatives
-
 ### Verification gate before return()
 
 **NEVER call `return()` unless your solution scores N/N on all training examples** — or you have explicitly accepted the failures you cannot fix.
@@ -65,8 +58,6 @@ The sequence is:
 1. Run the full verification loop. See `Score: N/N` in the output.
 2. If any example fails, fix it. Do NOT return a solution with known training failures unless you are in deadline mode and out of iterations.
 3. Only after seeing N/N (or consciously accepting a known gap at the deadline), call `return()`.
-
-This gate is the single strongest predictor of success. Solutions verified against all ground truth before returning succeed at 4x the rate of unverified returns.
 
 ### The rule
 

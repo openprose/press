@@ -18,7 +18,7 @@ You are solving an ARC-AGI task. The task data is in `context` as a JSON string 
 
 2. **Use the helper library.** Copy the functions below into your first code block. They are tested and correct — do not reimplement them from scratch.
 
-3. **Consider standard symmetries when relevant.** If the task appears to involve spatial transforms, run `testAllSymmetries` or manually check the 7 standard transforms. But many ARC tasks have custom rules (tiling, ray-tracing, pattern completion) — for those, invest early iterations in understanding the task-specific structure instead.
+3. **Check standard symmetries for spatial transforms.** Run `testAllSymmetries` or manually check the 7 standard transforms. For custom rules (tiling, ray-tracing, pattern completion), invest early iterations in task-specific structure instead.
 
 4. **Verify on ALL training examples.** A hypothesis that passes 1 example but fails 3 is wrong. Always test every training pair before concluding a transform works.
 
@@ -155,10 +155,3 @@ function findRepeatingTile(seq, minLen, maxLen) {
 }
 ```
 
-### Critical rules
-
-1. **Always JSON.stringify your return value.** `return(JSON.stringify(grid))`, never `return(grid)`.
-
-2. **Do not rush to return.** Thorough exploration and verification produce correct answers. Do not return until you have verified your solution against all training examples. Budget management is handled separately — focus on getting the answer right.
-
-3. **Do not reimplement grid utilities.** The helper library above is tested and correct. Copying it costs one iteration. Reimplementing from scratch wastes iterations and introduces bugs.

@@ -41,9 +41,10 @@ import type { CallLLM, ModelEntry } from "../src/rlm.js";
 import { DEFAULT_MODEL_ALIASES } from "../src/models.js";
 import type { EvalResult, EvalTask, ScoringFunction } from "./types.js";
 import { withRateLimit } from "./rate-limiter.js";
+import { formatDuration } from "./utils.js";
 
+/** Minimal .env loader. Does not handle quoting, multi-line values, or `export` prefix. */
 function loadEnvFile(): void {
-	// Look for .env in the package root (one directory up from eval/)
 	const envPath = join(new URL(".", import.meta.url).pathname, "..", ".env");
 	try {
 		const content = readFileSync(envPath, "utf-8");
@@ -261,6 +262,10 @@ function modelOverrides(model: string): { maxTokens?: number; timeoutMs?: number
 	return {};
 }
 
+function stripOpenRouterPrefix(id: string): string {
+	return id.startsWith("openrouter/") ? id.slice("openrouter/".length) : id;
+}
+
 function resolveCallLLM(spec: string, reasoningEffort?: string): { callLLM: CallLLM; displayName: string } {
 	const parts = spec.split("/");
 	if (parts.length < 2) {
@@ -280,25 +285,17 @@ function resolveCallLLM(spec: string, reasoningEffort?: string): { callLLM: Call
 		overrides.reasoningEffort = reasoningEffort;
 	}
 
-	// If model spec starts with "openrouter/", strip the prefix —
-	// OpenRouter expects just "provider/model" (e.g. "google/gemini-3-flash-preview").
-	if (parts[0] === "openrouter") {
-		const modelWithoutPrefix = parts.slice(1).join("/");
-		return { callLLM: fromOpenRouter(modelWithoutPrefix, apiKey, overrides), displayName: `${modelWithoutPrefix} (openrouter)` };
-	}
-
-	// Otherwise pass the full spec directly — OpenRouter accepts "provider/model" natively.
-	return { callLLM: fromOpenRouter(spec, apiKey, overrides), displayName: `${spec} (openrouter)` };
+	// Strip "openrouter/" prefix if present — OpenRouter expects "provider/model".
+	const modelId = stripOpenRouterPrefix(spec);
+	const displayName = parts[0] === "openrouter" ? `${modelId} (openrouter)` : `${spec} (openrouter)`;
+	return { callLLM: fromOpenRouter(modelId, apiKey, overrides), displayName };
 }
 
 function buildModelAliases(aliases: string[], apiKey: string): Record<string, ModelEntry> | undefined {
 	// Start with defaults
 	const models: Record<string, ModelEntry> = {};
 	for (const [alias, def] of Object.entries(DEFAULT_MODEL_ALIASES)) {
-		// Strip openrouter/ prefix for the eval's OpenRouter driver
-		const modelId = def.modelId.startsWith("openrouter/")
-			? def.modelId.slice("openrouter/".length)
-			: def.modelId;
+		const modelId = stripOpenRouterPrefix(def.modelId);
 		models[alias] = {
 			callLLM: fromOpenRouter(modelId, apiKey),
 			tags: [...def.tags],
@@ -328,8 +325,7 @@ function buildModelAliases(aliases: string[], apiKey: string): Record<string, Mo
 			console.error(`Invalid --model-alias format: "${raw}" (alias and model ID must be non-empty)`);
 			process.exit(1);
 		}
-		// Strip openrouter/ prefix if present
-		const cleanModelId = modelId.startsWith("openrouter/") ? modelId.slice("openrouter/".length) : modelId;
+		const cleanModelId = stripOpenRouterPrefix(modelId);
 		models[alias] = {
 			callLLM: fromOpenRouter(cleanModelId, apiKey),
 			tags,
@@ -350,206 +346,206 @@ interface BenchmarkConfig {
 	getResultMetadata?: (task: EvalTask) => Record<string, unknown> | undefined;
 }
 
+function configureOolong(args: CliArgs): BenchmarkConfig {
+	return {
+		loadTasks: () => loadOolongTasks(
+			args.datasetFilter,
+			args.contextLen,
+			args.maxTasks ?? 50,
+			args.withLabels,
+			args.filter ? parseFilter(args.filter) : undefined,
+		),
+		scoringFn: oolongScore,
+	};
+}
+
+function configureSNIAH(args: CliArgs): BenchmarkConfig {
+	return {
+		loadTasks: () => generateSNIAHTasks(
+			args.tasksPerLength,
+		).then((tasks) => args.maxTasks ? tasks.slice(0, args.maxTasks) : tasks),
+		scoringFn: exactMatch,
+	};
+}
+
+function configureArc(args: CliArgs): BenchmarkConfig {
+	return {
+		loadTasks: () => loadArcTasks(
+			args.maxTasks,
+			args.selectedProblems.length > 0 ? args.selectedProblems : undefined,
+		),
+		scoringFn: arcGridMatch,
+	};
+}
+
+function configureArc3(args: CliArgs): BenchmarkConfig {
+	if (!process.env.ARC3_API_KEY) {
+		console.error("ARC3_API_KEY not set. Required for ARC-3 benchmark.");
+		console.error("Set it in .env or as an environment variable.");
+		process.exit(1);
+	}
+	const clients = new Map<string, Arc3Client>();
+
+	// Load arc3 globalDocs from markdown file
+	const arc3DocsPath = join(
+		new URL(".", import.meta.url).pathname,
+		"arc3-global-docs.md",
+	);
+	const arc3GlobalDocs = readFileSync(arc3DocsPath, "utf-8");
+
+	return {
+		loadTasks: () => loadArc3Tasks(
+			args.game ? args.game.split(",").map((s) => s.trim()) : undefined,
+			args.maxTasks,
+		),
+		scoringFn: arc3Score,
+		globalDocs: arc3GlobalDocs,
+		setupSandbox: (task) => {
+			const gameId = task.metadata?.gameId as string;
+			const client = new Arc3Client(gameId, undefined, { logActions: args.traceActions });
+			clients.set(task.id, client);
+			return { arc3: client };
+		},
+		getResultMetadata: (task) => {
+			const client = clients.get(task.id);
+			if (!client?.scorecardId) return undefined;
+			return {
+				scorecardId: client.scorecardId,
+				replayUrl: `https://three.arcprize.org/scorecards/${client.scorecardId}`,
+				actionLog: client.actionLog.length > 0 ? client.actionLog : undefined,
+			};
+		},
+		cleanupTask: async (task) => {
+			const client = clients.get(task.id);
+			if (client) {
+				await client.cleanup();
+				clients.delete(task.id);
+			}
+		},
+	};
+}
+
+function configureArcCompound(args: CliArgs): BenchmarkConfig {
+	// Data loaded lazily in loadTasks, shared with setupSandbox via closure
+	let loadedChallenges: Record<string, { train: Array<{ input: number[][]; output: number[][] }>; test: Array<{ input: number[][] }> }>;
+	let loadedTaskIds: string[];
+	// Expected answers keyed by taskId (single grid or array of grids)
+	let expectedMap: Record<string, unknown>;
+
+	// Submission state — hoisted so both setupSandbox and getResultMetadata can access
+	const submissionCounts = new Map<string, number>();
+	const correctTasks = new Set<string>();
+	const submissionLog: Array<{ taskId: string; attempt: number; correct: boolean; remaining: number; timestampMs: number }> = [];
+	const MAX_SUBMISSIONS = 2;
+
+	// Child app bodies — loaded in loadTasks, consumed by harness for delegation
+	let loadedChildApps: Record<string, string>;
+
+	// Load globalDocs from markdown file (following arc3 pattern)
+	const compoundDocsPath = join(
+		new URL(".", import.meta.url).pathname,
+		"arc-compound-global-docs.md",
+	);
+	const compoundGlobalDocs = readFileSync(compoundDocsPath, "utf-8");
+
+	const config: BenchmarkConfig = {
+		loadTasks: async () => {
+			const { metaTask, challenges } = await loadArcCompoundBundle(
+				args.maxTasks,
+				args.selectedProblems.length > 0 ? args.selectedProblems : undefined,
+			);
+			loadedChallenges = challenges;
+			loadedTaskIds = metaTask.metadata!.taskIds as string[];
+			// Parse expectedMap from the metaTask for use in submission scoring
+			expectedMap = JSON.parse(metaTask.expected as string);
+
+			// Load child app plugins for orchestrator delegation
+			const childAppNames = ["arc-compound-solver", "arc-compound-synthesizer"];
+			loadedChildApps = {};
+			for (const name of childAppNames) {
+				loadedChildApps[name] = await loadPlugins([name], "apps");
+			}
+			config.childApps = loadedChildApps;
+
+			return [metaTask];
+		},
+		scoringFn: arcCompoundScore,
+		globalDocs: compoundGlobalDocs,
+		setupSandbox: () => {
+			const tasks: Record<string, object> = {};
+			for (const id of loadedTaskIds) {
+				tasks[id] = {
+					train: loadedChallenges[id].train,
+					test: loadedChallenges[id].test,
+				};
+			}
+
+			const submitter = {
+				submit(taskId: string, answer: unknown): { correct: boolean; remaining: number } {
+					const used = submissionCounts.get(taskId) ?? 0;
+					if (used >= MAX_SUBMISSIONS) {
+						submissionLog.push({ taskId, attempt: used + 1, correct: false, remaining: 0, timestampMs: Date.now() });
+						return { correct: false, remaining: 0 };
+					}
+					submissionCounts.set(taskId, used + 1);
+					const remaining = MAX_SUBMISSIONS - used - 1;
+
+					const expected = expectedMap[taskId];
+					if (expected === undefined) {
+						submissionLog.push({ taskId, attempt: used + 1, correct: false, remaining, timestampMs: Date.now() });
+						return { correct: false, remaining };
+					}
+
+					const correct = gridsEqual(answer, expected);
+					if (correct) correctTasks.add(taskId);
+					submissionLog.push({ taskId, attempt: used + 1, correct, remaining, timestampMs: Date.now() });
+					return { correct, remaining };
+				},
+				remaining(taskId: string): number {
+					return MAX_SUBMISSIONS - (submissionCounts.get(taskId) ?? 0);
+				},
+				getResults(): Record<string, boolean> {
+					const results: Record<string, boolean> = {};
+					for (const id of loadedTaskIds) {
+						results[id] = correctTasks.has(id);
+					}
+					return results;
+				},
+			};
+
+			return {
+				__arcTasks: tasks,
+				__arcTaskIds: loadedTaskIds,
+				__arcLibrary: { primitives: {}, strategies: [], antiPatterns: [], taskLog: [] },
+				__arcCurrentTask: null,
+				__arcSubmit: submitter,
+			};
+		},
+		getResultMetadata: () => {
+			return {
+				totalTasks: loadedTaskIds.length,
+				tasksAttempted: submissionCounts.size,
+				totalCorrect: correctTasks.size,
+				totalSubmissions: submissionLog.length,
+				submissionLog,
+			};
+		},
+	};
+	return config;
+}
+
 function getBenchmarkConfig(args: CliArgs): BenchmarkConfig {
 	switch (args.benchmark) {
-		case "oolong":
-			return {
-				loadTasks: () => loadOolongTasks(
-					args.datasetFilter,
-					args.contextLen,
-					args.maxTasks ?? 50,
-					args.withLabels,
-					args.filter ? parseFilter(args.filter) : undefined,
-				),
-				scoringFn: oolongScore,
-			};
-
-		case "s-niah":
-			return {
-				loadTasks: () => generateSNIAHTasks(
-					args.tasksPerLength,
-				).then((tasks) => args.maxTasks ? tasks.slice(0, args.maxTasks) : tasks),
-				scoringFn: exactMatch,
-			};
-
-		case "arc":
-			return {
-				loadTasks: () => loadArcTasks(
-					args.maxTasks,
-					args.selectedProblems.length > 0 ? args.selectedProblems : undefined,
-				),
-				scoringFn: arcGridMatch,
-			};
-
-		case "arc3": {
-			if (!process.env.ARC3_API_KEY) {
-				console.error("ARC3_API_KEY not set. Required for ARC-3 benchmark.");
-				console.error("Set it in .env or as an environment variable.");
-				process.exit(1);
-			}
-			const clients = new Map<string, Arc3Client>();
-
-			// Load arc3 globalDocs from markdown file
-			const arc3DocsPath = join(
-				new URL(".", import.meta.url).pathname,
-				"arc3-global-docs.md",
-			);
-			const arc3GlobalDocs = readFileSync(arc3DocsPath, "utf-8");
-
-			return {
-				loadTasks: () => loadArc3Tasks(
-					args.game ? args.game.split(",").map((s) => s.trim()) : undefined,
-					args.maxTasks,
-				),
-				scoringFn: arc3Score,
-				globalDocs: arc3GlobalDocs,
-				setupSandbox: (task) => {
-					const gameId = task.metadata?.gameId as string;
-					const client = new Arc3Client(gameId, undefined, { logActions: args.traceActions });
-					clients.set(task.id, client);
-					return { arc3: client };
-				},
-				getResultMetadata: (task) => {
-					const client = clients.get(task.id);
-					if (!client?.scorecardId) return undefined;
-					return {
-						scorecardId: client.scorecardId,
-						replayUrl: `https://three.arcprize.org/scorecards/${client.scorecardId}`,
-						...(client.actionLog.length > 0 && { actionLog: client.actionLog }),
-					};
-				},
-				cleanupTask: async (task) => {
-					const client = clients.get(task.id);
-					if (client) {
-						await client.cleanup();
-						clients.delete(task.id);
-					}
-				},
-			};
-		}
-
-		case "arc-compound": {
-			// Data loaded lazily in loadTasks, shared with setupSandbox via closure
-			let loadedChallenges: Record<string, { train: Array<{ input: number[][]; output: number[][] }>; test: Array<{ input: number[][] }> }>;
-			let loadedTaskIds: string[];
-			// Expected answers keyed by taskId (single grid or array of grids)
-			let expectedMap: Record<string, unknown>;
-
-			// Submission state — hoisted so both setupSandbox and getResultMetadata can access
-			const submissionCounts = new Map<string, number>();
-			const correctTasks = new Set<string>();
-			const submissionLog: Array<{ taskId: string; attempt: number; correct: boolean; remaining: number; timestampMs: number }> = [];
-			const MAX_SUBMISSIONS = 2;
-
-			// Child app bodies — loaded in loadTasks, consumed by harness for delegation
-			let loadedChildApps: Record<string, string>;
-
-			// Load globalDocs from markdown file (following arc3 pattern)
-			const compoundDocsPath = join(
-				new URL(".", import.meta.url).pathname,
-				"arc-compound-global-docs.md",
-			);
-			const compoundGlobalDocs = readFileSync(compoundDocsPath, "utf-8");
-
-			const config: BenchmarkConfig = {
-				loadTasks: async () => {
-					const { metaTask, challenges } = await loadArcCompoundBundle(
-						args.maxTasks,
-						args.selectedProblems.length > 0 ? args.selectedProblems : undefined,
-					);
-					loadedChallenges = challenges;
-					loadedTaskIds = metaTask.metadata!.taskIds as string[];
-					// Parse expectedMap from the metaTask for use in submission scoring
-					expectedMap = JSON.parse(metaTask.expected as string);
-
-					// Load child app plugins for orchestrator delegation
-					const childAppNames = ["arc-compound-solver", "arc-compound-synthesizer"];
-					loadedChildApps = {};
-					for (const name of childAppNames) {
-						loadedChildApps[name] = await loadPlugins([name], "apps");
-					}
-					config.childApps = loadedChildApps;
-
-					return [metaTask];
-				},
-				scoringFn: arcCompoundScore,
-				globalDocs: compoundGlobalDocs,
-				setupSandbox: () => {
-					const tasks: Record<string, object> = {};
-					for (const id of loadedTaskIds) {
-						tasks[id] = {
-							train: loadedChallenges[id].train,
-							test: loadedChallenges[id].test,
-						};
-					}
-
-					const submitter = {
-						submit(taskId: string, answer: unknown): { correct: boolean; remaining: number } {
-							const used = submissionCounts.get(taskId) ?? 0;
-							if (used >= MAX_SUBMISSIONS) {
-								submissionLog.push({ taskId, attempt: used + 1, correct: false, remaining: 0, timestampMs: Date.now() });
-								return { correct: false, remaining: 0 };
-							}
-							submissionCounts.set(taskId, used + 1);
-							const remaining = MAX_SUBMISSIONS - used - 1;
-
-							const expected = expectedMap[taskId];
-							if (expected === undefined) {
-								submissionLog.push({ taskId, attempt: used + 1, correct: false, remaining, timestampMs: Date.now() });
-								return { correct: false, remaining };
-							}
-
-							const correct = gridsEqual(answer, expected);
-							if (correct) correctTasks.add(taskId);
-							submissionLog.push({ taskId, attempt: used + 1, correct, remaining, timestampMs: Date.now() });
-							return { correct, remaining };
-						},
-						remaining(taskId: string): number {
-							return MAX_SUBMISSIONS - (submissionCounts.get(taskId) ?? 0);
-						},
-						getResults(): Record<string, boolean> {
-							const results: Record<string, boolean> = {};
-							for (const id of loadedTaskIds) {
-								results[id] = correctTasks.has(id);
-							}
-							return results;
-						},
-					};
-
-					return {
-						__arcTasks: tasks,
-						__arcTaskIds: loadedTaskIds,
-						__arcLibrary: { primitives: {}, strategies: [], antiPatterns: [], taskLog: [] },
-						__arcCurrentTask: null,
-						__arcSubmit: submitter,
-					};
-				},
-				getResultMetadata: () => {
-					return {
-						totalTasks: loadedTaskIds.length,
-						tasksAttempted: submissionCounts.size,
-						totalCorrect: correctTasks.size,
-						totalSubmissions: submissionLog.length,
-						submissionLog,
-					};
-				},
-			};
-			return config;
-		}
-
+		case "oolong":     return configureOolong(args);
+		case "s-niah":     return configureSNIAH(args);
+		case "arc":        return configureArc(args);
+		case "arc3":       return configureArc3(args);
+		case "arc-compound": return configureArcCompound(args);
 		default:
 			console.error(`Unknown benchmark: ${args.benchmark}`);
 			console.error("Available benchmarks: oolong, s-niah, arc, arc3, arc-compound");
 			process.exit(1);
 	}
-}
-
-function formatDuration(ms: number): string {
-	if (ms < 1000) return `${ms}ms`;
-	if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-	const minutes = Math.floor(ms / 60_000);
-	const seconds = Math.floor((ms % 60_000) / 1000);
-	return `${minutes}m ${seconds}s`;
 }
 
 function printProgress(completed: number, total: number, result: EvalResult): void {
@@ -605,9 +601,7 @@ function printFinalResults(result: import("./types.js").BenchmarkResult): void {
 	console.log("=".repeat(60));
 }
 
-async function main(): Promise<void> {
-	const args = parseArgs(process.argv.slice(2));
-
+function printConfig(args: CliArgs): void {
 	console.log("RLM Eval Harness");
 	console.log("================");
 	console.log();
@@ -665,8 +659,9 @@ async function main(): Promise<void> {
 		console.log(`Child Apps:      ${args.childApps.join(", ")}`);
 	}
 	console.log();
+}
 
-	// Resolve model and create callLLM
+function resolveModel(args: CliArgs): { callLLM: CallLLM; models: Record<string, ModelEntry> | undefined } {
 	console.log("Resolving model...");
 	const { callLLM: rawCallLLM, displayName } = resolveCallLLM(args.model, args.reasoningEffort);
 	const callLLM = args.rateLimit > 0
@@ -685,6 +680,15 @@ async function main(): Promise<void> {
 	}
 	console.log();
 
+	return { callLLM, models };
+}
+
+async function loadAllPlugins(args: CliArgs): Promise<{
+	pluginBodies: string | undefined;
+	programGlobalDocs: string;
+	programChildApps: Record<string, string>;
+	cliChildApps: Record<string, string> | undefined;
+}> {
 	// Validate: --app and --program are mutually exclusive
 	if (args.app && args.program) {
 		console.error("Error: --app and --program cannot be used together (program provides its own root app)");
@@ -750,6 +754,16 @@ async function main(): Promise<void> {
 		console.log();
 	}
 
+	return { pluginBodies, programGlobalDocs, programChildApps, cliChildApps };
+}
+
+async function main(): Promise<void> {
+	const args = parseArgs(process.argv.slice(2));
+	printConfig(args);
+
+	const { callLLM, models } = resolveModel(args);
+	const { pluginBodies, programGlobalDocs, programChildApps, cliChildApps } = await loadAllPlugins(args);
+
 	// Load tasks
 	console.log("Loading tasks...");
 	const benchmarkConfig = getBenchmarkConfig(args);
@@ -793,15 +807,15 @@ async function main(): Promise<void> {
 		concurrency: args.concurrency,
 		pluginBodies,
 		models,
-		...(args.attempts > 1 && { attempts: args.attempts }),
-		...(benchmarkConfig.setupSandbox && { setupSandbox: benchmarkConfig.setupSandbox }),
-		...(benchmarkConfig.cleanupTask && { cleanupTask: benchmarkConfig.cleanupTask }),
-		...(benchmarkConfig.getResultMetadata && { getResultMetadata: benchmarkConfig.getResultMetadata }),
-		...(combinedGlobalDocs && { globalDocs: combinedGlobalDocs }),
-		...(hasChildApps && { childApps: allChildApps }),
-		...(args.traceChildren && { traceChildren: true }),
-		...(args.traceSnapshots && { traceSnapshots: true }),
-		...(args.reasoningEffort && args.reasoningEffort !== "none" && { reasoningEffort: args.reasoningEffort }),
+		attempts: args.attempts,
+		setupSandbox: benchmarkConfig.setupSandbox,
+		cleanupTask: benchmarkConfig.cleanupTask,
+		getResultMetadata: benchmarkConfig.getResultMetadata,
+		globalDocs: combinedGlobalDocs,
+		childApps: hasChildApps ? allChildApps : undefined,
+		traceChildren: args.traceChildren,
+		traceSnapshots: args.traceSnapshots,
+		reasoningEffort: args.reasoningEffort !== "none" ? args.reasoningEffort : undefined,
 		filter: args.filter ?? undefined,
 		onProgress: printProgress,
 	});

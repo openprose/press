@@ -2,7 +2,7 @@
 name: return-format-discipline
 kind: driver
 version: 0.1.0
-description: Forces raw value returns — no wrapping, no markdown, no explanation
+description: Prevents scoring failures from wrapping text around programmatic return values
 author: sl
 tags: [format, reliability]
 requires: []

@@ -2,7 +2,7 @@
 name: await-discipline
 kind: driver
 version: 0.1.0
-description: Enforce proper await usage with rlm() calls to prevent lost results
+description: Targets weak models that drop await on async helpers
 author: sl
 tags: [reliability, delegation, weak-model]
 requires: []

@@ -67,9 +67,6 @@ if (library.strategies.length > 0) {
 the specification. Your job is to read them and write JavaScript that discovers
 the transformation rule.
 
-This is what RLMs do: write code, execute it, observe results, iterate. You are
-a computer that programs itself.
-
 **Iteration 1: Read and observe.** Print the grids. Look at dimensions, colors,
 shapes. What do you notice? What changes between input and output?
 
@@ -84,11 +81,6 @@ computational tricks to discover structure:
 - **Coordinate transforms:** Do output cells map to input cells via a formula (transpose, scale, modular arithmetic)?
 - **Connected components:** Flood-fill to find contiguous regions. Count them, measure bounding boxes.
 - **Tiling/periodicity:** Check if the output is a repeat or mosaic of a smaller pattern.
-
-**One function, one idea, one iteration.** Don't write monolithic code that tries
-everything at once. Write a 10-30 line function that tests one hypothesis, run it,
-read the output, then decide what to try next. This is how you stay within the
-output limit and make steady progress.
 
 **Do not follow a fixed pipeline.** Every task is different. Look at THIS task's
 data and write code that makes sense for what you see.

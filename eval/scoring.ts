@@ -4,12 +4,7 @@ const COMPARISON_PHRASES = [
 	"same frequency",
 ];
 
-/**
- * Exact match scoring. Returns 1 if predicted === expected (after trimming
- * and case-insensitive comparison), 0 otherwise.
- *
- * Used for: S-NIAH.
- */
+/** Used for: S-NIAH. */
 export function exactMatch(predicted: string, expected: string | string[]): number {
 	const norm = (s: string) => s.trim().toLowerCase();
 	const pred = norm(predicted);
@@ -22,23 +17,11 @@ export function exactMatch(predicted: string, expected: string | string[]): numb
 }
 
 /**
- * OOLONG scoring function.
- *
- * For ANSWER_TYPE.NUMERIC answers: score = 0.75^|y - y_hat|
- *   This rewards close answers exponentially — off by 1 gets 0.75, off by 2 gets 0.5625, etc.
- *
- * For all other answer types: exact match (case-sensitive, trimmed), matching
- * the official Python scorer: str(trimmed_output) == str(gold).
- *
- * Additionally strips markdown bold asterisks and bracket wrappers from predicted
- * text before matching, matching the official Python scorer's replace("*", "")
- * .replace("[", "").replace("]", "").
- *
- * OOLONG questions instruct the model to wrap answers in formats like:
- *   "Answer: X is [VALUE] Y", "User: [VALUE]", "Label: [VALUE]"
- * The expected answer is the unwrapped core value, so we extract it before comparing.
- *
  * Used for: OOLONG (trec_coarse).
+ *
+ * Case-sensitive text match (matching official Python scorer).
+ * Numeric partial credit: 0.75^|diff| when answerType is ANSWER_TYPE.NUMERIC.
+ * Strips markdown bold/bracket formatting before matching.
  */
 export function oolongScore(predicted: string, expected: string | string[], metadata?: Record<string, unknown>): number {
 	const expectedStr = Array.isArray(expected) ? expected[0] : expected;
@@ -76,14 +59,7 @@ function stripOolongFormatting(s: string): string {
 	return s.replace(/\*/g, "").replace(/\[/g, "").replace(/\]/g, "");
 }
 
-/**
- * Core OOLONG scoring logic (numeric proximity or exact text match).
- *
- * Numeric partial credit (0.75^diff) is only applied when answerType is
- * "ANSWER_TYPE.NUMERIC". For all other answer types, it's exact match only.
- *
- * Text comparison is case-sensitive, matching the official Python scorer.
- */
+/** Numeric proximity (0.75^diff) or exact text match. Case-sensitive. */
 function oolongScoreRaw(predicted: string, expected: string, answerType?: string): number {
 	const allowNumeric = answerType === "ANSWER_TYPE.NUMERIC";
 
@@ -130,16 +106,7 @@ function extractOolongValue(predicted: string, expected: string): string | null 
 	return rest;
 }
 
-/**
- * F1 score over predicted pairs vs expected pairs.
- *
- * Each answer is expected to be a set of pairs, formatted as one pair per line:
- *   "item1, item2"
- *
- * F1 = 2 * precision * recall / (precision + recall)
- *
- * Used for: OOLONG-Pairs.
- */
+/** Used for: OOLONG-Pairs. */
 export function f1Score(predicted: string, expected: string | string[]): number {
 	const parsePairs = (text: string): Set<string> => {
 		const pairs = new Set<string>();
@@ -177,13 +144,7 @@ export function f1Score(predicted: string, expected: string | string[]): number 
 	return (2 * precision * recall) / (precision + recall);
 }
 
-/**
- * Multiple choice scoring. The predicted answer should contain the correct
- * option letter (A, B, C, D). We extract the first uppercase letter from
- * the predicted answer and compare.
- *
- * Used for: CodeQA (LongBench-v2).
- */
+/** Used for: CodeQA (LongBench-v2). */
 export function multipleChoice(predicted: string, expected: string | string[]): number {
 	const expectedStr = Array.isArray(expected) ? expected[0] : expected;
 
@@ -200,17 +161,7 @@ export function multipleChoice(predicted: string, expected: string | string[]): 
 	return predMatch[1] === expMatch[1] ? 1 : 0;
 }
 
-/**
- * ARC grid exact match scoring.
- *
- * Compares predicted and expected grids (2D arrays of integers).
- * Both are expected to be JSON strings representing 2D arrays.
- * Returns 1 if the grids have identical shape and values, 0 otherwise.
- *
- * Handles both single-grid and multi-grid (multiple test inputs) cases.
- *
- * Used for: ARC-AGI.
- */
+/** Used for: ARC-AGI. */
 export function arcGridMatch(predicted: string, expected: string | string[]): number {
 	const expectedStr = Array.isArray(expected) ? expected[0] : expected;
 
@@ -226,13 +177,7 @@ export function arcGridMatch(predicted: string, expected: string | string[]): nu
 	}
 }
 
-/**
- * Parse a predicted ARC grid from LLM output.
- * Handles various formats the model might return:
- * - Raw JSON: [[1,2],[3,4]]
- * - Markdown-wrapped: ```json\n[[1,2],[3,4]]\n```
- * - With explanation text before/after the JSON
- */
+/** Parse LLM output into a grid, trying progressively looser extraction. */
 function parseArcGrid(text: string): unknown | null {
 	// Try direct JSON parse first
 	try {
@@ -264,9 +209,6 @@ function parseArcGrid(text: string): unknown | null {
 	return null;
 }
 
-/**
- * Deep equality check for grids (2D or 3D arrays of numbers).
- */
 export function gridsEqual(a: unknown, b: unknown): boolean {
 	if (Array.isArray(a) && Array.isArray(b)) {
 		if (a.length !== b.length) return false;
@@ -275,15 +217,7 @@ export function gridsEqual(a: unknown, b: unknown): boolean {
 	return a === b;
 }
 
-/**
- * ARC-AGI-3 scoring. Parses the scorecard JSON returned by the agent
- * and computes the average per-level efficiency (0-1).
- *
- * The API scorecard contains `score` (sum of per-level baseline/actual ratios)
- * and `total_levels`. Dividing gives the average efficiency.
- *
- * Used for: ARC-AGI-3.
- */
+/** Used for: ARC-AGI-3. Score is a 0-100 percentage from the API, normalized to 0-1. */
 export function arc3Score(predicted: string, _expected: string | string[]): number {
 	try {
 		const data = JSON.parse(predicted);
@@ -298,16 +232,7 @@ export function arc3Score(predicted: string, _expected: string | string[]): numb
 	}
 }
 
-/**
- * ARC-AGI-2 compound scoring. Parses the submission results returned by
- * __arcSubmit.getResults() -- a map of { taskId: boolean } indicating
- * which tasks were solved correctly.
- *
- * Falls back to grid comparison if the predicted value contains grids
- * instead of booleans (for backwards compatibility).
- *
- * Used for: ARC-AGI-2 compound learning.
- */
+/** Used for: ARC-AGI-2 compound learning. */
 export function arcCompoundScore(predicted: string, expected: string | string[]): number {
 	const expectedStr = Array.isArray(expected) ? expected[0] : expected;
 

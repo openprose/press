@@ -4,6 +4,7 @@
 import { appendFileSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { BenchmarkResult, EvalResult } from "./types.js";
+import { formatDuration } from "./utils.js";
 
 interface TaskAnalysis {
 	taskId: string;
@@ -195,12 +196,24 @@ function analyzeFile(filePath: string) {
 	);
 
 	// --- 5. Group by metadata (e.g., context length for S-NIAH) ---
+	printSniahContextGroups(data.results, analyses);
+
+	console.log();
+
+	// Write GitHub Actions Job Summary if running in CI
+	const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+	if (summaryPath) {
+		const md = buildMarkdownSummary(data, analyses);
+		appendFileSync(summaryPath, md);
+	}
+}
+
+/** Group S-NIAH results by context length (parsed from task ID pattern "sniah-{chars}-{idx}"). */
+function printSniahContextGroups(results: EvalResult[], analyses: TaskAnalysis[]): void {
 	const byGroup = new Map<string, TaskAnalysis[]>();
-	for (let i = 0; i < data.results.length; i++) {
-		const result = data.results[i];
+	for (let i = 0; i < results.length; i++) {
+		const result = results[i];
 		const analysis = analyses[i];
-		// Try to extract a grouping key from the task ID
-		// S-NIAH: "sniah-8000-0" → "8K", OOLONG: "oolong-14000056" → no group
 		const sniahMatch = result.taskId.match(/^sniah-(\d+)-/);
 		if (sniahMatch) {
 			const chars = parseInt(sniahMatch[1], 10);
@@ -235,23 +248,6 @@ function analyzeFile(filePath: string) {
 			}),
 		);
 	}
-
-	console.log();
-
-	// Write GitHub Actions Job Summary if running in CI
-	const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-	if (summaryPath) {
-		const md = buildMarkdownSummary(data, analyses);
-		appendFileSync(summaryPath, md);
-	}
-}
-
-function formatDuration(ms: number): string {
-	if (ms < 1000) return `${ms}ms`;
-	if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-	const minutes = Math.floor(ms / 60_000);
-	const seconds = Math.floor((ms % 60_000) / 1000);
-	return `${minutes}m ${seconds}s`;
 }
 
 function buildMarkdownSummary(data: BenchmarkResult, analyses: TaskAnalysis[]): string {

@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { JsEnvironment } from "../src/environment.js";
+import { JsEnvironment, SANDBOX_BUILTINS } from "../src/environment.js";
 
 describe("JsEnvironment", () => {
-	it("basic exec: evaluates expression and captures console.log output", async () => {
+	it("exec: console.log", async () => {
 		const env = new JsEnvironment();
 		const result = await env.exec("console.log(1 + 1)");
 		expect(result.output).toBe("2");
 	});
 
-	it("bare assignment persists across exec calls", async () => {
+	it("bare assignment persists", async () => {
 		const env = new JsEnvironment();
 		await env.exec("x = 42");
 		const result = await env.exec("console.log(x)");
 		expect(result.output).toBe("42");
 	});
 
-	it("let/const/var persist across exec calls via declaration hoisting", async () => {
+	it("let/const/var persist", async () => {
 		const env = new JsEnvironment();
 		await env.exec("let x = 42");
 		const result = await env.exec("console.log(x)");
@@ -28,14 +28,14 @@ describe("JsEnvironment", () => {
 		expect(result.output).toBe("42");
 	});
 
-	it("error handling: thrown error is captured without crashing", async () => {
+	it("thrown error captured", async () => {
 		const env = new JsEnvironment();
 		const result = await env.exec('throw new Error("boom")');
 		expect(result.output).toBe("");
 		expect(result.error).toContain("boom");
 	});
 
-	it("recovery after error: subsequent exec works fine", async () => {
+	it("recovery after error", async () => {
 		const env = new JsEnvironment();
 		await env.exec('throw new Error("first error")');
 		const result = await env.exec('console.log("still alive")');
@@ -43,20 +43,20 @@ describe("JsEnvironment", () => {
 		expect(result.output).toBe("still alive");
 	});
 
-	it("get/set: set a variable and retrieve it", async () => {
+	it("get/set", async () => {
 		const env = new JsEnvironment();
 		env.set("myVar", 123);
 		expect(env.get("myVar")).toBe(123);
 	});
 
-	it("set makes variables available inside exec", async () => {
+	it("set visible in exec", async () => {
 		const env = new JsEnvironment();
 		env.set("data", "hello");
 		const result = await env.exec("console.log(data)");
 		expect(result.output).toBe("hello");
 	});
 
-	it("console methods: log, error, warn, info all captured in output", async () => {
+	it("console methods: all captured", async () => {
 		const env = new JsEnvironment();
 		const result = await env.exec(
 			'console.log("LOG"); console.error("ERR"); console.warn("WARN"); console.info("INFO")',
@@ -64,26 +64,26 @@ describe("JsEnvironment", () => {
 		expect(result.output).toBe("LOG\nERR\nWARN\nINFO");
 	});
 
-	it("require node built-ins: path.join works", async () => {
+	it("require: node built-ins", async () => {
 		const env = new JsEnvironment();
 		const result = await env.exec('const path = require("path"); console.log(path.join("a", "b"))');
 		expect(result.output).toBe("a/b");
 	});
 
-	it("require rejects non-builtin modules", async () => {
+	it("require: rejects non-builtins", async () => {
 		const env = new JsEnvironment();
 		const result = await env.exec('require("express")');
 		expect(result.error).toContain("Only Node.js");
 	});
 
-	it("output truncation: large output is truncated with marker", async () => {
+	it("output truncation", async () => {
 		const env = new JsEnvironment(100);
 		const result = await env.exec('for (let i = 0; i < 200; i++) { console.log("line " + i); }');
 		expect(result.output).toContain("truncated");
 		expect(result.output.length).toBeLessThan(1000);
 	});
 
-	it("buffer cleared between exec calls", async () => {
+	it("buffer cleared between execs", async () => {
 		const env = new JsEnvironment();
 		await env.exec('console.log("first")');
 		const result = await env.exec('console.log("second")');
@@ -91,20 +91,20 @@ describe("JsEnvironment", () => {
 		expect(result.output).not.toContain("first");
 	});
 
-	it("multiple console.log calls produce newline-separated output", async () => {
+	it("multiple logs newline-separated", async () => {
 		const env = new JsEnvironment();
 		const result = await env.exec('console.log("a"); console.log("b")');
 		expect(result.output).toBe("a\nb");
 	});
 
-	it("const persists across exec calls", async () => {
+	it("const persists", async () => {
 		const env = new JsEnvironment();
 		await env.exec("const y = 'hello'");
 		const result = await env.exec("console.log(y)");
 		expect(result.output).toBe("hello");
 	});
 
-	it("re-declaration works (let then let again)", async () => {
+	it("let re-declaration", async () => {
 		const env = new JsEnvironment();
 		await env.exec("let x = 1");
 		await env.exec("let x = 2");
@@ -112,7 +112,7 @@ describe("JsEnvironment", () => {
 		expect(result.output).toBe("2");
 	});
 
-	it("const re-declaration works across blocks", async () => {
+	it("const re-declaration", async () => {
 		const env = new JsEnvironment();
 		await env.exec("const x = 'first'");
 		await env.exec("const x = 'second'");
@@ -120,7 +120,7 @@ describe("JsEnvironment", () => {
 		expect(result.output).toBe("second");
 	});
 
-	it("await with declaration persists", async () => {
+	it("await declaration persists", async () => {
 		const env = new JsEnvironment();
 		await env.exec("let r = await Promise.resolve(99)");
 		const result = await env.exec("console.log(r)");
@@ -155,7 +155,7 @@ describe("JsEnvironment", () => {
 		expect(result.output).toBe("hi");
 	});
 
-	it("nested let stays scoped (does NOT leak)", async () => {
+	it("nested let stays scoped", async () => {
 		const env = new JsEnvironment();
 		await env.exec("for (let i = 0; i < 3; i++) {}");
 		const result = await env.exec("try { console.log(i) } catch(e) { console.log('not defined') }");
@@ -169,7 +169,7 @@ describe("JsEnvironment", () => {
 		expect(result.output).toBe("not defined");
 	});
 
-	it("error in block doesn't lose prior declarations", async () => {
+	it("error preserves prior declarations", async () => {
 		const env = new JsEnvironment();
 		await env.exec("let safe = 'ok'");
 		await env.exec("throw new Error('boom')");
@@ -178,13 +178,13 @@ describe("JsEnvironment", () => {
 		expect(result.error).toBeNull();
 	});
 
-	it("parse error falls through gracefully", async () => {
+	it("parse error", async () => {
 		const env = new JsEnvironment();
 		const result = await env.exec("let = = =");
 		expect(result.error).toBeTruthy();
 	});
 
-	it("nested exec: child output does not leak into parent", async () => {
+	it("nested exec: child output isolated", async () => {
 		const env = new JsEnvironment();
 		env.set("childExec", async () => {
 			const result = await env.exec('console.log("child output")');
@@ -196,9 +196,9 @@ describe("JsEnvironment", () => {
 		expect(result.output).toBe("parent before\nparent after");
 	});
 
-	it("nested exec: child gets its own isolated output", async () => {
+	it("nested exec: child owns its output", async () => {
 		const env = new JsEnvironment();
-		let childResult: { output: string; error: string | null } | undefined;
+		let childResult: Awaited<ReturnType<typeof env.exec>> | undefined;
 		env.set("childExec", async () => {
 			childResult = await env.exec('console.log("only child")');
 		});
@@ -208,7 +208,7 @@ describe("JsEnvironment", () => {
 		expect(childResult!.output).not.toContain("parent");
 	});
 
-	it("deeply nested exec: three levels of isolation", async () => {
+	it("nested exec: three levels", async () => {
 		const env = new JsEnvironment();
 		const results: string[] = [];
 		env.set("level2", async () => {
@@ -227,17 +227,16 @@ describe("JsEnvironment", () => {
 	});
 
 	describe("snapshot", () => {
-		it("returns user variables set via set() and exec()", async () => {
+		it("returns user variables", async () => {
 			const env = new JsEnvironment();
 			env.set("x", 42);
 			await env.exec("y = 'hello'");
-			const builtins = new Set(["console", "require", "setTimeout", "setInterval", "clearTimeout", "clearInterval", "URL", "URLSearchParams", "TextEncoder", "TextDecoder"]);
-			const snap = env.snapshot(builtins);
+			const snap = env.snapshot(SANDBOX_BUILTINS);
 			expect(snap.x).toBe(42);
 			expect(snap.y).toBe("hello");
 		});
 
-		it("excludes keys in the exclude set", () => {
+		it("excludes specified keys", () => {
 			const env = new JsEnvironment();
 			env.set("x", 10);
 			env.set("y", 20);
@@ -255,7 +254,7 @@ describe("JsEnvironment", () => {
 			expect(snap.val).toBe(99);
 		});
 
-		it("handles non-serializable values", () => {
+		it("non-serializable values", () => {
 			const env = new JsEnvironment();
 			const circular: Record<string, unknown> = {};
 			circular.self = circular;
@@ -275,7 +274,7 @@ describe("JsEnvironment", () => {
 			expect(hasTruncated).toBe(true);
 		});
 
-		it("deep-copies values (mutation safety)", () => {
+		it("deep-copies values", () => {
 			const env = new JsEnvironment();
 			const obj = { a: 1 };
 			env.set("obj", obj);

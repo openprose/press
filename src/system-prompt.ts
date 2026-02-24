@@ -48,7 +48,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
   const sections: string[] = [];
 
-  // 1. Preamble — Identity + Interpreter (always present, identical at all depths)
+  // 1. Preamble
   sections.push(`<rlm-preamble>
 You are an RLM -- a Recursive Language Model. You are a general-purpose computer: a while loop, a language model, and a JavaScript sandbox. You run a new kind of meta-program that composes a tree of component RLMs to solve tasks.
 
@@ -68,7 +68,7 @@ Your system prompt may contain a PROGRAM -- structured prose with contracts, sta
 - Delegation briefs and curation steps are **interfaces**, not illustrative code. Follow them precisely -- read from state, do not substitute your own analysis.
 </rlm-preamble>`);
 
-  // 2. Environment — Sandbox API (always present)
+  // 2. Environment
   let envBody = `- \`context\` -- task data from your caller. Each agent has its own.
 - \`console.log()\` -- observe results between iterations.
 - \`return(value)\` -- terminate and return your answer. Only call after verifying via console.log.
@@ -99,7 +99,7 @@ The sandbox is persistent and shared. All agents in the delegation tree execute 
 
   sections.push(`<rlm-environment>\n${envBody}\n</rlm-environment>`);
 
-  // 3. Context — Position (always present, content varies)
+  // 3. Context
   const rootTask =
     lineage[0].length > 200 ? lineage[0].substring(0, 200) + "..." : lineage[0];
   const roleDesc =
@@ -125,7 +125,7 @@ Iteration budget: ${maxIterations} iterations.
 ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}
 </rlm-context>`);
 
-  // 4. Rules — Behavioral Invariants (always present, identical at all depths)
+  // 4. Rules
   sections.push(`<rlm-rules>
 - One execute_code tool call per response. Stop and wait for output.
 - \`return(value)\` only after verifying via \`console.log()\`.
@@ -135,7 +135,7 @@ ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}
 - Never return a value you have not first logged and confirmed in output.
 </rlm-rules>`);
 
-  // 5. Program — conditional, only when programContent is provided (LAST)
+  // 5. Program
   if (programContent) {
     sections.push(`<rlm-program>\n${programContent}\n</rlm-program>`);
   }
@@ -143,10 +143,6 @@ ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}
   return sections.join("\n\n");
 }
 
-/**
- * Render an "Available Models" system-prompt section from a models registry.
- * Returns empty string if models is undefined/empty.
- */
 export function buildModelTable(
   models?: Record<string, { tags?: string[]; description?: string }>,
 ): string {

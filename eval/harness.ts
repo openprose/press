@@ -8,6 +8,7 @@ import type {
 	EvalTask,
 	ScoringFunction,
 } from "./types.js";
+import { mean, median, std, percentile } from "./utils.js";
 
 export interface HarnessConfig {
 	/** Benchmark name (e.g., "oolong", "s-niah"). */
@@ -115,7 +116,23 @@ export async function runEval(
 				}
 
 				try {
-					const result = await runSingleTask(task, config.callLLM, config.scoringFn, maxIterations, maxDepth, config.pluginBodies, config.models, config.setupSandbox, config.cleanupTask, config.getResultMetadata, config.globalDocs, config.childApps, config.traceChildren, config.traceSnapshots, config.reasoningEffort);
+					const result = await runSingleTask({
+						task,
+						callLLM: config.callLLM,
+						scoringFn: config.scoringFn,
+						maxIterations,
+						maxDepth,
+						pluginBodies: config.pluginBodies,
+						models: config.models,
+						setupSandbox: config.setupSandbox,
+						cleanupTask: config.cleanupTask,
+						getResultMetadata: config.getResultMetadata,
+						globalDocs: config.globalDocs,
+						childApps: config.childApps,
+						traceChildren: config.traceChildren,
+						traceSnapshots: config.traceSnapshots,
+						reasoningEffort: config.reasoningEffort,
+					});
 					attemptScores.push(result.score);
 
 					if (!bestResult || result.score > bestResult.score) {
@@ -194,26 +211,33 @@ export async function runEval(
 	return benchmarkResult;
 }
 
-async function runSingleTask(
-	task: EvalTask,
-	callLLM: CallLLM,
-	scoringFn: ScoringFunction,
-	maxIterations: number,
-	maxDepth: number,
-	pluginBodies?: string,
-	models?: Record<string, ModelEntry>,
-	setupSandbox?: (task: EvalTask) => Record<string, unknown>,
-	cleanupTask?: (task: EvalTask) => Promise<void>,
-	getResultMetadata?: (task: EvalTask) => Record<string, unknown> | undefined,
-	globalDocs?: string,
-	childApps?: Record<string, string>,
-	traceChildren?: boolean,
-	traceSnapshots?: boolean,
-	reasoningEffort?: string,
-): Promise<EvalResult> {
+interface SingleTaskConfig {
+	task: EvalTask;
+	callLLM: CallLLM;
+	scoringFn: ScoringFunction;
+	maxIterations: number;
+	maxDepth: number;
+	pluginBodies?: string;
+	models?: Record<string, ModelEntry>;
+	setupSandbox?: (task: EvalTask) => Record<string, unknown>;
+	cleanupTask?: (task: EvalTask) => Promise<void>;
+	getResultMetadata?: (task: EvalTask) => Record<string, unknown> | undefined;
+	globalDocs?: string;
+	childApps?: Record<string, string>;
+	traceChildren?: boolean;
+	traceSnapshots?: boolean;
+	reasoningEffort?: string;
+}
+
+async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
+	const {
+		task, callLLM, scoringFn, maxIterations, maxDepth,
+		pluginBodies, models, setupSandbox, cleanupTask,
+		getResultMetadata, globalDocs, childApps,
+		traceChildren, traceSnapshots, reasoningEffort,
+	} = cfg;
 	const startTime = Date.now();
 
-	// Wrap callLLM to track character counts
 	let totalInputChars = 0;
 	let totalOutputChars = 0;
 
@@ -236,13 +260,13 @@ async function runSingleTask(
 			maxIterations,
 			maxDepth,
 			pluginBodies,
-			...(models && { models }),
-			...(sandboxGlobals && { sandboxGlobals }),
-			...(globalDocs && { globalDocs }),
-			...(childApps && { childApps }),
-			...(traceChildren && { traceChildren }),
-			...(traceSnapshots && { traceSnapshots }),
-			...(reasoningEffort && { reasoningEffort }),
+			models,
+			sandboxGlobals,
+			globalDocs,
+			childApps,
+			traceChildren,
+			traceSnapshots,
+			reasoningEffort,
 		});
 
 		const wallTimeMs = Date.now() - startTime;
@@ -258,7 +282,7 @@ async function runSingleTask(
 			trace: result.trace,
 			wallTimeMs,
 			charCount: { input: totalInputChars, output: totalOutputChars },
-			...(metadata && { metadata }),
+			metadata,
 		};
 	} catch (err) {
 		const wallTimeMs = Date.now() - startTime;
@@ -279,7 +303,7 @@ async function runSingleTask(
 			wallTimeMs,
 			charCount: { input: totalInputChars, output: totalOutputChars },
 			error: errMsg,
-			...(metadata && { metadata }),
+			metadata,
 		};
 	} finally {
 		await cleanupTask?.(task);
@@ -299,7 +323,7 @@ function buildBenchmarkResult(
 	const wallTimes = results.map((r) => r.wallTimeMs);
 
 	const completedTasks = results.filter((r) => !r.error).length;
-	const failedTasks = results.filter((r) => !!r.error).length;
+	const failedTasks = results.length - completedTasks;
 
 	const totalInputChars = results.reduce((sum, r) => sum + r.charCount.input, 0);
 	const totalOutputChars = results.reduce((sum, r) => sum + r.charCount.output, 0);
@@ -316,8 +340,8 @@ function buildBenchmarkResult(
 			maxIterations,
 			maxDepth,
 			concurrency,
-			...(config.filter ? { filter: config.filter } : {}),
-			...((config.attempts ?? 1) > 1 ? { attempts: config.attempts } : {}),
+			filter: config.filter,
+			attempts: (config.attempts ?? 1) > 1 ? config.attempts : undefined,
 		},
 		timestamp: new Date().toISOString(),
 		results,
@@ -398,32 +422,3 @@ function saveResults(filePath: string, result: BenchmarkResult): void {
 	writeFileSync(filePath, json);
 }
 
-function mean(arr: number[]): number {
-	if (arr.length === 0) return 0;
-	return arr.reduce((a, b) => a + b, 0) / arr.length;
-}
-
-function median(arr: number[]): number {
-	if (arr.length === 0) return 0;
-	const sorted = [...arr].sort((a, b) => a - b);
-	const mid = Math.floor(sorted.length / 2);
-	return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-function std(arr: number[]): number {
-	if (arr.length <= 1) return 0;
-	const m = mean(arr);
-	const variance = arr.reduce((sum, x) => sum + (x - m) ** 2, 0) / arr.length;
-	return Math.sqrt(variance);
-}
-
-function percentile(arr: number[], p: number): number {
-	if (arr.length === 0) return 0;
-	const sorted = [...arr].sort((a, b) => a - b);
-	const index = (p / 100) * (sorted.length - 1);
-	const lower = Math.floor(index);
-	const upper = Math.ceil(index);
-	if (lower === upper) return sorted[lower];
-	const frac = index - lower;
-	return sorted[lower] * (1 - frac) + sorted[upper] * frac;
-}

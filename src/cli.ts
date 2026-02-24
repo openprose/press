@@ -128,9 +128,7 @@ function loadContextDir(dirPath: string): string {
 				try {
 					const content = readFileSync(fullPath, "utf-8");
 					parts.push(`=== ${fullPath.slice(absPath.length + 1)} ===\n${content}`);
-				} catch {
-					// Skip binary or unreadable files
-				}
+				} catch {}
 			}
 		}
 	}
@@ -153,7 +151,6 @@ async function main() {
 		baseUrl: args.baseUrl,
 	});
 
-	// Build default model aliases, then let --model-alias override by name
 	const defaultModels: Record<string, ModelEntry> = {};
 	for (const [alias, def] of Object.entries(DEFAULT_MODEL_ALIASES)) {
 		try {

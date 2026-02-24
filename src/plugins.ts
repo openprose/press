@@ -4,11 +4,6 @@ import { fileURLToPath } from "node:url";
 
 const DEFAULT_PLUGINS_DIR = resolve(fileURLToPath(import.meta.url), "../../plugins");
 
-/**
- * Parse YAML frontmatter from a markdown string.
- * Returns the frontmatter as a key-value record and the body (everything after the closing ---).
- * If no frontmatter is present, returns an empty record and the original content as the body.
- */
 export function parseFrontmatter(content: string): { frontmatter: Record<string, any>; body: string } {
 	const trimmed = content.trimStart();
 	if (!trimmed.startsWith("---")) {
@@ -59,7 +54,6 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
 			try {
 				frontmatter[key] = JSON.parse(rawValue);
 			} catch {
-				// Fallback: parse as YAML-style inline array [a, b, c]
 				const inner = rawValue.slice(1, -1);
 				frontmatter[key] = inner.split(",").map((s) => s.trim());
 			}
@@ -81,7 +75,6 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
 	return { frontmatter, body };
 }
 
-/** Load plugin files by name, strip YAML frontmatter, and return concatenated bodies. */
 export async function loadPlugins(
 	names: string[],
 	subdir: "drivers" | "apps",
@@ -100,9 +93,6 @@ export async function loadPlugins(
 	return bodies.join("\n\n---\n\n");
 }
 
-/**
- * Load a profile by name. Returns the list of driver names and model glob patterns.
- */
 export async function loadProfile(
 	name: string,
 	pluginsDir?: string,
@@ -118,23 +108,12 @@ export async function loadProfile(
 	return { drivers, models };
 }
 
-/**
- * Convert a simple glob pattern (with * wildcards) to a RegExp.
- * Only supports * as a wildcard (matches any characters).
- */
 function globToRegExp(pattern: string): RegExp {
 	const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
 	return new RegExp(`^${escaped}$`);
 }
 
-/**
- * Auto-detect a profile by matching a model string against profile glob patterns.
- * Scans all .md files in the profiles/ directory. Returns the matching profile's
- * name and driver list, or null if no profile matches.
- *
- * The model string may have a provider prefix (e.g., "openrouter/google/gemini-3-flash-preview").
- * We try matching both the full string and with the first segment stripped.
- */
+// Match model string against profile globs (tries with and without provider prefix).
 export async function detectProfile(
 	model: string,
 	pluginsDir?: string,
@@ -151,7 +130,6 @@ export async function detectProfile(
 
 	const mdFiles = files.filter((f) => f.endsWith(".md"));
 
-	// Try matching with and without provider prefix
 	const candidates = [model];
 	const slashIdx = model.indexOf("/");
 	if (slashIdx !== -1) {
@@ -181,26 +159,13 @@ export async function detectProfile(
 }
 
 export interface ProgramDefinition {
-	/** Body of the program root file (root.md) — state schemas and composition docs. */
 	globalDocs: string;
-	/** Frontmatter name of the orchestrator node. */
 	rootApp: string;
-	/** Full content of the orchestrator node including frontmatter (becomes root agent's system prompt supplement). */
 	rootAppBody: string;
-	/** Non-orchestrator node bodies keyed by app name (become child apps).
-	 *  Each node is registered by both its frontmatter name (e.g. "arc3-level-solver")
-	 *  and its short filename (e.g. "level-solver") for flexible delegation. */
 	childApps: Record<string, string>;
 }
 
-/**
- * Load a program from plugins/programs/{name}/.
- * Reads all .md files, identifies the program root (kind: program) and nodes (kind: program-node).
- * Program nodes include their frontmatter in the agent's prompt (it's part of the spec —
- * the agent sees its role, delegates, api, and prohibited fields).
- * Returns the orchestrator content for the root agent, node content for child delegation,
- * and the program root body for globalDocs (state schemas visible at all depths).
- */
+// Nodes include frontmatter in the agent prompt (role, delegates, api, prohibited).
 export async function loadProgram(
 	name: string,
 	pluginsDir?: string,
@@ -249,7 +214,6 @@ export async function loadProgram(
 	return { globalDocs, rootApp, rootAppBody, childApps };
 }
 
-/** Load drivers and app plugins, resolving from profile or model auto-detection. Returns concatenated bodies. */
 export async function loadStack(options: {
 	drivers?: string[];
 	app?: string;
@@ -259,7 +223,6 @@ export async function loadStack(options: {
 }): Promise<string> {
 	const { drivers: extraDrivers, app, profile, model, pluginsDir } = options;
 
-	// Resolve driver list from profile or auto-detection
 	let profileDrivers: string[] = [];
 
 	if (profile) {
@@ -272,7 +235,6 @@ export async function loadStack(options: {
 		}
 	}
 
-	// Merge profile drivers with extra drivers (dedup, preserving order)
 	const allDrivers = [...profileDrivers];
 	if (extraDrivers) {
 		for (const d of extraDrivers) {
@@ -284,13 +246,11 @@ export async function loadStack(options: {
 
 	const parts: string[] = [];
 
-	// Load driver bodies
 	if (allDrivers.length > 0) {
 		const driverBodies = await loadPlugins(allDrivers, "drivers", pluginsDir);
 		parts.push(driverBodies);
 	}
 
-	// Load app body
 	if (app) {
 		const appBody = await loadPlugins([app], "apps", pluginsDir);
 		parts.push(appBody);

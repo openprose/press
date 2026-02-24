@@ -72,16 +72,14 @@ From your analysis, formulate a **transformation rule** in plain English before 
 
 **Start simple.** Check these categories in order of likelihood:
 
-| Category | Examples | Key signal |
-|----------|----------|------------|
-| Color remap | Swap two colors, map by adjacency | Same dims, same structure, different colors |
-| Geometric transform | Reflect, rotate, transpose, crop | Output is a rigid transformation of input |
-| Object manipulation | Move, copy, resize, align objects | Objects exist in both, positions differ |
-| Pattern completion | Fill gaps, extend lines, complete symmetry | Output has more filled cells than input |
-| Region extraction | Extract subgrid, select by property | Output is smaller, content matches a part of input |
-| Composition | Overlay, tile, stack, interleave grids | Output combines multiple parts of input |
-| Conditional fill | Fill cells based on neighborhood, distance, or containment | Same dims, localized changes |
-| Sorting/ordering | Reorder rows, columns, or objects by some property | Same content, different arrangement |
+- **Color remap** (swap colors, map by adjacency) — signal: same dims, same structure, different colors
+- **Geometric transform** (reflect, rotate, transpose, crop) — signal: output is a rigid transformation of input
+- **Object manipulation** (move, copy, resize, align) — signal: objects exist in both, positions differ
+- **Pattern completion** (fill gaps, extend lines, complete symmetry) — signal: output has more filled cells than input
+- **Region extraction** (extract subgrid, select by property) — signal: output is smaller, content matches a part of input
+- **Composition** (overlay, tile, stack, interleave) — signal: output combines multiple parts of input
+- **Conditional fill** (fill by neighborhood, distance, or containment) — signal: same dims, localized changes
+- **Sorting/ordering** (reorder rows, columns, or objects by property) — signal: same content, different arrangement
 
 **State your hypothesis explicitly:**
 
@@ -171,13 +169,11 @@ for (let r = 0; r < expected.length; r++) {
 
 Common failure modes and their fixes:
 
-| Symptom | Likely cause | Fix |
-|---------|-------------|-----|
-| Output shifted by 1 row/col | Off-by-one in coordinate math | Check whether you're including or excluding boundary cells |
-| Correct pattern, wrong colors | Color role assignment is fragile | Derive color roles from structural properties, not position |
-| Works on 3 of 4 examples | Rule handles the common case but not the edge case | The 4th example reveals a condition your rule missed -- examine what's structurally different about it |
-| Correct interior, wrong border | Border handling differs from interior | Add explicit border-cell logic or pad the grid before transforming |
-| Wrong dimensions | Output size formula is wrong | Re-derive the dimension relationship across all training pairs |
+- **Output shifted by 1 row/col** — off-by-one in coordinate math. Check whether you're including or excluding boundary cells.
+- **Correct pattern, wrong colors** — color role assignment is fragile. Derive color roles from structural properties, not position.
+- **Works on 3 of 4 examples** — rule handles the common case but not the edge case. The failing example reveals a condition your rule missed; examine what's structurally different about it.
+- **Correct interior, wrong border** — border handling differs from interior. Add explicit border-cell logic or pad the grid before transforming.
+- **Wrong dimensions** — output size formula is wrong. Re-derive the dimension relationship across all training pairs.
 
 ### Phase 5 -- Generalize to Test
 
@@ -204,8 +200,4 @@ if (testObjects.length !== 2) {
 - Your code counts on objects being in specific grid quadrants -- the test arrangement may differ
 - Your code sorts objects by position, but the test has objects in an order not seen in training
 
-**The simplicity heuristic.** If two hypotheses score equally on training, prefer the one with fewer conditions and no magic numbers. ARC rules are typically elegant. A transform with 8 nested conditionals is almost certainly wrong, even if it passes training -- it is overfitting to the examples rather than capturing the rule.
-
-### What this driver does NOT cover
-
-Verification mechanics, iteration budgeting, return discipline, and output format are handled by other drivers. This driver teaches the **problem-solving process**: how to go from a blank slate to a correct, generalizable `transform()` function. Follow the five phases in order. Do not jump to implementation before analyzing. Do not return before testing generalization.
+**The simplicity heuristic.** If two hypotheses score equally on training, prefer the one with fewer conditions and no magic numbers. ARC rules are typically elegant. A transform with 8 nested conditionals is wrong, even if it passes training -- it is overfitting to the examples rather than capturing the rule.

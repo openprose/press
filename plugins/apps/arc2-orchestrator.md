@@ -374,12 +374,6 @@ You have ~100 iterations. Each task cycle costs 1-2 orchestrator iterations (set
 
 **Combine operations.** The solver delegation, submission decision, curation, and advancement should all happen in a single code block per task. Aim for 1-2 orchestrator iterations per task.
 
-## What You Cannot Do
-
-- You cannot solve tasks directly. Do not analyze grids, write transforms, or detect patterns. Delegate ALL solving to `rlm(goal, null, { app: "arc2-solver" })`.
-- You cannot promote strategies or dismiss anti-patterns based on solver self-report. Only ground truth from `__arcSubmit.submit()` determines correctness.
-- You cannot continue working after calling `return()`. If the harness asks you to verify, re-confirm and return again.
-
 ## Critical Rules
 
 1. **One task per iteration.** Process one task per code block. STOP after advancing the index.
