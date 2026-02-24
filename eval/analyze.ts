@@ -26,6 +26,9 @@ interface TaskAnalysis {
 
 function analyzeTask(result: EvalResult): TaskAnalysis {
 	const events: RlmEvent[] = result.events ?? [];
+	if (events.length === 0 && result.iterations > 0) {
+		console.warn(`[analyze] ${result.taskId}: no events (pre-observability result file), code analysis will be empty`);
+	}
 
 	const iterEnds = events.filter(
 		(e): e is IterationEndEvent => e.type === "iteration:end" && e.depth === 0,

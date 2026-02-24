@@ -596,14 +596,15 @@ function renderTaskDetail(result) {
     inner.appendChild(renderGameBoard(actionLog));
   }
 
-  // Iteration timeline
-  if (result.trace && result.trace.length > 0) {
-    const timeline = renderTimeline(result.trace, 0);
-    inner.appendChild(timeline);
+  // Iteration timeline: prefer events, fall back to trace, then show no-data
+  if (result.events && result.events.length > 0) {
+    inner.appendChild(renderEventTimeline(result.events));
+  } else if (result.trace && result.trace.length > 0) {
+    inner.appendChild(renderTimeline(result.trace, 0));
   } else {
     const noTrace = document.createElement('div');
     noTrace.className = 'no-data';
-    noTrace.textContent = 'No trace data available';
+    noTrace.textContent = 'No trace/event data available';
     inner.appendChild(noTrace);
   }
 
@@ -611,7 +612,218 @@ function renderTaskDetail(result) {
   document.getElementById('content').scrollTop = 0;
 }
 
-// ── Iteration Timeline ──
+// ── Event-based Timeline (new observability format) ──
+function renderEventTimeline(events) {
+  const frag = document.createDocumentFragment();
+
+  // Group iteration:end and llm:response events by invocationId, then by iteration
+  const invocations = new Map(); // invocationId -> { depth, iterations: Map<number, { iterEnd, llmResponse }> }
+  for (const e of events) {
+    if (e.type === 'iteration:end' || e.type === 'llm:response') {
+      let inv = invocations.get(e.invocationId);
+      if (!inv) {
+        inv = { depth: e.depth, parentId: e.parentId, iterations: new Map() };
+        invocations.set(e.invocationId, inv);
+      }
+      let iter = inv.iterations.get(e.iteration);
+      if (!iter) {
+        iter = {};
+        inv.iterations.set(e.iteration, iter);
+      }
+      if (e.type === 'iteration:end') iter.iterEnd = e;
+      if (e.type === 'llm:response') iter.llmResponse = e;
+    }
+  }
+
+  // Collect delegation events for child summaries
+  const delegations = new Map(); // childId -> { spawn, return, error }
+  for (const e of events) {
+    if (e.type === 'delegation:spawn' || e.type === 'delegation:return' || e.type === 'delegation:error') {
+      let d = delegations.get(e.childId);
+      if (!d) { d = {}; delegations.set(e.childId, d); }
+      if (e.type === 'delegation:spawn') d.spawn = e;
+      if (e.type === 'delegation:return') d.returnEv = e;
+      if (e.type === 'delegation:error') d.errorEv = e;
+    }
+  }
+
+  // Render each invocation, root first
+  const sortedInvocations = [...invocations.entries()].sort((a, b) => a[1].depth - b[1].depth);
+
+  for (const [invId, inv] of sortedInvocations) {
+    if (inv.depth > 0) {
+      // Render children inline within their parent's delegation section
+      continue;
+    }
+
+    const sortedIters = [...inv.iterations.entries()].sort((a, b) => a[0] - b[0]);
+    for (const [iterNum, iterData] of sortedIters) {
+      frag.appendChild(renderEventIterCard(iterNum, iterData, inv.depth, invId, invocations, delegations));
+    }
+  }
+
+  return frag;
+}
+
+function renderEventIterCard(iterNum, iterData, depth, invocationId, invocations, delegations) {
+  const card = document.createElement('div');
+  card.className = 'iter-card';
+
+  const ie = iterData.iterEnd;
+  const lr = iterData.llmResponse;
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'iter-header';
+  const depthLabel = depth > 0 ? ` <span class="badge badge-depth">depth ${depth}</span>` : '';
+  const codeBadge = (ie && ie.code) ? '<span class="badge badge-code">code</span>' : '';
+  const errorBadge = (ie && ie.error) ? '<span class="badge badge-error">error</span>' : '';
+  const returnedBadge = (ie && ie.returned) ? '<span class="badge badge-child-ok">returned</span>' : '';
+  const durationBadge = lr ? `<span class="badge" style="background:rgba(255,255,255,0.06);color:var(--text-dim)">${formatMs(lr.duration)}</span>` : '';
+  header.innerHTML = `<span class="iter-num">#${iterNum + 1}</span>${depthLabel} ${codeBadge} ${errorBadge} ${returnedBadge} ${durationBadge}`;
+  card.appendChild(header);
+
+  // Body
+  const body = document.createElement('div');
+  body.className = 'iter-body';
+
+  // Reasoning
+  if (lr && lr.reasoning) {
+    body.appendChild(renderCollapsible('Reasoning', () => {
+      const div = document.createElement('div');
+      div.className = 'reasoning-text';
+      div.textContent = lr.reasoning;
+      return div;
+    }, lr.reasoning.length > 400));
+  }
+
+  // Code
+  if (ie && ie.code) {
+    body.appendChild(renderCollapsible('Code', () => {
+      const pre = document.createElement('pre');
+      pre.innerHTML = highlightJS(ie.code);
+      return pre;
+    }, false));
+  }
+
+  // Output
+  if (ie && ie.output) {
+    body.appendChild(renderCollapsible('Output', () => {
+      const pre = document.createElement('pre');
+      pre.className = 'output-block';
+      pre.textContent = ie.output;
+      return pre;
+    }, ie.output.length > 600));
+  }
+
+  // Error
+  if (ie && ie.error) {
+    const errDetails = document.createElement('details');
+    errDetails.open = true;
+    const errSummary = document.createElement('summary');
+    errSummary.textContent = 'Error';
+    errSummary.style.color = 'var(--red)';
+    errDetails.appendChild(errSummary);
+    const pre = document.createElement('pre');
+    pre.className = 'error-block';
+    pre.textContent = ie.error;
+    errDetails.appendChild(pre);
+    body.appendChild(errDetails);
+  }
+
+  // Child delegations spawned from this invocation during this iteration
+  const children = [];
+  for (const [childId, d] of delegations) {
+    if (d.spawn && d.spawn.invocationId === invocationId) {
+      // Check if child was spawned around this iteration by looking at child invocation data
+      const childInv = invocations.get(childId);
+      children.push({ childId, spawn: d.spawn, returnEv: d.returnEv, errorEv: d.errorEv, childInv });
+    }
+  }
+  if (children.length > 0 && iterNum === findDelegationIter(ie, children)) {
+    const panel = document.createElement('div');
+    panel.className = 'children-panel';
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.innerHTML = `Children (${children.length})`;
+    details.appendChild(summary);
+
+    for (const child of children) {
+      const item = document.createElement('div');
+      item.className = 'child-item';
+      const childDetails = document.createElement('details');
+      const childSummary = document.createElement('summary');
+      childSummary.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12px;text-transform:none;letter-spacing:0;';
+
+      const failed = child.errorEv || !child.returnEv;
+      const statusBadge = failed
+        ? '<span class="badge badge-child-fail">failed</span>'
+        : '<span class="badge badge-child-ok">ok</span>';
+      const depthBadge = child.childInv
+        ? `<span class="badge badge-depth">d${child.childInv.depth}</span>`
+        : '';
+      const itersBadge = child.returnEv
+        ? `<span class="badge badge-code">${child.returnEv.iterations}i</span>`
+        : child.errorEv
+          ? `<span class="badge badge-code">${child.errorEv.iterations}i</span>`
+          : '';
+
+      childSummary.innerHTML = `
+        ${depthBadge} ${statusBadge} ${itersBadge}
+        <span class="child-query" title="${esc(child.spawn.query)}">${esc(truncate(child.spawn.query, 80))}</span>
+      `;
+      childDetails.appendChild(childSummary);
+
+      // Lazy render child iterations
+      let childRendered = false;
+      childDetails.addEventListener('toggle', () => {
+        if (childDetails.open && !childRendered) {
+          const tlDiv = document.createElement('div');
+          tlDiv.className = 'child-timeline';
+
+          if (child.returnEv) {
+            const ansDiv = document.createElement('div');
+            ansDiv.style.cssText = 'font-size:12px;color:var(--text-dim);margin-bottom:8px;';
+            ansDiv.innerHTML = `Answer: <span style="color:var(--text)">${esc(truncate(child.returnEv.answer, 200))}</span>`;
+            tlDiv.appendChild(ansDiv);
+          }
+          if (child.errorEv) {
+            const errDiv = document.createElement('pre');
+            errDiv.className = 'error-block';
+            errDiv.textContent = child.errorEv.error;
+            errDiv.style.marginBottom = '8px';
+            tlDiv.appendChild(errDiv);
+          }
+          if (child.childInv) {
+            const childIters = [...child.childInv.iterations.entries()].sort((a, b) => a[0] - b[0]);
+            for (const [cIterNum, cIterData] of childIters) {
+              tlDiv.appendChild(renderEventIterCard(cIterNum, cIterData, child.childInv.depth, child.childId, invocations, delegations));
+            }
+          }
+          childDetails.appendChild(tlDiv);
+          childRendered = true;
+        }
+      });
+
+      item.appendChild(childDetails);
+      details.appendChild(item);
+    }
+
+    panel.appendChild(details);
+    body.appendChild(panel);
+  }
+
+  card.appendChild(body);
+  return card;
+}
+
+// Find which root iteration the delegations belong to (heuristic: show on last iteration)
+function findDelegationIter(iterEnd, children) {
+  if (!iterEnd) return 0;
+  return iterEnd.iteration;
+}
+
+// ── Iteration Timeline (legacy trace format) ──
 function renderTimeline(trace, depth) {
   const frag = document.createDocumentFragment();
   trace.forEach((entry, i) => {

@@ -337,30 +337,32 @@ export async function rlm(query: string, context: string | undefined, options: R
 				response = await callLLM(messages, effectiveSystemPrompt, effectiveReasoningEffort ? { reasoningEffort: effectiveReasoningEffort } : undefined);
 			} catch (err) {
 				const llmError = err instanceof Error ? err.message : String(err);
+				const llmEnd = performance.now();
 				emit?.({
 					type: "llm:error",
 					runId,
-					timestamp: performance.now(),
+					timestamp: llmEnd,
 					invocationId,
 					parentId,
 					depth,
 					iteration,
 					error: llmError,
-					duration: performance.now() - llmStart,
+					duration: llmEnd - llmStart,
 				});
 				iterationError = llmError;
 				throw new RlmError(llmError, iteration);
 			}
 
+			const llmEnd = performance.now();
 			emit?.({
 				type: "llm:response",
 				runId,
-				timestamp: performance.now(),
+				timestamp: llmEnd,
 				invocationId,
 				parentId,
 				depth,
 				iteration,
-				duration: performance.now() - llmStart,
+				duration: llmEnd - llmStart,
 				reasoning: response.reasoning,
 				code: response.code,
 				hasToolUse: !!response.toolUseId,
@@ -575,6 +577,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 		const savedDepth = activeDepth;
 		const childLineage = [...((env.get("__rlm") as DelegationContext | undefined)?.lineage ?? [q]), q];
 		const callerInvocationId = (env.get("__rlm") as DelegationContext | undefined)?.invocationId ?? "root";
+		const callerParentId = (env.get("__rlm") as DelegationContext | undefined)?.parentId ?? null;
 
 		const childIndex = childCounter++;
 		const childDepthLabel = `d${savedDepth + 1}-c${childIndex}`;
@@ -587,7 +590,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 			runId,
 			timestamp: performance.now(),
 			invocationId: callerInvocationId,
-			parentId: (env.get("__rlm") as DelegationContext | undefined)?.parentId ?? null,
+			parentId: callerParentId,
 			depth: savedDepth,
 			childId: childInvocationId,
 			query: q,
@@ -604,7 +607,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 					runId,
 					timestamp: performance.now(),
 					invocationId: callerInvocationId,
-					parentId: (env.get("__rlm") as DelegationContext | undefined)?.parentId ?? null,
+					parentId: callerParentId,
 					depth: savedDepth,
 					childId: childInvocationId,
 					answer: result.answer,
@@ -617,7 +620,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 					runId,
 					timestamp: performance.now(),
 					invocationId: callerInvocationId,
-					parentId: (env.get("__rlm") as DelegationContext | undefined)?.parentId ?? null,
+					parentId: callerParentId,
 					depth: savedDepth,
 					childId: childInvocationId,
 					error: err instanceof Error ? err.message : String(err),
