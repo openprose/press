@@ -6,7 +6,7 @@ The model is the container. There is no container runtime. The RLM reads a progr
 
 In classical IoC, the container is infrastructure: a runtime that reads a configuration, instantiates beans, and wires dependencies at startup. In node-rlm, the container is intelligence. The LLM at each depth reads the component catalog (from `root.md`, injected as `globalDocs`), reads its own program (the node file), and decides how to compose its subtree based on the current situation.
 
-There is no startup wiring phase. There is no container lifecycle. The root RLM instance IS the container. When it calls `rlm(brief, null, { app: "level-solver" })`, it is making a composition decision -- selecting a component, satisfying its requirements, and delegating work. The child RLM is another container. It sees the same component catalog, makes its own composition decisions, and delegates further or acts as a leaf.
+There is no startup wiring phase. There is no container lifecycle. The root RLM instance IS the container. When it calls `rlm(brief, null, { use: "level-solver" })`, it is making a composition decision -- selecting a component, satisfying its requirements, and delegating work. The child RLM is another container. It sees the same component catalog, makes its own composition decisions, and delegates further or acts as a leaf.
 
 The whole system is RLMs reading programs and composing other RLMs. There is nothing else.
 
@@ -16,7 +16,7 @@ Classical IoC has a single top-level container that pre-wires the entire object 
 
 Node-rlm diverges in three ways:
 
-**Distributed composition.** Every delegating agent is a container for its children. The childApps dictionary is flat and global -- all components are visible at all depths. GameSolver could delegate directly to OHA. LevelSolver could skip delegation entirely. The hierarchy emerges from runtime decisions, not from a wiring specification.
+**Distributed composition.** Every delegating agent is a container for its children. The childComponents dictionary is flat and global -- all components are visible at all depths. GameSolver could delegate directly to OHA. LevelSolver could skip delegation entirely. The hierarchy emerges from runtime decisions, not from a wiring specification.
 
 **Runtime topology decisions.** Composition adapts to the situation. A level with confirmed mechanics may use fewer tiers than a discovery level. A retry may use a different topology than the first attempt. The model observes state and selects composition style accordingly.
 
@@ -76,7 +76,7 @@ The component catalog lives in `root.md`, whose body becomes `globalDocs`. `glob
 
 Each component in the catalog declares:
 - **role**: orchestrator, coordinator, or leaf
-- **app**: the name used in `rlm()` calls (e.g., `{ app: "level-solver" }`)
+- **use**: the name used in `rlm()` calls (e.g., `{ use: "level-solver" }`)
 - **good at / bad at**: what the component does well and poorly
 - **requires from caller**: preconditions the composing agent must satisfy
 - **produces for caller**: what the composing agent can expect after delegation
@@ -94,7 +94,7 @@ This is not a wiring diagram. It is a decision-support document. The model reads
 3. **Composition vocabulary** (direct, coordinated, exploratory, targeted)
 4. **Composition principles** (curation, collapse, budget, requires, briefs)
 
-The body becomes `globalDocs`, which is injected into `<rlm-environment>` at every depth. This is the only special treatment `root.md` receives -- its content goes to all depths instead of one. The loader also uses its presence to discover the orchestrator and child apps.
+The body becomes `globalDocs`, which is injected into `<rlm-environment>` at every depth. This is the only special treatment `root.md` receives -- its content goes to all depths instead of one. The loader also uses its presence to discover the orchestrator and child components.
 
 The name `root.md` communicates its role: the top of the composition tree, distinct from the node files that describe individual components.
 
@@ -104,11 +104,11 @@ The name `root.md` communicates its role: the top of the composition tree, disti
 
 1. **`kind: program`** (root.md): body becomes `globalDocs`. Visible at all depths via `<rlm-environment>`.
 2. **`kind: program-node`, `role: orchestrator`**: full content (including frontmatter) becomes `rootAppBody`. This is the root agent's `<rlm-program>`.
-3. **`kind: program-node`, other roles**: full content (including frontmatter) registered in `childApps` under both the frontmatter `name` (e.g., `arc3-level-solver`) and the short filename (e.g., `level-solver`).
+3. **`kind: program-node`, other roles**: full content (including frontmatter) registered in `childComponents` under both the frontmatter `name` (e.g., `arc3-level-solver`) and the short filename (e.g., `level-solver`).
 
-The flat `childApps` dictionary means any agent at any depth can compose any component by name. The hierarchy is enforced by prose (composition principles in `root.md` and `shape:` declarations in node files), not by code. This is deliberate: the model is the container, and the container makes topology decisions at runtime.
+The flat `childComponents` dictionary means any agent at any depth can compose any component by name. The hierarchy is enforced by prose (composition principles in `root.md` and `shape:` declarations in node files), not by code. This is deliberate: the model is the container, and the container makes topology decisions at runtime.
 
-When an agent calls `rlm(brief, null, { app: "oha" })`, the engine does a direct `childApps["oha"]` lookup, loads that node's full content as the child's `<rlm-program>`, and starts a new RLM loop. The child sees the same `globalDocs` (component catalog, state schemas, composition principles) but a different program (its own node file).
+When an agent calls `rlm(brief, null, { use: "oha" })`, the engine does a direct `childComponents["oha"]` lookup, loads that node's full content as the child's `<rlm-program>`, and starts a new RLM loop. The child sees the same `globalDocs` (component catalog, state schemas, composition principles) but a different program (its own node file).
 
 ## Depth Awareness
 
@@ -127,7 +127,7 @@ Where it maps:
 |--------|----------|
 | `applicationContext.xml` | `root.md` -- declares components, state schemas, composition principles |
 | Bean classes (`@Component`) | Node `.md` files -- self-describe via frontmatter (role, delegates, prohibited, state) |
-| `@Autowired` | `{ app: "name" }` in `rlm()` calls -- flat dictionary lookup by name |
+| `@Autowired` | `{ use: "name" }` in `rlm()` calls -- flat dictionary lookup by name |
 | Classpath scanning | `loadProgram()` reads all `.md` files in the directory, classifies by `kind`/`role` |
 
 Where it diverges:

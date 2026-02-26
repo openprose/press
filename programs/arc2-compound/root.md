@@ -14,7 +14,7 @@ nodes: [session-orchestrator, task-solver]
 
 ```
 role: orchestrator
-app: "arc2-orchestrator"
+use: "arc2-orchestrator"
 api: [__arcSubmit.submit, __arcSubmit.remaining, __arcSubmit.getResults]
 prohibited: [solving tasks directly — no grid analysis, no transform writing]
 
@@ -43,7 +43,7 @@ state:
 
 ```
 role: leaf
-app: "arc2-solver"
+use: "arc2-solver"
 api: []
 prohibited: [__arcSubmit.submit, __arcSubmit.remaining, __arcSubmit.getResults]
 

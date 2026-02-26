@@ -76,8 +76,8 @@ Your system prompt may contain a PROGRAM -- structured prose with contracts, sta
 
   if (canDelegate) {
     envBody += `
-- \`await rlm(query, context?, options?)\` -- delegate to a child RLM. Options: \`{ systemPrompt?, model?, maxIterations?, app? }\`.
-  - \`app\` loads a named program for the child. \`model\` selects an alias (see Available Models). \`maxIterations\` caps the child's budget.
+- \`await rlm(query, context?, options?)\` -- delegate to a child RLM. Options: \`{ systemPrompt?, model?, maxIterations?, use? }\`.
+  - \`use\` loads a named component for the child. \`model\` selects an alias (see Available Models). \`maxIterations\` caps the child's budget.
   - **Must be awaited.** Unawaited calls are silently lost.
   - Delegation depth is finite -- check \`__rlm.depth < __rlm.maxDepth\`.`;
   }

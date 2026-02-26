@@ -9,7 +9,7 @@ state:
   reads: [&Library]
   writes: [&Library]
 api: [__arcSubmit.submit, __arcSubmit.remaining, __arcSubmit.getResults]
-childApps: [arc2-solver]
+components: [arc2-solver]
 ---
 
 # SessionOrchestrator
@@ -26,7 +26,7 @@ shape:
   prohibited: [solving tasks directly — do not analyze grids or write transforms]
 ```
 
-You are an orchestrator. You manage the session, decide when to submit, and curate the library. You do NOT solve tasks yourself — every task goes through `rlm(goal, null, { app: "arc2-solver" })`.
+You are an orchestrator. You manage the session, decide when to submit, and curate the library. You do NOT solve tasks yourself — every task goes through `rlm(goal, null, { use: "arc2-solver" })`.
 
 ## Contract
 
@@ -105,7 +105,7 @@ if (session.currentIndex < taskIds.length) {
   // --- DELEGATE TO SOLVER ---
   let solverResult;
   try {
-    solverResult = await rlm(query, undefined, { app: "arc2-solver", maxIterations: 18 });
+    solverResult = await rlm(query, undefined, { use: "arc2-solver", maxIterations: 18 });
   } catch (e) {
     console.log(`Solver error: ${e.message}`);
     library.taskLog.push({
@@ -274,7 +274,7 @@ Compose existing primitives where possible — do not rewrite from scratch.`;
   let solverResult;
   try {
     solverResult = await rlm(retryQuery, undefined, {
-      app: "arc2-solver", maxIterations: 18
+      use: "arc2-solver", maxIterations: 18
     });
   } catch (e) {
     console.log(`Retry solver error: ${e.message}`);

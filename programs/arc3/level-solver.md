@@ -141,7 +141,7 @@ while (__levelState.actions_taken < __levelState.action_budget) {
   }
 
   try {
-    await rlm(ohaBrief, null, { app: "oha" });
+    await rlm(ohaBrief, null, { use: "oha" });
   } catch (e) {
     // Child timeout — read __levelState for partial progress
   }

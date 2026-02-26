@@ -124,7 +124,7 @@ for (let n = 0; n < 7; n++) {
   console.log(`Level ${n}: composition=${compositionStyle}+${briefStyle}, app=${targetApp}`);
 
   try {
-    await rlm(brief, null, { app: targetApp, maxIterations: 20 });
+    await rlm(brief, null, { use: targetApp, maxIterations: 20 });
   } catch (e) {
     // swallow — state is read below
   }

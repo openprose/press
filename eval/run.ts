@@ -86,6 +86,7 @@ interface CliArgs {
 	selectedProblems: string[];
 	modelAliases: string[];
 	childApps: string[];
+	childComponents: string[];
 	attempts: number;
 	game: string | null;
 	program: string | null;
@@ -126,7 +127,8 @@ Options:
   --rate-burst <n>         Burst capacity (default: 10)
   --with-labels            OOLONG: use labeled context (context_window_text_with_labels)
   --model-alias <spec>     Register a model alias: alias=model[:tag1,tag2] (repeatable)
-  --child-app <name>       Load a named app plugin for child delegation (repeatable)
+  --child-component <name> Load a named component for child delegation (repeatable)
+  --child-app <name>       (deprecated, use --child-component) Load a named app plugin for child delegation (repeatable)
   --trace-actions          ARC-3: record action log per task
   --reasoning-effort <s>   Reasoning effort: xhigh, high, medium, low, minimal, none (default: medium)
   --filter <expr>          OOLONG: filter tasks by field values (comma=AND, pipe=OR)
@@ -153,6 +155,7 @@ function parseArgs(argv: string[]): CliArgs {
 	const flags = new Set<string>();
 	const modelAliases: string[] = [];
 	const childApps: string[] = [];
+	const childComponents: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i];
 		if (arg === "--help" || arg === "-h") {
@@ -170,6 +173,8 @@ function parseArgs(argv: string[]): CliArgs {
 				modelAliases.push(argv[i + 1]);
 			} else if (key === "child-app") {
 				childApps.push(argv[i + 1]);
+			} else if (key === "child-component") {
+				childComponents.push(argv[i + 1]);
 			} else {
 				args[key] = argv[i + 1];
 			}
@@ -209,6 +214,7 @@ function parseArgs(argv: string[]): CliArgs {
 			: [],
 		modelAliases,
 		childApps,
+		childComponents: [...childComponents, ...childApps],
 		attempts: parseInt(args.attempts ?? "1", 10),
 		game: args.game ?? null,
 		program: args.program ?? null,
@@ -327,6 +333,8 @@ interface BenchmarkConfig {
 	loadTasks: () => Promise<EvalTask[]>;
 	scoringFn: ScoringFunction;
 	globalDocs?: string;
+	childComponents?: Record<string, string>;
+	/** @deprecated Use childComponents instead. */
 	childApps?: Record<string, string>;
 	setupSandbox?: (task: EvalTask) => Record<string, unknown>;
 	cleanupTask?: (task: EvalTask) => Promise<void>;
@@ -425,8 +433,8 @@ function configureArcCompound(args: CliArgs): BenchmarkConfig {
 	const submissionLog: Array<{ taskId: string; attempt: number; correct: boolean; remaining: number; timestampMs: number }> = [];
 	const MAX_SUBMISSIONS = 2;
 
-	// Child app bodies — loaded in loadTasks, consumed by harness for delegation
-	let loadedChildApps: Record<string, string>;
+	// Child component bodies — loaded in loadTasks, consumed by harness for delegation
+	let loadedChildComponents: Record<string, string>;
 
 	// Load globalDocs from markdown file (following arc3 pattern)
 	const compoundDocsPath = join(
@@ -446,13 +454,13 @@ function configureArcCompound(args: CliArgs): BenchmarkConfig {
 			// Parse expectedMap from the metaTask for use in submission scoring
 			expectedMap = JSON.parse(metaTask.expected as string);
 
-			// Load child app plugins for orchestrator delegation
-			const childAppNames = ["arc-compound-solver", "arc-compound-synthesizer"];
-			loadedChildApps = {};
-			for (const name of childAppNames) {
-				loadedChildApps[name] = await loadPlugins([name], "apps");
+			// Load child component plugins for orchestrator delegation
+			const childComponentNames = ["arc-compound-solver", "arc-compound-synthesizer"];
+			loadedChildComponents = {};
+			for (const name of childComponentNames) {
+				loadedChildComponents[name] = await loadPlugins([name], "apps");
 			}
-			config.childApps = loadedChildApps;
+			config.childComponents = loadedChildComponents;
 
 			return [metaTask];
 		},
@@ -636,8 +644,8 @@ function printConfig(args: CliArgs): void {
 	if (args.drivers.length > 0) {
 		console.log(`Extra Drivers:   ${args.drivers.join(", ")}`);
 	}
-	if (args.childApps.length > 0) {
-		console.log(`Child Apps:      ${args.childApps.join(", ")}`);
+	if (args.childComponents.length > 0) {
+		console.log(`Components:      ${args.childComponents.join(", ")}`);
 	}
 	console.log();
 }
@@ -667,8 +675,8 @@ function resolveModel(args: CliArgs): { callLLM: CallLLM; models: Record<string,
 async function loadAllPlugins(args: CliArgs): Promise<{
 	pluginBodies: string | undefined;
 	programGlobalDocs: string;
-	programChildApps: Record<string, string>;
-	cliChildApps: Record<string, string> | undefined;
+	programChildComponents: Record<string, string>;
+	cliChildComponents: Record<string, string> | undefined;
 }> {
 	// Validate: --app and --program are mutually exclusive
 	if (args.app && args.program) {
@@ -678,16 +686,16 @@ async function loadAllPlugins(args: CliArgs): Promise<{
 
 	// Load program if specified
 	let programGlobalDocs = "";
-	let programChildApps: Record<string, string> = {};
+	let programChildComponents: Record<string, string> = {};
 	let programRootBody = "";
 	if (args.program) {
 		console.log(`Loading program: ${args.program}...`);
 		const programDef = await loadProgram(args.program);
 		programRootBody = programDef.rootAppBody;
 		programGlobalDocs = programDef.globalDocs;
-		programChildApps = programDef.childApps;
+		programChildComponents = programDef.childComponents;
 		console.log(`  Root app: ${programDef.rootApp}`);
-		console.log(`  Child apps: ${Object.keys(programDef.childApps).join(", ")}`);
+		console.log(`  Components: ${Object.keys(programDef.childComponents).join(", ")}`);
 		console.log(`  Global docs: ${programDef.globalDocs.length} chars`);
 		console.log();
 	}
@@ -722,20 +730,20 @@ async function loadAllPlugins(args: CliArgs): Promise<{
 			: programRootBody;
 	}
 
-	// Load child app plugins (for delegation via `app` option)
-	let cliChildApps: Record<string, string> | undefined;
-	if (args.childApps.length > 0) {
-		console.log("Loading child apps...");
-		cliChildApps = {};
-		for (const name of args.childApps) {
+	// Load child component plugins (for delegation via `use` option)
+	let cliChildComponents: Record<string, string> | undefined;
+	if (args.childComponents.length > 0) {
+		console.log("Loading child components...");
+		cliChildComponents = {};
+		for (const name of args.childComponents) {
 			const body = await loadPlugins([name], "apps");
-			cliChildApps[name] = body;
+			cliChildComponents[name] = body;
 			console.log(`  ${name}: ${body.length} chars`);
 		}
 		console.log();
 	}
 
-	return { pluginBodies, programGlobalDocs, programChildApps, cliChildApps };
+	return { pluginBodies, programGlobalDocs, programChildComponents, cliChildComponents };
 }
 
 async function main(): Promise<void> {
@@ -743,7 +751,7 @@ async function main(): Promise<void> {
 	printConfig(args);
 
 	const { callLLM, models } = resolveModel(args);
-	const { pluginBodies, programGlobalDocs, programChildApps, cliChildApps } = await loadAllPlugins(args);
+	const { pluginBodies, programGlobalDocs, programChildComponents, cliChildComponents } = await loadAllPlugins(args);
 
 	// Load tasks
 	console.log("Loading tasks...");
@@ -774,9 +782,9 @@ async function main(): Promise<void> {
 		.filter(Boolean)
 		.join("\n\n---\n\n") || undefined;
 
-	// Merge childApps: benchmark + program + CLI
-	const allChildApps = { ...benchmarkConfig.childApps, ...programChildApps, ...cliChildApps };
-	const hasChildApps = Object.keys(allChildApps).length > 0;
+	// Merge childComponents: benchmark + program + CLI
+	const allChildComponents = { ...benchmarkConfig.childComponents, ...benchmarkConfig.childApps, ...programChildComponents, ...cliChildComponents };
+	const hasChildComponents = Object.keys(allChildComponents).length > 0;
 
 	const result = await runEval(tasks, {
 		benchmark: args.benchmark,
@@ -793,7 +801,7 @@ async function main(): Promise<void> {
 		cleanupTask: benchmarkConfig.cleanupTask,
 		getResultMetadata: benchmarkConfig.getResultMetadata,
 		globalDocs: combinedGlobalDocs,
-		childApps: hasChildApps ? allChildApps : undefined,
+		childComponents: hasChildComponents ? allChildComponents : undefined,
 		reasoningEffort: args.reasoningEffort !== "none" ? args.reasoningEffort : undefined,
 		filter: args.filter ?? undefined,
 		onProgress: printProgress,

@@ -167,7 +167,7 @@ Plugins are markdown files that get concatenated into the root agent's system pr
 import { loadStack } from "node-rlm/plugins"; // or import from source
 const pluginBodies = await loadStack({
   model: "openrouter/google/gemini-3-flash-preview", // auto-detects profile
-  app: "structured-data-aggregation",
+  use: "structured-data-aggregation",
 });
 ```
 

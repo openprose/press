@@ -14,7 +14,7 @@ nodes: [game-solver, level-solver, oha]
 
 ```
 role: orchestrator
-app: "game-solver"
+use: "game-solver"
 api: [arc3.start, arc3.observe, arc3.getScore]
 prohibited: [arc3.step]
 
@@ -42,7 +42,7 @@ state:
 
 ```
 role: coordinator
-app: "level-solver"
+use: "level-solver"
 api: [arc3.observe]
 prohibited: [arc3.step]
 
@@ -79,7 +79,7 @@ state:
 
 ```
 role: leaf
-app: "oha"
+use: "oha"
 api: [arc3.step, arc3.observe]
 prohibited: []
 

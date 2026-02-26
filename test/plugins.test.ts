@@ -115,10 +115,10 @@ describe("detectProfile", () => {
 });
 
 describe("loadStack", () => {
-	it("profile + app: drivers then app", async () => {
+	it("profile + use: drivers then app", async () => {
 		const result = await loadStack({
 			profile: "gemini-3-flash",
-			app: "structured-data-aggregation",
+			use: "structured-data-aggregation",
 		});
 		expect(result).toContain("## Await Discipline");
 		expect(result).toContain("## Verify Before Return");
@@ -126,6 +126,16 @@ describe("loadStack", () => {
 		const driverPos = result.indexOf("## Await Discipline");
 		const appPos = result.indexOf("## Aggregation Protocol");
 		expect(driverPos).toBeLessThan(appPos);
+	});
+
+	it("profile + app (backwards compat): drivers then app", async () => {
+		const result = await loadStack({
+			profile: "gemini-3-flash",
+			app: "structured-data-aggregation",
+		});
+		expect(result).toContain("## Await Discipline");
+		expect(result).toContain("## Verify Before Return");
+		expect(result).toContain("## Aggregation Protocol");
 	});
 
 	it("model auto-detection", async () => {
@@ -140,19 +150,35 @@ describe("loadStack", () => {
 	it("deduplicates drivers", async () => {
 		const result = await loadStack({
 			profile: "gemini-3-flash",
-			app: "structured-data-aggregation",
+			use: "structured-data-aggregation",
 			drivers: ["verify-before-return"],
 		});
 		const matches = result.match(/## Verify Before Return/g);
 		expect(matches).toHaveLength(1);
 	});
 
-	it("app only", async () => {
+	it("use only", async () => {
+		const result = await loadStack({
+			use: "structured-data-aggregation",
+		});
+		expect(result).toContain("## Aggregation Protocol");
+		expect(result).not.toContain("## Await Discipline");
+	});
+
+	it("app only (backwards compat)", async () => {
 		const result = await loadStack({
 			app: "structured-data-aggregation",
 		});
 		expect(result).toContain("## Aggregation Protocol");
 		expect(result).not.toContain("## Await Discipline");
+	});
+
+	it("use wins over app when both provided", async () => {
+		const result = await loadStack({
+			use: "structured-data-aggregation",
+			app: "nonexistent-should-be-ignored",
+		});
+		expect(result).toContain("## Aggregation Protocol");
 	});
 
 	it("empty when nothing specified", async () => {

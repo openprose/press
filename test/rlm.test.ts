@@ -566,7 +566,30 @@ describe("rlm", () => {
 		expect(capturedSystemPrompt).not.toContain("## Sandbox Globals");
 	});
 
-	it("app: child receives app prompt", async () => {
+	it("use: child receives component prompt", async () => {
+		const systemPrompts: string[] = [];
+		const callLLM: CallLLM = async (messages, systemPrompt) => {
+			systemPrompts.push(systemPrompt);
+			const userMsg = messages[0]?.content || "";
+			if (userMsg === "child task") {
+				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
+			}
+			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "test-component" })\nreturn r', toolUseId: "tp" };
+		};
+
+		await rlm("parent task", undefined, {
+			callLLM,
+			maxDepth: 3,
+			childComponents: { "test-component": "You are a test component.\n\nDo test things." },
+		});
+
+		const childPrompt = systemPrompts[1];
+		expect(childPrompt).toContain("You are a test component.");
+		expect(childPrompt).toContain("Do test things.");
+		expect(childPrompt).toContain("<rlm-environment>");
+	});
+
+	it("app: child receives component prompt (backwards compat)", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			systemPrompts.push(systemPrompt);
@@ -580,7 +603,7 @@ describe("rlm", () => {
 		await rlm("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
-			childApps: { "test-app": "You are a test app.\n\nDo test things." },
+			childComponents: { "test-app": "You are a test app.\n\nDo test things." },
 		});
 
 		const childPrompt = systemPrompts[1];
@@ -589,7 +612,31 @@ describe("rlm", () => {
 		expect(childPrompt).toContain("<rlm-environment>");
 	});
 
-	it("app: unknown name errors with list", async () => {
+	it("use: unknown name errors with list", async () => {
+		let capturedMessages: Array<{ role: string; content: string }> | undefined;
+		let callIndex = 0;
+		const callLLM: CallLLM = async (messages, _systemPrompt) => {
+			callIndex++;
+			if (callIndex === 1) {
+				return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "nonexistent" })\nreturn r', toolUseId: "t1" };
+			}
+			capturedMessages = [...messages];
+			return { reasoning: "", code: 'return "saw error"', toolUseId: "t2" };
+		};
+
+		await rlm("test", undefined, {
+			callLLM,
+			maxDepth: 3,
+			childComponents: { "test-component": "body1", "other-component": "body2" },
+		});
+
+		const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
+		expect(toolResult!.content).toContain("Unknown component");
+		expect(toolResult!.content).toContain("test-component");
+		expect(toolResult!.content).toContain("other-component");
+	});
+
+	it("app: unknown name errors with list (backwards compat)", async () => {
 		let capturedMessages: Array<{ role: string; content: string }> | undefined;
 		let callIndex = 0;
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
@@ -604,16 +651,16 @@ describe("rlm", () => {
 		await rlm("test", undefined, {
 			callLLM,
 			maxDepth: 3,
-			childApps: { "test-app": "body1", "other-app": "body2" },
+			childComponents: { "test-app": "body1", "other-app": "body2" },
 		});
 
 		const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
-		expect(toolResult!.content).toContain("Unknown app");
+		expect(toolResult!.content).toContain("Unknown component");
 		expect(toolResult!.content).toContain("test-app");
 		expect(toolResult!.content).toContain("other-app");
 	});
 
-	it("app + systemPrompt concatenated", async () => {
+	it("use + systemPrompt concatenated", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			systemPrompts.push(systemPrompt);
@@ -621,22 +668,65 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { app: "test-app", systemPrompt: "Extra instructions." })\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "test-component", systemPrompt: "Extra instructions." })\nreturn r', toolUseId: "tp" };
 		};
 
 		await rlm("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
-			childApps: { "test-app": "You are a test app.\n\nDo test things." },
+			childComponents: { "test-component": "You are a test component.\n\nDo test things." },
 		});
 
 		const childPrompt = systemPrompts[1];
-		expect(childPrompt).toContain("You are a test app.");
+		expect(childPrompt).toContain("You are a test component.");
 		expect(childPrompt).toContain("Do test things.");
 		expect(childPrompt).toContain("Extra instructions.");
 	});
 
-	it("childApps: not in root prompt", async () => {
+	it("use wins over app when both provided", async () => {
+		const systemPrompts: string[] = [];
+		const callLLM: CallLLM = async (messages, systemPrompt) => {
+			systemPrompts.push(systemPrompt);
+			const userMsg = messages[0]?.content || "";
+			if (userMsg === "child task") {
+				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
+			}
+			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "correct-component", app: "wrong-component" })\nreturn r', toolUseId: "tp" };
+		};
+
+		await rlm("parent task", undefined, {
+			callLLM,
+			maxDepth: 3,
+			childComponents: { "correct-component": "Correct body.", "wrong-component": "Wrong body." },
+		});
+
+		const childPrompt = systemPrompts[1];
+		expect(childPrompt).toContain("Correct body.");
+		expect(childPrompt).not.toContain("Wrong body.");
+	});
+
+	it("childApps backwards compat: populates childComponents", async () => {
+		const systemPrompts: string[] = [];
+		const callLLM: CallLLM = async (messages, systemPrompt) => {
+			systemPrompts.push(systemPrompt);
+			const userMsg = messages[0]?.content || "";
+			if (userMsg === "child task") {
+				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
+			}
+			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "legacy-app" })\nreturn r', toolUseId: "tp" };
+		};
+
+		await rlm("parent task", undefined, {
+			callLLM,
+			maxDepth: 3,
+			childApps: { "legacy-app": "Legacy body." },
+		});
+
+		const childPrompt = systemPrompts[1];
+		expect(childPrompt).toContain("Legacy body.");
+	});
+
+	it("childComponents: not in root prompt", async () => {
 		let capturedSystemPrompt = "";
 		const callLLM: CallLLM = async (_messages, systemPrompt) => {
 			capturedSystemPrompt = systemPrompt;
@@ -645,10 +735,10 @@ describe("rlm", () => {
 
 		await rlm("test", undefined, {
 			callLLM,
-			childApps: { "test-app": "You are a test app.\n\nDo test things." },
+			childComponents: { "test-component": "You are a test component.\n\nDo test things." },
 		});
 
-		expect(capturedSystemPrompt).not.toContain("You are a test app.");
+		expect(capturedSystemPrompt).not.toContain("You are a test component.");
 		expect(capturedSystemPrompt).not.toContain("Do test things.");
 	});
 

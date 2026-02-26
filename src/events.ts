@@ -96,6 +96,8 @@ export interface DelegationSpawnEvent extends BaseEvent {
 	query: string;
 	modelAlias?: string;
 	maxIterations?: number;
+	componentName?: string;
+	/** @deprecated Use componentName instead. */
 	appName?: string;
 }
 

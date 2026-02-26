@@ -32,7 +32,9 @@ export interface RlmOptions {
 	sandboxGlobals?: Record<string, unknown>;
 	/** Visible at all depths (root, children, flat). Document sandboxGlobals here. */
 	globalDocs?: string;
-	/** Keyed by name; looked up when a parent calls `rlm(query, ctx, { app: "name" })`. */
+	/** Keyed by name; looked up when a parent calls `rlm(query, ctx, { use: "name" })`. */
+	childComponents?: Record<string, string>;
+	/** @deprecated Use childComponents instead. */
 	childApps?: Record<string, string>;
 	reasoningEffort?: string;
 	observer?: RlmEventSink;
@@ -89,6 +91,8 @@ const SNAPSHOT_EXCLUDE_KEYS = new Set([
 ]);
 
 export async function rlm(query: string, context: string | undefined, options: RlmOptions): Promise<RlmResult> {
+	const components = options.childComponents ?? options.childApps ?? {};
+
 	const opts = {
 		callLLM: options.callLLM,
 		maxIterations: options.maxIterations ?? 15,
@@ -97,7 +101,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 		models: options.models,
 		sandboxGlobals: options.sandboxGlobals,
 		globalDocs: options.globalDocs,
-		childApps: options.childApps,
+		childComponents: components,
 		reasoningEffort: options.reasoningEffort,
 	};
 
@@ -535,7 +539,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 		}
 	}
 
-	env.set("rlm", (q: string, c?: string, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; app?: string; reasoning?: string }): Promise<string> => {
+	env.set("rlm", (q: string, c?: string, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; /** @deprecated Use `use` instead. */ app?: string; reasoning?: string }): Promise<string> => {
 		// Reject delegation at max depth
 		if (activeDepth >= opts.maxDepth) {
 			return Promise.reject(
@@ -543,21 +547,27 @@ export async function rlm(query: string, context: string | undefined, options: R
 			);
 		}
 
-		// Resolve app plugin if requested
+		// Resolve component name: `use` takes precedence over deprecated `app`
+		const componentName = rlmOpts?.use ?? rlmOpts?.app;
+		if (rlmOpts?.app && !rlmOpts?.use) {
+			console.warn('[node-rlm] { app: "..." } is deprecated. Use { use: "..." } instead.');
+		}
+
+		// Resolve component plugin if requested
 		let resolvedSystemPrompt: string | undefined = rlmOpts?.systemPrompt;
-		if (rlmOpts?.app) {
-			const appBody = opts.childApps?.[rlmOpts.app];
-			if (!appBody) {
-				const available = Object.keys(opts.childApps ?? {});
+		if (componentName) {
+			const componentBody = opts.childComponents?.[componentName];
+			if (!componentBody) {
+				const available = Object.keys(opts.childComponents ?? {});
 				return Promise.reject(
 					new Error(
-						`Unknown app "${rlmOpts.app}". Available: ${available.length > 0 ? available.join(", ") : "none configured"}`,
+						`Unknown component "${componentName}". Available: ${available.length > 0 ? available.join(", ") : "none configured"}`,
 					),
 				);
 			}
 			resolvedSystemPrompt = resolvedSystemPrompt
-				? appBody + "\n\n" + resolvedSystemPrompt
-				: appBody;
+				? componentBody + "\n\n" + resolvedSystemPrompt
+				: componentBody;
 		}
 
 		// Resolve model override if requested
@@ -596,7 +606,8 @@ export async function rlm(query: string, context: string | undefined, options: R
 			query: q,
 			modelAlias: rlmOpts?.model,
 			maxIterations: rlmOpts?.maxIterations,
-			appName: rlmOpts?.app,
+			componentName,
+			appName: componentName,
 		});
 
 		const promise = (async () => {

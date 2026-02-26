@@ -345,7 +345,7 @@ The root file declares available components with explicit interface contracts. E
 ### level-solver
 
   role: coordinator
-  app: "level-solver"
+  use: "level-solver"
 
   requires from caller:
     - &GameKnowledge exists (may be empty)

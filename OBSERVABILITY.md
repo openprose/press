@@ -89,7 +89,7 @@ observer.on("llm:response", (event) => {
 
 | Type | Emitted when | Key fields |
 |------|-------------|------------|
-| `delegation:spawn` | Child `rlm()` call starts | `childId`, `query`, `modelAlias?`, `maxIterations?`, `appName?` |
+| `delegation:spawn` | Child `rlm()` call starts | `childId`, `query`, `modelAlias?`, `maxIterations?`, `componentName?` |
 | `delegation:return` | Child returns successfully | `childId`, `answer`, `iterations` |
 | `delegation:error` | Child throws | `childId`, `error`, `iterations` |
 | `delegation:unawaited` | Iteration ends with unawaited child promises | `count` |

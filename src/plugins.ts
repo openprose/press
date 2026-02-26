@@ -164,6 +164,8 @@ export interface ProgramDefinition {
 	globalDocs: string;
 	rootApp: string;
 	rootAppBody: string;
+	childComponents: Record<string, string>;
+	/** @deprecated Use childComponents instead. */
 	childApps: Record<string, string>;
 }
 
@@ -181,7 +183,7 @@ export async function loadProgram(
 	let globalDocs = "";
 	let rootApp = "";
 	let rootAppBody = "";
-	const childApps: Record<string, string> = {};
+	const childComponents: Record<string, string> = {};
 
 	for (const file of mdFiles) {
 		const content = await readFile(join(programDir, file), "utf-8");
@@ -201,9 +203,9 @@ export async function loadProgram(
 				rootAppBody = content;
 			} else {
 				// Register by both full name and short filename for flexible delegation
-				childApps[nodeName] = content;
+				childComponents[nodeName] = content;
 				if (shortName !== nodeName) {
-					childApps[shortName] = content;
+					childComponents[shortName] = content;
 				}
 			}
 		}
@@ -213,17 +215,20 @@ export async function loadProgram(
 		throw new Error(`Program "${name}" has no orchestrator node (role: orchestrator)`);
 	}
 
-	return { globalDocs, rootApp, rootAppBody, childApps };
+	return { globalDocs, rootApp, rootAppBody, childComponents, childApps: childComponents };
 }
 
 export async function loadStack(options: {
 	drivers?: string[];
+	/** @deprecated Use `use` instead. */
 	app?: string;
+	use?: string;
 	profile?: string;
 	model?: string;
 	libDir?: string;
 }): Promise<string> {
-	const { drivers: extraDrivers, app, profile, model, libDir } = options;
+	const app = options.use ?? options.app;
+	const { drivers: extraDrivers, profile, model, libDir } = options;
 
 	let profileDrivers: string[] = [];
 

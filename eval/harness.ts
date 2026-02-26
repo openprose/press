@@ -38,7 +38,9 @@ export interface HarnessConfig {
 	filter?: string;
 	/** Number of attempts per task for pass@N evaluation (default: 1). */
 	attempts?: number;
-	/** Pre-loaded app plugin bodies keyed by name, available for child agents via `app` option. */
+	/** Pre-loaded component bodies keyed by name, available for child agents via `use` option. */
+	childComponents?: Record<string, string>;
+	/** @deprecated Use childComponents instead. */
 	childApps?: Record<string, string>;
 	/** Reasoning effort level for OpenRouter reasoning tokens. */
 	reasoningEffort?: string;
@@ -125,7 +127,7 @@ export async function runEval(
 						cleanupTask: config.cleanupTask,
 						getResultMetadata: config.getResultMetadata,
 						globalDocs: config.globalDocs,
-						childApps: config.childApps,
+						childComponents: config.childComponents ?? config.childApps,
 						reasoningEffort: config.reasoningEffort,
 					});
 					attemptScores.push(result.score);
@@ -218,7 +220,7 @@ interface SingleTaskConfig {
 	cleanupTask?: (task: EvalTask) => Promise<void>;
 	getResultMetadata?: (task: EvalTask) => Record<string, unknown> | undefined;
 	globalDocs?: string;
-	childApps?: Record<string, string>;
+	childComponents?: Record<string, string>;
 	reasoningEffort?: string;
 }
 
@@ -226,7 +228,7 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 	const {
 		task, callLLM, scoringFn, maxIterations, maxDepth,
 		pluginBodies, models, setupSandbox, cleanupTask,
-		getResultMetadata, globalDocs, childApps,
+		getResultMetadata, globalDocs, childComponents,
 		reasoningEffort,
 	} = cfg;
 	const startTime = Date.now();
@@ -257,7 +259,7 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 			models,
 			sandboxGlobals,
 			globalDocs,
-			childApps,
+			childComponents,
 			reasoningEffort,
 			observer,
 		});
