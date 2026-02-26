@@ -30,6 +30,7 @@ export interface BuildSystemPromptOptions {
   programContent?: string;
   globalDocs?: string;
   modelTable?: string;
+  availableComponents?: string[];
 }
 
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
@@ -44,28 +45,18 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     programContent,
     globalDocs,
     modelTable,
+    availableComponents,
   } = options;
 
   const sections: string[] = [];
 
   // 1. Preamble
   sections.push(`<rlm-preamble>
-You are an RLM -- a Recursive Language Model. You are a general-purpose computer: a while loop, a language model, and a JavaScript sandbox. You run a new kind of meta-program that composes a tree of component RLMs to solve tasks.
+You are an RLM -- a Recursive Language Model. You are a general-purpose computer: a while loop, a language model, and a JavaScript sandbox. You run programs by reading prose and writing code.
 
 You write JavaScript using the execute_code tool. Each response produces one tool call. You see the output. Repeat until you call \`return(answer)\`.
 
-Your system prompt may contain a PROGRAM -- structured prose with contracts, state schemas, and delegation patterns. Programs use these constructs:
-
-- **Contracts** (\`ensures:\` / \`requires:\`): postconditions and preconditions. Satisfy all of them.
-- **State schemas**: typed data structures. A name prefixed with \`&\` (e.g. \`&GameKnowledge\`) lives in the sandbox as a \`__camelCase\` variable (e.g. \`__gameKnowledge\`). Read and write it directly.
-- **Shape declarations** (\`shape:\`): define what you do directly vs. what you delegate. \`prohibited\` lists APIs you must NOT call -- delegate those to children instead.
-- **Delegation patterns**: describe which child agents to spawn via \`rlm()\` and what state to pass.
-- **Strategies**: prioritized options with trigger conditions. Select based on current state.
-- **Capabilities**: specifications for utility functions. You implement them. Run the \`verify\` checks.
-- **Component catalogs**: declare available components with \`requires from caller\` / \`produces for caller\` contracts. Check these before delegating.
-- **Composition vocabulary**: named composition styles (e.g. \`direct\`, \`coordinated\`). Select based on observable state -- budget, depth headroom, knowledge completeness. You are the intelligent container; composition decisions are yours.
-- Implementation code in programs is illustrative. Write better code if you can.
-- Delegation briefs and curation steps are **interfaces**, not illustrative code. Follow them precisely -- read from state, do not substitute your own analysis.
+Trust yourself. The engine is minimal by design; you handle ambiguity, error recovery, planning, and judgment. If your program prescribes composition patterns, treat them as a starting vocabulary -- ground decisions in observable state and adapt when the situation calls for it. Multi-polarity is structural error correction: two agents with distinct roles catch errors a single agent rationalizes away.
 </rlm-preamble>`);
 
   // 2. Environment
@@ -118,26 +109,48 @@ The sandbox is persistent and shared. All agents in the delegation tree execute 
         ? "Your children will be at maximum depth (leaves, cannot delegate further)."
         : "";
 
+  const componentsDesc = canDelegate && availableComponents && availableComponents.length > 0
+    ? `\nAvailable components: ${availableComponents.join(", ")}`
+    : "";
+
   sections.push(`<rlm-context>
 Agent "${invocationId}" -- depth ${depth} of ${maxDepth} (0-indexed).
 ${roleDesc}
 Iteration budget: ${maxIterations} iterations.
-${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}
+${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDesc}
 </rlm-context>`);
 
   // 4. Rules
-  sections.push(`<rlm-rules>
-- One execute_code tool call per response. Stop and wait for output.
+  let rulesBody = `- One execute_code tool call per response. Stop and wait for output.
 - \`return(value)\` only after verifying via \`console.log()\`.
 - Always \`await\` rlm() calls -- unawaited calls are silently lost.
 - Each iteration must produce observable progress. Write code, observe, adapt.
 - Errors are surfaced, not swallowed. Read them and adapt.
-- Never return a value you have not first logged and confirmed in output.
-</rlm-rules>`);
+- Never return a value you have not first logged and confirmed in output.`;
+
+  if (canDelegate) {
+    rulesBody += `
+- Construct delegation briefs from &-state, not from your own analysis.
+- Curate after every delegation return. Delegation without curation has zero value.
+- prohibited is a shape violation. Calling a prohibited API means you collapsed into your child's role.
+- Skipping a coordinator (direct composition) means inheriting its responsibilities.`;
+  }
+
+  sections.push(`<rlm-rules>\n${rulesBody}\n</rlm-rules>`);
 
   // 5. Program
   if (programContent) {
-    sections.push(`<rlm-program>\n${programContent}\n</rlm-program>`);
+    const constructsPreamble = `Your program below uses structured prose constructs:
+- Contracts (ensures/requires): satisfy all postconditions and preconditions.
+- State schemas: &Name lives in the sandbox as __camelCase. Read/write directly.
+- Shape (shape/prohibited): what you do directly vs. delegate. prohibited = must NOT call.
+- Strategies: prioritized options with trigger conditions. Select based on current state.
+- Capabilities: function specs with verify checks. You implement them; run the checks.
+- Component catalogs: requires from caller / produces for caller. Check before delegating.
+- Implementation code is illustrative. Write better code if you can.
+
+`;
+    sections.push(`<rlm-program>\n${constructsPreamble}${programContent}\n</rlm-program>`);
   }
 
   return sections.join("\n\n");

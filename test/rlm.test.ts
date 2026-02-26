@@ -726,6 +726,33 @@ describe("rlm", () => {
 		expect(childPrompt).toContain("Legacy body.");
 	});
 
+	it("availableComponents wired from childComponents keys", async () => {
+		let capturedSystemPrompt = "";
+		const callLLM: CallLLM = async (_messages, systemPrompt) => {
+			capturedSystemPrompt = systemPrompt;
+			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+		};
+
+		await rlm("test", undefined, {
+			callLLM,
+			childComponents: { "level-solver": "body1", "oha": "body2" },
+		});
+
+		expect(capturedSystemPrompt).toContain("Available components: level-solver, oha");
+	});
+
+	it("no available components when childComponents empty", async () => {
+		let capturedSystemPrompt = "";
+		const callLLM: CallLLM = async (_messages, systemPrompt) => {
+			capturedSystemPrompt = systemPrompt;
+			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+		};
+
+		await rlm("test", undefined, { callLLM });
+
+		expect(capturedSystemPrompt).not.toContain("Available components:");
+	});
+
 	it("childComponents: not in root prompt", async () => {
 		let capturedSystemPrompt = "";
 		const callLLM: CallLLM = async (_messages, systemPrompt) => {
