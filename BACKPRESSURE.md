@@ -41,7 +41,7 @@ The judge's deepest function is to evolve the entire library:
 1. **Detect recurring patterns.** Across many traces, identify behaviors that succeed repeatedly -- structural patterns the model discovers on its own that aren't in the current library.
 2. **Name and promote.** When a pattern recurs reliably, give it a name and add it to the library as a composite, role, or control. The library grows from evidence, not intuition.
 3. **Demote and retire.** When a library component consistently fails or goes unused, remove it. The library shrinks when patterns stop paying for themselves.
-4. **Discover missing axes.** The composition vocabulary currently has two axes (topology, brief richness). A third axis -- delegation mode (`observed`, `bounded`, `speculative`, `checkpointed`) -- is emerging. The judge may discover others.
+4. **Discover missing axes.** The composition vocabulary currently has two axes (topology, brief richness). The judge may discover others from empirical evidence.
 5. **Evaluate stdlib usage.** When a program uses stdlib components, was that effective? When it doesn't, would a stdlib component have helped? This informs both library evolution and program improvement.
 
 The hand-designed library is a starting point. The judge is the feedback loop that turns it into an empirically-grounded standard library.
@@ -153,32 +153,6 @@ npx tsx eval/judge.ts --result eval/results/arc3_opus_task1.json --program arc3 
 ```
 
 The judge output is JSON, stored alongside the result file. The viewer (eval/viewer.html) can render adherence annotations on the event timeline.
-
-## Toward real-time
-
-The post-hoc judge validates the pattern. The eventual path to real-time backpressure:
-
-### Delegation modes: a third composition axis
-
-The composition vocabulary currently has two axes: topology (direct/coordinated) and brief richness (exploratory/targeted). A third axis is emerging: **delegation mode** -- how the parent relates to the child during execution, not just before (brief) and after (curation).
-
-| Mode | What it does | Engine requirement |
-|------|-------------|-------------------|
-| `observed` | Parent receives child's event stream in real-time | Observer exposed to sandbox |
-| `bounded` | Hard-kill after N iterations or M seconds, return partial result | Cancellation primitive |
-| `speculative` | Fan-out K children, take first result, cancel rest | Concurrent execution + cancellation |
-| `checkpointed` | Snapshot child state at each iteration, parent can resume from any point | Checkpoint/restore in sandbox |
-
-These are parent-side concerns — the child never knows. They compose with the existing axes: `observed + coordinated + targeted` is a retry with monitoring. `speculative + direct + exploratory` is fan-out discovery.
-
-Delegation modes are engine mechanisms (parameters on `rlm()`), not program patterns. They differ from stdlib composites, which are program-level patterns composed from multiple `rlm()` calls. A composite like `worker-critic` could USE delegation modes internally (e.g., `bounded` on the worker to prevent runaway iterations).
-
-### The path
-
-1. **Expose the observer to the sandbox.** A parent calling `rlm()` with `observed: true` gets a scoped observer that receives the child's events synchronously during execution via `observer.on()` handlers. No new engine primitive needed beyond a sandbox binding.
-
-2. **Oversight-rlm.** The judge program (or a simplified version) runs as an oversight agent alongside the target. It receives events in real-time via the observer binding, writes assessments to shared `&`-state, and the target reads them between iterations. The parent composes both the target and the oversight agent. This could become `lib/composites/oversight.md`.
-
 ## Relationship to the language
 
 The judge doesn't require language extensions. It's expressed entirely in existing constructs: contracts, state schemas, delegation patterns, component catalogs. The judge IS the test of whether the language is expressive enough.
