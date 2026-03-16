@@ -1,6 +1,4 @@
 // OpenAI chat-completions driver (tool-call mode).
-
-import { fromAnthropic } from "./anthropic.js";
 import type { CallLLM, CallLLMOptions, CallLLMResponse } from "../rlm.js";
 import { EXECUTE_CODE_TOOL, TOOL_CHOICE } from "../system-prompt.js";
 
@@ -276,7 +274,7 @@ const KNOWN_PROVIDERS: Record<string, ProviderConfig> = {
 
 export function fromProviderModel(
 	providerSlashModel: string,
-	options?: { apiKey?: string; baseUrl?: string; timeoutMs?: number; reasoningEffort?: string; maxTokens?: number },
+	options?: { apiKey?: string; baseUrl?: string; timeoutMs?: number; reasoningEffort?: string },
 ): CallLLM {
 	const slashIdx = providerSlashModel.indexOf("/");
 	if (slashIdx === -1) {
@@ -295,24 +293,6 @@ export function fromProviderModel(
 	}
 
 	const known = KNOWN_PROVIDERS[provider];
-
-	if (provider === "anthropic") {
-		const apiKey = options?.apiKey ?? process.env.ANTHROPIC_API_KEY ?? "";
-		if (!apiKey) {
-			throw new Error(
-				'fromProviderModel: no API key for provider "anthropic". Set ANTHROPIC_API_KEY or pass options.apiKey.',
-			);
-		}
-
-		return fromAnthropic({
-			baseUrl: options?.baseUrl,
-			apiKey,
-			model,
-			timeoutMs: options?.timeoutMs,
-			reasoningEffort: options?.reasoningEffort,
-			maxTokens: options?.maxTokens,
-		});
-	}
 
 	let baseUrl: string;
 	let apiKey: string;
@@ -343,6 +323,5 @@ export function fromProviderModel(
 		model,
 		timeoutMs: options?.timeoutMs,
 		reasoningEffort: options?.reasoningEffort,
-		maxTokens: options?.maxTokens,
 	});
 }

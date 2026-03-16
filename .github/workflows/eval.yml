@@ -128,7 +128,6 @@ jobs:
         if: env.ACT != 'true' && inputs.analysis_fixture == ''
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ARC3_API_KEY: ${{ secrets.ARC3_API_KEY }}
           NODE_OPTIONS: --max-old-space-size=4096
         run: |
