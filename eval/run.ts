@@ -28,7 +28,6 @@ process.on("unhandledRejection", (reason) => {
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fromOpenRouter } from "./drivers/openrouter.js";
 import { runEval } from "./harness.js";
 import { oolongScore, exactMatch, arcGridMatch, arc3Score, arcCompoundScore, gridsEqual } from "./scoring.js";
 import { loadOolongTasks } from "./datasets/oolong.js";
@@ -36,6 +35,7 @@ import { generateSNIAHTasks } from "./datasets/s-niah.js";
 import { loadArcTasks, loadArcCompoundBundle } from "./datasets/arc.js";
 import { loadArc3Tasks } from "./datasets/arc3.js";
 import { Arc3Client } from "./arc3-client.js";
+import { fromProviderModel } from "../src/drivers/openrouter-compatible.js";
 import { loadStack, loadPlugins, loadProgram } from "../src/plugins.js";
 import type { CallLLM, ModelEntry } from "../src/rlm.js";
 import { DEFAULT_MODEL_ALIASES } from "../src/models.js";
@@ -266,37 +266,33 @@ function resolveCallLLM(spec: string, reasoningEffort?: string): { callLLM: Call
 		process.exit(1);
 	}
 
-	const apiKey = process.env.OPENROUTER_API_KEY;
-	if (!apiKey) {
-		console.error("OPENROUTER_API_KEY not set. Required for eval harness.");
-		console.error("Set it in .env or as an environment variable.");
-		process.exit(1);
-	}
-
 	const overrides: { maxTokens?: number; timeoutMs?: number; reasoningEffort?: string } = modelOverrides(spec);
 	if (reasoningEffort && reasoningEffort !== "none") {
 		overrides.reasoningEffort = reasoningEffort;
 	}
 
-	// Strip "openrouter/" prefix if present — OpenRouter expects "provider/model".
-	const modelId = stripOpenRouterPrefix(spec);
-	const displayName = parts[0] === "openrouter" ? `${modelId} (openrouter)` : `${spec} (openrouter)`;
-	return { callLLM: fromOpenRouter(modelId, apiKey, overrides), displayName };
+	try {
+		return { callLLM: fromProviderModel(spec, overrides), displayName: spec };
+	} catch (error) {
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exit(1);
+	}
 }
 
-function buildModelAliases(aliases: string[], apiKey: string): Record<string, ModelEntry> | undefined {
-	// Start with defaults
+function buildModelAliases(aliases: string[]): Record<string, ModelEntry> | undefined {
 	const models: Record<string, ModelEntry> = {};
 	for (const [alias, def] of Object.entries(DEFAULT_MODEL_ALIASES)) {
-		const modelId = stripOpenRouterPrefix(def.modelId);
-		models[alias] = {
-			callLLM: fromOpenRouter(modelId, apiKey),
-			tags: [...def.tags],
-			description: def.description,
-		};
+		try {
+			models[alias] = {
+				callLLM: fromProviderModel(def.modelId),
+				tags: [...def.tags],
+				description: def.description,
+			};
+		} catch {
+			// Skip defaults whose provider credentials are not available.
+		}
 	}
 
-	// Parse user overrides
 	for (const raw of aliases) {
 		const eqIdx = raw.indexOf("=");
 		if (eqIdx === -1) {
@@ -318,12 +314,16 @@ function buildModelAliases(aliases: string[], apiKey: string): Record<string, Mo
 			console.error(`Invalid --model-alias format: "${raw}" (alias and model ID must be non-empty)`);
 			process.exit(1);
 		}
-		const cleanModelId = stripOpenRouterPrefix(modelId);
-		models[alias] = {
-			callLLM: fromOpenRouter(cleanModelId, apiKey),
-			tags,
-			description: modelId,
-		};
+		try {
+			models[alias] = {
+				callLLM: fromProviderModel(modelId),
+				tags,
+				description: modelId,
+			};
+		} catch (error) {
+			console.error(error instanceof Error ? error.message : String(error));
+			process.exit(1);
+		}
 	}
 
 	return Object.keys(models).length > 0 ? models : undefined;
@@ -662,8 +662,7 @@ function resolveModel(args: CliArgs): { callLLM: CallLLM; models: Record<string,
 	}
 
 	// Build model aliases (defaults + user overrides)
-	const apiKey = process.env.OPENROUTER_API_KEY!;
-	const models = buildModelAliases(args.modelAliases, apiKey);
+	const models = buildModelAliases(args.modelAliases);
 	if (models) {
 		console.log(`  Model aliases: ${Object.keys(models).join(", ")}`);
 	}
