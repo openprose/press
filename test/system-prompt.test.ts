@@ -36,6 +36,11 @@ describe("buildSystemPrompt", () => {
 		expect(result).toContain("## My Plugin");
 		expect(result).toContain("Do things.");
 		expect(result).toContain("</rlm-program>");
+		// Program constructs reference is inside <rlm-program>
+		const programSection = result.split("<rlm-program>")[1].split("</rlm-program>")[0];
+		expect(programSection).toContain("Contracts (ensures/requires)");
+		expect(programSection).toContain("State schemas");
+		expect(programSection).toContain("prohibited");
 	});
 
 	it("rlm() docs when canDelegate", () => {
@@ -92,13 +97,11 @@ describe("buildSystemPrompt", () => {
 		expect(result).toContain("depth 1 of 3");
 	});
 
-	it("preamble: contracts, state schemas, shape", () => {
+	it("preamble: philosophy content", () => {
 		const result = buildSystemPrompt(BASE_OPTS);
-		expect(result).toContain("Contracts");
-		expect(result).toContain("ensures:");
-		expect(result).toContain("State schemas");
-		expect(result).toContain("Shape declarations");
-		expect(result).toContain("prohibited");
+		expect(result).toContain("structural error correction");
+		expect(result).toContain("observable state");
+		expect(result).toContain("Trust yourself");
 	});
 
 	it("environment: return, console.log, require", () => {
@@ -130,6 +133,72 @@ describe("buildSystemPrompt", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, depth: 1, parentId: "root", lineage: [longQuery, "child query"] });
 		expect(result).toContain("...");
 		expect(result).not.toContain(longQuery);
+	});
+
+	it("philosophy present in preamble (always)", () => {
+		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: false });
+		const preamble = result.split("<rlm-preamble>")[1].split("</rlm-preamble>")[0];
+		expect(preamble).toContain("Trust yourself");
+		expect(preamble).toContain("structural error correction");
+		expect(preamble).toContain("observable state");
+	});
+
+	it("program constructs reference present when programContent exists", () => {
+		const result = buildSystemPrompt({ ...BASE_OPTS, programContent: "My program." });
+		const programSection = result.split("<rlm-program>")[1].split("</rlm-program>")[0];
+		expect(programSection).toContain("Your program below uses structured prose constructs:");
+		expect(programSection).toContain("Contracts (ensures/requires)");
+		expect(programSection).toContain("State schemas");
+		expect(programSection).toContain("Component catalogs");
+	});
+
+	it("program constructs reference absent when no programContent", () => {
+		const result = buildSystemPrompt(BASE_OPTS);
+		expect(result).not.toContain("Your program below uses structured prose constructs:");
+		expect(result).not.toContain("Contracts (ensures/requires)");
+	});
+
+	it("delegation rules present when canDelegate", () => {
+		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: true });
+		expect(result).toContain("Construct delegation briefs from &-state");
+		expect(result).toContain("Delegation without curation has zero value");
+		expect(result).toContain("prohibited is a shape violation");
+		expect(result).toContain("Skipping a coordinator");
+	});
+
+	it("delegation rules absent when !canDelegate", () => {
+		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: false });
+		expect(result).not.toContain("Construct delegation briefs from &-state");
+		expect(result).not.toContain("Delegation without curation has zero value");
+		expect(result).not.toContain("prohibited is a shape violation");
+		expect(result).not.toContain("Skipping a coordinator");
+	});
+
+	it("available components in context when canDelegate + components", () => {
+		const result = buildSystemPrompt({
+			...BASE_OPTS,
+			canDelegate: true,
+			availableComponents: ["level-solver", "oha"],
+		});
+		const contextSection = result.split("<rlm-context>")[1].split("</rlm-context>")[0];
+		expect(contextSection).toContain("Available components: level-solver, oha");
+	});
+
+	it("no available components when !canDelegate", () => {
+		const result = buildSystemPrompt({
+			...BASE_OPTS,
+			canDelegate: false,
+			availableComponents: ["level-solver", "oha"],
+		});
+		expect(result).not.toContain("Available components:");
+	});
+
+	it("no available components when list empty or undefined", () => {
+		const result1 = buildSystemPrompt({ ...BASE_OPTS, canDelegate: true, availableComponents: [] });
+		expect(result1).not.toContain("Available components:");
+
+		const result2 = buildSystemPrompt({ ...BASE_OPTS, canDelegate: true });
+		expect(result2).not.toContain("Available components:");
 	});
 });
 

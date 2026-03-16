@@ -228,6 +228,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 			programContent = opts.pluginBodies;
 		}
 
+		const componentKeys = Object.keys(opts.childComponents);
 		const effectiveSystemPrompt = buildSystemPrompt({
 			canDelegate,
 			invocationId,
@@ -239,6 +240,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 			programContent,
 			globalDocs: opts.globalDocs,
 			modelTable,
+			...(componentKeys.length > 0 ? { availableComponents: componentKeys } : {}),
 		});
 
 		emit?.({
