@@ -64,6 +64,66 @@ function round(value) {
 	return Math.round(value * 10000) / 10000;
 }
 
+function buildTraceFromEvents(result, index) {
+	if (!Array.isArray(result.events)) {
+		fail(`results[${index}] (${result.taskId}) is missing trace[] and events[]; refusing to continue without raw execution data`);
+	}
+
+	const rootInvocation =
+		result.events.find((event) => event?.type === "invocation:start" && event?.parentId === null)
+		?? result.events.find((event) => event?.type === "invocation:start");
+
+	if (!rootInvocation?.invocationId) {
+		fail(`results[${index}] (${result.taskId}) is missing a root invocation in events[]`);
+	}
+
+	const rootInvocationId = rootInvocation.invocationId;
+	const byIteration = new Map();
+
+	for (const event of result.events) {
+		if (!event || typeof event !== "object") continue;
+		if (event.invocationId !== rootInvocationId) continue;
+		if (typeof event.iteration !== "number") continue;
+
+		const entry = byIteration.get(event.iteration) ?? {
+			reasoning: "",
+			code: [],
+			output: "",
+			error: null,
+		};
+
+		if (event.type === "llm:response") {
+			if (typeof event.reasoning === "string") {
+				entry.reasoning = event.reasoning;
+			}
+			if (typeof event.code === "string" && event.code.length > 0) {
+				entry.code = [event.code];
+			}
+		}
+
+		if (event.type === "iteration:end") {
+			if (typeof event.output === "string") {
+				entry.output = event.output;
+			}
+			if (typeof event.error === "string" && event.error.length > 0) {
+				entry.error = event.error;
+			}
+		}
+
+		byIteration.set(event.iteration, entry);
+	}
+
+	const trace = [...byIteration.entries()]
+		.sort((a, b) => a[0] - b[0])
+		.map(([, entry]) => entry);
+
+	if (trace.length === 0) {
+		fail(`results[${index}] (${result.taskId}) produced no root iteration trace from events[]`);
+	}
+
+	return trace;
+}
+
 const sourceFile = latestResultFile();
 const raw = readFileSync(sourceFile, "utf8");
 let data;
@@ -87,23 +147,21 @@ const summaries = data.results.map((result, index) => {
 	if (!result || typeof result !== "object") {
 		fail(`results[${index}] is not an object`);
 	}
-	if (typeof result.taskId !== "string" || result.taskId.length === 0) {
-		fail(`results[${index}] is missing taskId`);
-	}
-	if (!Array.isArray(result.trace)) {
-		fail(`results[${index}] (${result.taskId}) is missing trace[]; refusing to continue without raw traces`);
-	}
-	if (typeof result.score !== "number") {
-		fail(`results[${index}] (${result.taskId}) is missing numeric score`);
-	}
+		if (typeof result.taskId !== "string" || result.taskId.length === 0) {
+			fail(`results[${index}] is missing taskId`);
+		}
+		if (typeof result.score !== "number") {
+			fail(`results[${index}] (${result.taskId}) is missing numeric score`);
+		}
 
-	const taskId = result.taskId;
-	const safeTaskId = sanitizeTaskId(taskId);
-	const answerType = inferAnswerType(result, data.benchmark);
-	const iterations = typeof result.iterations === "number" ? result.iterations : result.trace.length;
-	const outcome = classifyOutcome(result.score, result.error);
-	const relativeTaskDir = `input/tasks/${safeTaskId}`;
-	const taskDir = join(tasksDir, safeTaskId);
+		const trace = Array.isArray(result.trace) ? result.trace : buildTraceFromEvents(result, index);
+		const taskId = result.taskId;
+		const safeTaskId = sanitizeTaskId(taskId);
+		const answerType = inferAnswerType(result, data.benchmark);
+		const iterations = typeof result.iterations === "number" ? result.iterations : trace.length;
+		const outcome = classifyOutcome(result.score, result.error);
+		const relativeTaskDir = `input/tasks/${safeTaskId}`;
+		const taskDir = join(tasksDir, safeTaskId);
 	const iterationsDir = join(taskDir, "iterations");
 	mkdirSync(iterationsDir, { recursive: true });
 
@@ -127,10 +185,10 @@ const summaries = data.results.map((result, index) => {
 
 	writeFileSync(join(taskDir, "summary.json"), `${JSON.stringify(summaryPayload, null, 2)}\n`);
 
-	const iterationFiles = result.trace.map((entry, traceIndex) => {
-		const relativeIterationFile = `${relativeTaskDir}/iterations/${String(traceIndex + 1).padStart(2, "0")}.json`;
-		const iterationFile = join(iterationsDir, `${String(traceIndex + 1).padStart(2, "0")}.json`);
-		writeFileSync(iterationFile, `${JSON.stringify(entry, null, 2)}\n`);
+		const iterationFiles = trace.map((entry, traceIndex) => {
+			const relativeIterationFile = `${relativeTaskDir}/iterations/${String(traceIndex + 1).padStart(2, "0")}.json`;
+			const iterationFile = join(iterationsDir, `${String(traceIndex + 1).padStart(2, "0")}.json`);
+			writeFileSync(iterationFile, `${JSON.stringify(entry, null, 2)}\n`);
 		return relativeIterationFile;
 	});
 
