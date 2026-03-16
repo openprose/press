@@ -59,6 +59,10 @@ on:
         description: Run trajectory analysis after eval
         type: boolean
         default: true
+      analysis_fixture:
+        description: Optional checked-in results fixture for analyze-only smoke runs
+        required: false
+        default: ""
 
 jobs:
   eval:
@@ -75,15 +79,29 @@ jobs:
       - uses: actions/checkout@v4
         if: env.ACT != 'true'
       - uses: actions/setup-node@v4
-        if: env.ACT != 'true'
+        if: env.ACT != 'true' && inputs.analysis_fixture == ''
         with:
           node-version: 22
           cache: npm
-      - if: env.ACT != 'true'
+      - if: env.ACT != 'true' && inputs.analysis_fixture == ''
         run: npm ci
 
+      - name: Prepare fixture results
+        if: env.ACT != 'true' && inputs.analysis_fixture != ''
+        run: |
+          mkdir -p eval/results
+          case "${{ inputs.analysis_fixture }}" in
+            arc-smoke)
+              cp eval/fixtures/arc-trajectory-analysis-smoke.json eval/results/arc-smoke.json
+              ;;
+            *)
+              echo "Unknown analysis fixture: ${{ inputs.analysis_fixture }}" >&2
+              exit 1
+              ;;
+          esac
+
       - name: Cache OOLONG eval data
-        if: env.ACT != 'true' && inputs.benchmark == 'oolong'
+        if: env.ACT != 'true' && inputs.analysis_fixture == '' && inputs.benchmark == 'oolong'
         id: cache-oolong
         uses: actions/cache@v4
         with:
@@ -91,11 +109,11 @@ jobs:
           key: oolong-eval-data-v1
 
       - name: Download dataset
-        if: env.ACT != 'true' && inputs.benchmark == 'oolong' && steps.cache-oolong.outputs.cache-hit != 'true'
+        if: env.ACT != 'true' && inputs.analysis_fixture == '' && inputs.benchmark == 'oolong' && steps.cache-oolong.outputs.cache-hit != 'true'
         run: npx tsx eval/download.ts --from-release
 
       - name: Cache ARC eval data
-        if: env.ACT != 'true' && (inputs.benchmark == 'arc' || inputs.benchmark == 'arc-compound')
+        if: env.ACT != 'true' && inputs.analysis_fixture == '' && (inputs.benchmark == 'arc' || inputs.benchmark == 'arc-compound')
         id: cache-arc
         uses: actions/cache@v4
         with:
@@ -103,11 +121,11 @@ jobs:
           key: arc-eval-data-v1
 
       - name: Download ARC dataset
-        if: env.ACT != 'true' && (inputs.benchmark == 'arc' || inputs.benchmark == 'arc-compound') && steps.cache-arc.outputs.cache-hit != 'true'
+        if: env.ACT != 'true' && inputs.analysis_fixture == '' && (inputs.benchmark == 'arc' || inputs.benchmark == 'arc-compound') && steps.cache-arc.outputs.cache-hit != 'true'
         run: npx tsx eval/download.ts --dataset arc
 
       - name: Run eval
-        if: env.ACT != 'true'
+        if: env.ACT != 'true' && inputs.analysis_fixture == ''
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           ARC3_API_KEY: ${{ secrets.ARC3_API_KEY }}
@@ -144,7 +162,7 @@ jobs:
           npx tsx eval/run.ts $ARGS
 
       - name: Analyze results
-        if: env.ACT != 'true'
+        if: env.ACT != 'true' && inputs.analysis_fixture == ''
         run: npx tsx eval/analyze.ts
 
       - name: Upload results
