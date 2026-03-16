@@ -59,6 +59,10 @@ on:
         description: Run trajectory analysis after eval
         type: boolean
         default: true
+      analysis_fixture:
+        description: Optional checked-in results fixture for analyze-only smoke runs
+        required: false
+        default: ""
 
 jobs:
   eval:
@@ -67,15 +71,37 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Short-circuit eval for act local loop
+        if: env.ACT == 'true'
+        run: |
+          echo "ACT local loop: skipping eval job, analyze job will use preloaded eval/results"
+
       - uses: actions/checkout@v4
+        if: env.ACT != 'true'
       - uses: actions/setup-node@v4
+        if: env.ACT != 'true' && inputs.analysis_fixture == ''
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - if: env.ACT != 'true' && inputs.analysis_fixture == ''
+        run: npm ci
+
+      - name: Prepare fixture results
+        if: env.ACT != 'true' && inputs.analysis_fixture != ''
+        run: |
+          mkdir -p eval/results
+          case "${{ inputs.analysis_fixture }}" in
+            arc-smoke)
+              cp eval/fixtures/arc-trajectory-analysis-smoke.json eval/results/arc-smoke.json
+              ;;
+            *)
+              echo "Unknown analysis fixture: ${{ inputs.analysis_fixture }}" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Cache OOLONG eval data
-        if: inputs.benchmark == 'oolong'
+        if: env.ACT != 'true' && inputs.analysis_fixture == '' && inputs.benchmark == 'oolong'
         id: cache-oolong
         uses: actions/cache@v4
         with:
@@ -83,11 +109,11 @@ jobs:
           key: oolong-eval-data-v1
 
       - name: Download dataset
-        if: inputs.benchmark == 'oolong' && steps.cache-oolong.outputs.cache-hit != 'true'
+        if: env.ACT != 'true' && inputs.analysis_fixture == '' && inputs.benchmark == 'oolong' && steps.cache-oolong.outputs.cache-hit != 'true'
         run: npx tsx eval/download.ts --from-release
 
       - name: Cache ARC eval data
-        if: inputs.benchmark == 'arc' || inputs.benchmark == 'arc-compound'
+        if: env.ACT != 'true' && inputs.analysis_fixture == '' && (inputs.benchmark == 'arc' || inputs.benchmark == 'arc-compound')
         id: cache-arc
         uses: actions/cache@v4
         with:
@@ -95,10 +121,11 @@ jobs:
           key: arc-eval-data-v1
 
       - name: Download ARC dataset
-        if: (inputs.benchmark == 'arc' || inputs.benchmark == 'arc-compound') && steps.cache-arc.outputs.cache-hit != 'true'
+        if: env.ACT != 'true' && inputs.analysis_fixture == '' && (inputs.benchmark == 'arc' || inputs.benchmark == 'arc-compound') && steps.cache-arc.outputs.cache-hit != 'true'
         run: npx tsx eval/download.ts --dataset arc
 
       - name: Run eval
+        if: env.ACT != 'true' && inputs.analysis_fixture == ''
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           ARC3_API_KEY: ${{ secrets.ARC3_API_KEY }}
@@ -135,10 +162,11 @@ jobs:
           npx tsx eval/run.ts $ARGS
 
       - name: Analyze results
+        if: env.ACT != 'true' && inputs.analysis_fixture == ''
         run: npx tsx eval/analyze.ts
 
       - name: Upload results
-        if: always()
+        if: always() && env.ACT != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: eval-${{ inputs.benchmark }}-${{ github.run_number }}
@@ -156,43 +184,66 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify local act inputs
+        if: env.ACT == 'true'
+        run: |
+          test -d eval/results
+          find eval/results -maxdepth 1 -name '*.json' -print -quit | grep -q .
+
       - name: Download eval results
+        if: env.ACT != 'true'
         uses: actions/download-artifact@v4
         with:
           name: eval-${{ inputs.benchmark }}-${{ github.run_number }}
           path: eval/results/
 
+      - name: Prepare trajectory inputs
+        run: node eval/prepare-trajectory-analysis.js
+
       - name: Distill trajectories
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: '--allowedTools Bash Write Read Glob Grep Task'
+          github_token: ${{ env.ACT == 'true' && secrets.GITHUB_TOKEN || github.token }}
+          claude_args: '--allowedTools Bash,Write,Read,Glob,Grep,Task'
+          show_full_output: ${{ env.ACT == 'true' && 'true' || 'false' }}
           prompt: |
-            You are distilling RLM eval trajectories into annotated documents.
+            You are distilling prepared RLM eval trajectories into annotated documents.
 
             ## Setup
-            1. Find the most recent .json file in eval/results/
-            2. Read docs/TRAJECTORY_FORMAT.md — this is the canonical annotation format
-            3. Run: mkdir -p eval/trajectory-analysis/trajectories
+            1. Read eval/trajectory-analysis/meta.json
+            2. Read eval/trajectory-analysis/input/manifest.json
+            3. Read docs/TRAJECTORY_FORMAT.md — this is the canonical annotation format
+            4. Write trajectory markdown files to eval/trajectory-analysis/trajectories/
+            5. Do not read eval/results/*.json directly. If the prepared inputs are missing or malformed, stop immediately with an error.
 
-            ## Step 1: Enumerate all tasks
-            Read the results JSON and extract every task. For each task, record:
-            - taskId, answerType, score, iterations count
-            - Classify outcome: score==1 → "perfect", 0<score<1 → "partial", score==0 → "wrong/timeout/error"
-            Write the complete list (ALL tasks, no sampling or filtering) to
-            eval/trajectory-analysis/sample.json as a JSON array:
-            [{ taskId, answerType, outcome, score, iterations }, ...]
+            ## Prepared Inputs
+            The prep step already wrote:
+            - eval/trajectory-analysis/sample.json — authoritative task summary list
+            - eval/trajectory-analysis/input/manifest.json — manifest with one entry per task
+            - eval/trajectory-analysis/input/tasks/{taskId}/summary.json — per-task metadata
+            - eval/trajectory-analysis/input/tasks/{taskId}/iterations/*.json — one file per trace iteration
 
-            ## Step 2: Annotate all trajectories
-            For every task in the list, use the Task tool (model: sonnet) to annotate it.
-            Launch up to 10 subagents at a time using run_in_background: true.
-            After launching a batch of up to 10, wait for all of them to complete
-            before launching the next batch. Continue until every task is annotated.
+            ## Task
+            For every task in the manifest, use the Task tool (model: sonnet) to annotate it.
+            Launch exactly one subagent at a time using run_in_background: false.
+            Wait for it to complete before starting the next task. Continue until every task is annotated.
+            If any subagent fails, stop immediately instead of falling back to another strategy.
 
             Each sonnet agent needs:
-            - The full raw trace data for its task (extract it from the results JSON
-              and pass it in the prompt — do NOT make the agent re-read the large file)
+            - The task summary file path from the manifest
+            - The task iteration file paths from the manifest
             - The full text of docs/TRAJECTORY_FORMAT.md
+            - Instructions to read the summary file and iteration files directly from disk
+
+            Important:
+            - Do not paste the full raw trace into the Task prompt.
+            - Do not read eval/results/*.json directly.
+            - Read the per-iteration files incrementally from the prepared task directory.
 
             Each agent must:
             1. Read the raw trace ({reasoning, code[], output, error} per iteration)
@@ -202,12 +253,13 @@ jobs:
             5. Write: Control Flow, Phase Analysis, Root Cause or Success Factors, What Would Have Helped
             6. Use YAML frontmatter with all required fields from the format spec
             7. Write the file to eval/trajectory-analysis/trajectories/{taskId}.md
+            8. Leave eval/trajectory-analysis/sample.json and eval/trajectory-analysis/meta.json intact unless they are malformed
 
             Be precise. Quote actual code and output from the trace. Don't speculate
             beyond what the trace evidence shows.
 
       - name: Upload trajectory analysis
-        if: always()
+        if: always() && env.ACT != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: trajectory-analysis-${{ inputs.benchmark }}-${{ github.run_number }}

@@ -285,7 +285,6 @@ function resolveCallLLM(spec: string, reasoningEffort?: string): { callLLM: Call
 }
 
 function buildModelAliases(aliases: string[], apiKey: string): Record<string, ModelEntry> | undefined {
-	// Start with defaults
 	const models: Record<string, ModelEntry> = {};
 	for (const [alias, def] of Object.entries(DEFAULT_MODEL_ALIASES)) {
 		const modelId = stripOpenRouterPrefix(def.modelId);
@@ -296,7 +295,6 @@ function buildModelAliases(aliases: string[], apiKey: string): Record<string, Mo
 		};
 	}
 
-	// Parse user overrides
 	for (const raw of aliases) {
 		const eqIdx = raw.indexOf("=");
 		if (eqIdx === -1) {

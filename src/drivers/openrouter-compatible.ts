@@ -1,5 +1,4 @@
 // OpenAI chat-completions driver (tool-call mode).
-
 import type { CallLLM, CallLLMOptions, CallLLMResponse } from "../rlm.js";
 import { EXECUTE_CODE_TOOL, TOOL_CHOICE } from "../system-prompt.js";
 
