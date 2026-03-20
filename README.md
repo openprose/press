@@ -1,12 +1,27 @@
 # node-rlm
 
-An LLM in a Node.js REPL loop that can call anything, including itself. The model writes JavaScript that runs in a persistent Node.js sandbox; the loop continues until it calls `return()`. Any invocation can spawn a child via `await rlm(query, context?)` -- same sandbox, separate message history and iteration budget.
+An LLM in a Node.js REPL loop that can call anything, including itself.
 
-Only runtime dependency is `acorn` (JS parser). Currently supported with OpenRouter. Open to PRs for other APIs.
+## Overview
 
-## Quick Start
+node-rlm (Recursive Language Model) puts a language model inside a persistent Node.js sandbox. The model writes JavaScript, observes the output, and loops until it calls `return()`. Any invocation can spawn a child via `await rlm(query, context?)` — a separate message history and iteration budget sharing the same sandbox. This is not a chatbot with tools bolted on; it is a general-purpose computer that runs programs.
 
-Clone the repo and install dependencies:
+Only runtime dependency is `acorn` (JS parser). Models route through OpenRouter by default; other OpenAI-compatible APIs are supported via `--base-url`.
+
+## Structure
+
+- `src/` — Core runtime: REPL loop (`rlm.ts`), sandbox (`environment.ts`), plugin loader (`plugins.ts`), system prompt construction, CLI entry point, and OpenRouter-compatible driver
+- `lib/` — Markdown-encoded standard library of reusable patterns: multi-agent composites (observer-actor-arbiter, worker-critic, ratchet, dialectic…), flow controls (pipeline, map-reduce, gate…), single-agent roles (critic, verifier, extractor…), and model-specific driver profiles
+- `eval/` — Benchmark harness for OOLONG, ARC-AGI-2, ARC-AGI-3, and S-NIAH; includes scoring, analysis tooling, and 18 numbered run analyses documenting experimental history
+- `programs/` — Domain-specific agent architectures loaded as `--app` plugins: ARC-AGI-2 compound learning, ARC-AGI-3 game solver, S-NIAH retrieval, and LLM-as-judge evaluator
+- `arc3-docs/` — ARC-AGI-3 platform documentation: REST API reference, agent quickstart, game catalog, and benchmarking methodology
+- `arcgentica/` — Reference Python implementation achieving 85.28% on ARC-AGI-2 with Claude Opus 4.6 (nested git repo)
+- `test/` — Vitest unit and integration tests
+- `docs/` — Trajectory format specs, eval data notes, and ARC-AGI-3 canonical rules
+
+## Getting Started
+
+Requires Node.js ≥ 20.
 
 ```bash
 git clone https://github.com/openprose/node-rlm.git
@@ -27,18 +42,13 @@ Run a query:
 npx tsx src/cli.ts --query "What is the capital of France?"
 ```
 
-Run a quick eval:
+Run tests (no API key needed):
 
 ```bash
-# S-NIAH (synthetic, no download needed)
-npx tsx eval/run.ts --benchmark s-niah --model anthropic/claude-sonnet-4-20250514 --max-tasks 5
-
-# OOLONG (requires one-time dataset download)
-npx tsx eval/download.ts
-npx tsx eval/run.ts --benchmark oolong --model anthropic/claude-sonnet-4-20250514 --max-tasks 5
+npm test
 ```
 
-See [eval/README.md](eval/README.md) for the full set of eval options, plugin configuration, and result analysis.
+End-to-end tests run automatically when `OPENROUTER_API_KEY` is set, and are skipped otherwise.
 
 ## CLI
 
@@ -61,9 +71,9 @@ npx node-rlm --query "Hello" --model custom/my-model --base-url http://localhost
 | `--max-depth <n>`       | 3                                          | Maximum recursion depth; agents at maxDepth cannot call `rlm()` |
 | `--model-alias <spec>`  | --                                         | Add or override a named model alias (repeatable)          |
 
-#### Model aliases
+### Model aliases
 
-Three default aliases are always available -- no flags needed:
+Three default aliases are always available:
 
 | Alias          | Tags                    | Model              | Description             |
 | -------------- | ----------------------- | ------------------ | ----------------------- |
@@ -71,24 +81,15 @@ Three default aliases are always available -- no flags needed:
 | `orchestrator` | orchestrator, medium    | Claude Sonnet 4.5  | Balanced orchestration  |
 | `intelligent`  | intelligent, expensive  | Claude Opus 4.6    | Highest capability      |
 
-Use `--model-alias` to add new aliases or override the defaults. Format: `alias=provider/model[:tag1,tag2,...]`
-
-```bash
-# Override the "fast" default and add a new "smart" alias
-npx node-rlm --query "Analyze this dataset" \
-  --model-alias fast=openrouter/openai/gpt-4o-mini:fast,cheap \
-  --model-alias smart=openrouter/anthropic/claude-sonnet-4:intelligent,thorough
-```
-
-The agent sees an "Available Models" table in its system prompt and can delegate with `await rlm("subtask", data, { model: "fast" })` or `await rlm("classify this", item, { model: "fast", maxIterations: 1 })` for cheap one-shot calls.
+Use `--model-alias` to add new aliases or override the defaults. Format: `alias=provider/model[:tag1,tag2,...]`. The agent sees an "Available Models" table in its system prompt and can delegate with `await rlm("subtask", data, { model: "fast" })`.
 
 ### Providers
 
 The CLI routes models by the first path segment:
 
-- `openrouter/*` -- OpenRouter API (`OPENROUTER_API_KEY`)
-- `openai/*` -- OpenAI API (`OPENAI_API_KEY`)
-- `custom/*` -- requires `--base-url` and the relevant env var
+- `openrouter/*` — OpenRouter API (`OPENROUTER_API_KEY`)
+- `openai/*` — OpenAI API (`OPENAI_API_KEY`)
+- `custom/*` — requires `--base-url` and the relevant env var
 
 ## Programmatic API
 
@@ -103,22 +104,9 @@ const result = await rlm("What is 2 + 2?", undefined, {
   maxDepth: 3,
 });
 
-console.log(result.answer); // "4"
+console.log(result.answer);     // "4"
 console.log(result.iterations); // number of REPL turns used
-console.log(result.trace); // { reasoning, code, output, error } per turn
-```
-
-To build a `models` map from the defaults:
-
-```typescript
-const models = Object.fromEntries(
-  Object.entries(DEFAULT_MODEL_ALIASES).map(([alias, def]) => [
-    alias,
-    { callLLM: fromProviderModel(def.modelId), tags: def.tags, description: def.description },
-  ]),
-);
-
-const result = await rlm("Analyze this", data, { callLLM, models });
+console.log(result.trace);      // { reasoning, code, output, error } per turn
 ```
 
 ### `rlm(query, context?, options)`
@@ -135,75 +123,82 @@ Throws `RlmMaxIterationsError` if the iteration budget is exhausted (carries par
 | `maxIterations` | `number`  | 15         | REPL loop budget for the root agent                          |
 | `maxDepth`      | `number`  | 3          | Recursion depth limit                                        |
 | `pluginBodies`  | `string`  | --         | Extra prompt text appended to the root agent's system prompt |
-| `models`        | `Record<string, ModelEntry>` | -- | Named model aliases for child delegation; build from `DEFAULT_MODEL_ALIASES` or supply your own |
-| `globalDocs`    | `string`  | --         | Documentation appended to every agent's system prompt at every depth (for documenting sandbox globals) |
+| `models`        | `Record<string, ModelEntry>` | -- | Named model aliases for child delegation |
+| `globalDocs`    | `string`  | --         | Documentation appended to every agent's system prompt at every depth |
 
 ### Sandbox globals
-
-These are available to the model inside the REPL:
 
 | Symbol                                          | Description                                                                                                             |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `context`                                       | Task data (reads `__ctx.local.context`, falling back to `__ctx.shared.data`).                                           |
 | `console.log()`                                 | Output visible to the model between iterations.                                                                         |
 | `return(value)`                                 | Ends the loop and sets the final answer. First-iteration returns are intercepted for verification.                      |
-| `await rlm(query, context?, { systemPrompt?, model?, maxIterations? })` | Spawn a child RLM. Shared sandbox, own message history. `model` selects an alias (default aliases are pre-configured). `maxIterations` sets the child's iteration budget (omit to inherit parent's budget). Must be awaited. |
+| `await rlm(query, context?, { systemPrompt?, model?, maxIterations? })` | Spawn a child RLM. Shared sandbox, own message history. Must be awaited. |
 | `__rlm`                                         | Read-only delegation context: `depth`, `maxDepth`, `iteration`, `maxIterations`, `lineage`, `invocationId`, `parentId`. |
 | `__ctx.shared.data`                             | Root context (frozen, readable by all depths).                                                                          |
 | `__ctx.local`                                   | This invocation's writable workspace.                                                                                   |
 | `__ctx.readLocal(id)`                           | Read-only view of another invocation's local store.                                                                     |
 | `require()`                                     | Node.js built-in modules only.                                                                                          |
 
-The sandbox is shared across depths. Children inherit the parent's `maxIterations` by default; the parent can override via the `maxIterations` option on `rlm()`. All agents at every depth are full REPL agents with code execution and iteration loops; agents at `depth >= maxDepth` simply cannot call `rlm()`.
-
 ## Plugins
 
-Plugins are markdown files that get concatenated into the root agent's system prompt via `pluginBodies`.
+Plugins are markdown files concatenated into the agent's system prompt. Three kinds:
 
-- `lib/drivers/` -- Model-specific reliability patches (e.g., enforce await discipline, verify-before-return). Stack multiple per run.
-- `lib/profiles/` -- Profiles use YAML frontmatter to map model name patterns to a list of drivers. The plugin loader picks the right profile automatically.
+- **Drivers** (`lib/drivers/`) — Model-specific reliability patches (e.g., enforce await discipline, verify-before-return). Stack multiple per run.
+- **Apps** (`programs/`) — Task architectures loaded via `--app` (e.g., `structured-data-aggregation`, `arc3-player`).
+- **Profiles** (`lib/profiles/`) — Named bundles of drivers for a model family. Auto-detected from `--model` when no `--profile` is given.
 
 ```typescript
-import { loadStack } from "node-rlm/plugins"; // or import from source
+import { loadStack } from "node-rlm/plugins";
 const pluginBodies = await loadStack({
   model: "openrouter/google/gemini-3-flash-preview", // auto-detects profile
   use: "structured-data-aggregation",
 });
 ```
 
-## Project structure
+## Benchmarks
 
-```
-src/
-  rlm.ts              The core REPL loop and delegation logic
-  system-prompt.ts    System prompts and child templates
-  plugins.ts          Plugin loader (loadStack, loadPlugins, loadProfile, detectProfile)
-  environment.ts      vm-based sandbox
-  cli.ts              CLI entry point
-  drivers/
-    openrouter-compatible.ts   CallLLM adapter for OpenAI-compatible APIs
+### OOLONG (long-context aggregation, 50 tasks)
 
-programs/             Domain-specific compositions (multi-file programs)
-lib/
-  drivers/            Model-specific reliability patches
-  profiles/           Model-to-driver mappings
-  composites/         Multi-agent structural patterns (standard library)
-  roles/              Single-agent reusable behaviors (standard library)
-  controls/           Delegation flow patterns (standard library)
+| Run | Model | Score | Notes |
+|-----|-------|-------|-------|
+| 1 | Gemini 3 Flash | 5.1% | Baseline, no plugins |
+| 2 | Gemini 3 Flash | 20.0% | First plugin suite |
+| 3 | Gemini 3 Flash | 50.7% | maxDepth=1, prompt rewrite |
+| 4 | Gemini 3 Flash | 58.0% | Scorer fixes, penultimate warning |
+| 6 | Gemini 3 Flash | 58.4% | Per-delegation systemPrompt arch |
 
-eval/                 Benchmark harness (OOLONG, S-NIAH, ARC, ARC-AGI-3) -- see eval/README.md
-test/                 Vitest tests
-```
+Key findings: `maxDepth=1` outperforms deeper delegation on aggregation tasks (deeper recursion loses context and wastes tokens). Plugin suites provide large initial gains with diminishing returns beyond ~6 drivers.
 
-## Testing
-
-Unit tests (no API key needed):
+### Running evals
 
 ```bash
-npm test
+# S-NIAH (synthetic, no download needed)
+npx tsx eval/run.ts --benchmark s-niah --model anthropic/claude-sonnet-4-20250514 --max-tasks 5
+
+# OOLONG (requires one-time dataset download)
+npx tsx eval/download.ts
+npx tsx eval/run.ts --benchmark oolong --model anthropic/claude-sonnet-4-20250514 --max-tasks 5
+
+# ARC-AGI-2
+npx tsx eval/download.ts --dataset arc
+npx tsx eval/run.ts --benchmark arc --model anthropic/claude-opus-4-6 \
+  --max-iterations 25 --max-depth 2 --concurrency 10
+
+# ARC-AGI-3 (API-based, set ARC3_API_KEY)
+npx tsx eval/run.ts --benchmark arc3 --model anthropic/claude-opus-4-6 \
+  --game ls20 --max-iterations 25 --max-depth 2 --app arc3-player
 ```
 
-End-to-end tests run automatically when `OPENROUTER_API_KEY` is set, and are skipped otherwise.
+See [eval/README.md](eval/README.md) for the full set of options, plugin configuration, and result analysis.
+
+## See Also
+
+- [arcgentica](arcgentica/) — Python reference implementation; 85.28% on ARC-AGI-2 with Claude Opus 4.6
+- [arc3-docs](arc3-docs/) — ARC-AGI-3 platform documentation and API reference
+- [LANGUAGE.md](LANGUAGE.md) — The RLM programming language: declarative contracts, state schemas, and delegation patterns
+- [TENETS.md](TENETS.md) — Design principles
+- [planning/guidance/rlms.md](../planning/guidance/rlms.md) — Architectural decisions and relationship to OpenProse language
 
 ## License
 

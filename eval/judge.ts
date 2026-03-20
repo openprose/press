@@ -165,6 +165,7 @@ export interface InvocationDigest {
 	component: string | null;
 	depth: number;
 	role: string | null;
+	system_prompt?: string;
 	iterations: IterationDigest[];
 	prohibited_violations: string[];
 	shape_warnings: string[];
@@ -859,6 +860,7 @@ function buildInvocationDigests(
 		const component = invocationComponents.get(invId) ?? null;
 		const parentId = invStart?.parentId ?? null;
 		const depth = invStart?.depth ?? invEvents[0]?.depth ?? 0;
+		const systemPrompt = invStart?.systemPrompt ?? undefined;
 
 		// Determine role from nodeShapes
 		let role: string | null = null;
@@ -913,7 +915,7 @@ function buildInvocationDigests(
 
 			iterations.push({
 				number: iterEnd.iteration,
-				code_summary: truncate(iterEnd.code, 500),
+				code_summary: truncate(iterEnd.code, 2000),
 				delegations: iterDelegations,
 				output_excerpt: truncate(iterEnd.output, 300),
 				error: iterEnd.error,
@@ -937,6 +939,7 @@ function buildInvocationDigests(
 			component,
 			depth,
 			role,
+			system_prompt: systemPrompt,
 			iterations,
 			prohibited_violations: [...new Set(prohibited_violations)],
 			shape_warnings,

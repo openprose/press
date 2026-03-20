@@ -94,6 +94,7 @@ export interface DelegationSpawnEvent extends BaseEvent {
 	type: "delegation:spawn";
 	childId: string;
 	query: string;
+	context?: string;           // the context/data passed to the child
 	modelAlias?: string;
 	maxIterations?: number;
 	componentName?: string;

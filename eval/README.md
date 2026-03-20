@@ -1,3 +1,22 @@
+---
+purpose: Benchmarking suite for RLM across OOLONG, ARC-AGI-2, ARC-AGI-3, and S-NIAH — harness, scoring, analysis, drivers, datasets, and results; 18 numbered analysis directories document the full experimental history
+related:
+  - ../README.md
+  - ./analyses/README.md
+  - ./datasets/README.md
+  - ./drivers/README.md
+  - ./results/README.md
+  - ../programs/README.md
+  - ../arc3-docs/README.md
+  - ../../platform/test-harness/README.md
+glossary:
+  OOLONG: Long-context aggregation benchmark (trec_coarse, 50 tasks) — tests multi-document reasoning
+  S-NIAH: Single Needle in a Haystack — synthetic long-context retrieval benchmark
+  ARC-AGI-2: Abstract Reasoning Corpus generation 2 — 120-task abstract visual reasoning benchmark
+  ARC-AGI-3: Interactive games-based reasoning benchmark accessed via REST API
+  pass@N: Evaluation protocol running each task N times and keeping the best score
+---
+
 # RLM Eval
 
 Benchmarks for measuring RLM performance across models.
@@ -172,4 +191,4 @@ The analyzer reports:
 | `drivers/openrouter.ts` | OpenRouter `CallLLM` driver |
 | `data/` | Downloaded datasets (gitignored) |
 | `results/` | Benchmark result JSON files (gitignored) |
-| `analyses/` | Per-run analysis documents with hyperparameters, scores, and qualitative notes (gitignored) |
+| `analyses/` | Per-run analysis documents with hyperparameters, scores, and qualitative notes — 18 numbered directories covering OOLONG, ARC-AGI-2, and ARC-AGI-3 (gitignored) |

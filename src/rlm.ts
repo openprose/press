@@ -606,6 +606,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 			depth: savedDepth,
 			childId: childInvocationId,
 			query: q,
+			context: c != null ? (typeof c === 'string' ? c.slice(0, 5000) : JSON.stringify(c).slice(0, 5000)) : undefined,
 			modelAlias: rlmOpts?.model,
 			maxIterations: rlmOpts?.maxIterations,
 			componentName,

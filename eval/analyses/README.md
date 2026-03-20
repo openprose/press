@@ -1,8 +1,46 @@
-# OOLONG Eval Run Analyses
+---
+purpose: Per-run analysis documents for all benchmark evaluations — OOLONG score progression, ARC-AGI-2/3 run comparisons, hyperparameters, qualitative observations, and lessons learned across 18 numbered analysis directories
+related:
+  - ../README.md
+  - ../results/README.md
+  - ../../programs/README.md
+---
 
-Run-by-run analysis of the RLM eval harness against the OOLONG benchmark (trec_coarse, 50 tasks).
+# Eval Run Analyses
 
-## Score Progression
+Run-by-run analysis of the RLM eval harness across OOLONG, ARC-AGI-2, and ARC-AGI-3 benchmarks.
+
+## Directory Structure
+
+Analyses are organized in two groups:
+
+- **Root-level OOLONG run files** (`run-00.md` through `run-06.md`) — early OOLONG iteration history
+- **Numbered analysis directories** (`001` through `018`) — later benchmark runs spanning OOLONG, ARC-AGI-2, and ARC-AGI-3
+
+### Numbered Analysis Directories
+
+| Dir | Topic |
+|-----|-------|
+| 001 | Sonnet plugin comparison |
+| 002 | ARC-AGI-2 benchmark (6 runs, cross-run HTML comparison) |
+| 003 | Opus ARC Feb 13 |
+| 004 | Opus ARC drivers vs baseline |
+| 005 | Arcgentica comparison |
+| 006 | Algorithmic analysis driver |
+| 007 | ARC-AGI-3 setup runs (15 runs, delegation experiments v1–v8) |
+| 008 | ARC-AGI-3 learning loop |
+| 009 | ARC-AGI-3 multi-agent |
+| 010 | ARC-AGI-2 compound initial run |
+| 011 | ARC-AGI-3 v2.2.0 deep dive |
+| 012 | Program review |
+| 013 | ARC-AGI-3 program v0.3.0 |
+| 014 | ARC-AGI-2 compound v1.1 |
+| 015 | ARC-AGI-2 compound v1.2 |
+| 016 | ARC-AGI-3 program v0.6.0 |
+| 017 | ARC-AGI-2 compound v1.3.0 |
+| 018 | ARC-AGI-2 compound v1.3.0 tool-call-only variant |
+
+## OOLONG Score Progression (early runs)
 
 | Run | Date | Model | maxDepth | Plugins | Score | Perfect | Zero | Notes |
 |-----|------|-------|----------|---------|-------|---------|------|-------|
@@ -14,7 +52,7 @@ Run-by-run analysis of the RLM eval harness against the OOLONG benchmark (trec_c
 | 5 | 2026-02-11 | Gemini 3 Flash | 3 | 7 | 0.0%* | 0/4 | 3/4 | *Killed after 4 tasks. Catastrophic regression. |
 | 6 | 2026-02-11 | Gemini 3 Flash | 1 | 7 | 58.4% | 27/50 | 13/50 | Per-delegation systemPrompt arch. Neutral at depth 1. |
 
-## Run Files
+## Run Files (OOLONG)
 
 - [run-00.md](run-00.md) — Pre-baseline exploration (0--2%)
 - [run-01.md](run-01.md) — Baseline (5.1%)
