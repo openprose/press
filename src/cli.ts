@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fromProviderModel } from "./drivers/openrouter-compatible.js";
 import { DEFAULT_MODEL_ALIASES } from "./models.js";
-import { rlm } from "./rlm.js";
+import { press } from "./rlm.js";
 import type { ModelEntry } from "./rlm.js";
 
 function usage(): never {
@@ -175,7 +175,7 @@ async function main() {
 	console.log(`---`);
 	console.log();
 
-	const result = await rlm(args.query, context, {
+	const result = await press(args.query, context, {
 		callLLM,
 		maxIterations: args.maxIterations,
 		maxDepth: args.maxDepth,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type CallLLM, type CallLLMResponse, rlm } from "../src/rlm.js";
+import { type CallLLM, type CallLLMResponse, press } from "../src/rlm.js";
 
 function mockToolCallLLM(responses: CallLLMResponse[]): CallLLM {
 	let callIndex = 0;
@@ -15,17 +15,17 @@ function tc(code: string, toolUseId = "t"): CallLLMResponse {
 	return { reasoning: "", code, toolUseId };
 }
 
-describe("rlm", () => {
+describe("press", () => {
 	it("simple return", async () => {
 		const callLLM = mockToolCallLLM([tc('return "hello"', "t1"), tc('return "hello"', "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("hello");
 		expect(result.iterations).toBe(2);
 	});
 
 	it("multi-iteration", async () => {
 		const callLLM = mockToolCallLLM([tc('console.log("thinking...")', "t1"), tc('return "done"', "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("done");
 		expect(result.iterations).toBe(2);
 	});
@@ -35,14 +35,14 @@ describe("rlm", () => {
 			{ reasoning: "Let me think about this...", code: null, toolUseId: "t1" },
 			tc('return "answer"', "t2"),
 		]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("answer");
 		expect(result.iterations).toBe(2);
 	});
 
 	it("error recovery", async () => {
 		const callLLM = mockToolCallLLM([tc('throw new Error("oops")', "t1"), tc('return "recovered"', "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("recovered");
 		expect(result.iterations).toBe(2);
 	});
@@ -53,24 +53,24 @@ describe("rlm", () => {
 			tc('console.log("loop 2")', "t2"),
 			tc('console.log("loop 3")', "t3"),
 		]);
-		await expect(rlm("test query", undefined, { callLLM, maxIterations: 3 })).rejects.toThrow("max iterations");
+		await expect(press("test query", undefined, { callLLM, maxIterations: 3 })).rejects.toThrow("max iterations");
 	});
 
 	it("context accessible as variable", async () => {
 		const callLLM = mockToolCallLLM([tc("return context", "t1"), tc("return context", "t2")]);
-		const result = await rlm("test query", "my context data", { callLLM });
+		const result = await press("test query", "my context data", { callLLM });
 		expect(result.answer).toBe("my context data");
 	});
 
 	it("return stringifies non-strings", async () => {
 		const callLLM = mockToolCallLLM([tc("return 42", "t1"), tc("return 42", "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("42");
 	});
 
 	it("bare assignment persists across iterations", async () => {
 		const callLLM = mockToolCallLLM([tc("x = 42", "t1"), tc("return x", "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("42");
 		expect(result.iterations).toBe(2);
 	});
@@ -84,20 +84,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'result = await press("child query")\nreturn result', toolUseId: "tp" };
 		};
 
-		const result = await rlm("parent query", undefined, { callLLM });
-		expect(result.answer).toBe("child answer");
-	});
-
-	it("rlm(): deprecated alias still works", async () => {
-		const callLLM: CallLLM = async (messages, _systemPrompt) => {
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child query") {
-				return { reasoning: "", code: 'return "child answer"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'result = await rlm("child query")\nreturn result', toolUseId: "tp" };
-		};
-
-		const result = await rlm("parent query", undefined, { callLLM });
+		const result = await press("parent query", undefined, { callLLM });
 		expect(result.answer).toBe("child answer");
 	});
 
@@ -116,7 +103,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "unexpected"', toolUseId: "tx" };
 		};
 
-		const result = await rlm("parent query", undefined, { callLLM, maxDepth: 1 });
+		const result = await press("parent query", undefined, { callLLM, maxDepth: 1 });
 		expect(result.answer).toBe("child answer");
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("console.log");
@@ -137,7 +124,7 @@ describe("rlm", () => {
 		};
 
 		// maxDepth=1: root(0) can delegate, child(1) cannot
-		await expect(rlm("parent query", undefined, {
+		await expect(press("parent query", undefined, {
 			callLLM,
 			maxDepth: 1,
 			maxIterations: 2,
@@ -146,7 +133,7 @@ describe("rlm", () => {
 
 	it("let/const persists across iterations", async () => {
 		const callLLM = mockToolCallLLM([tc("let x = 42", "t1"), tc("return x", "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("42");
 		expect(result.iterations).toBe(2);
 	});
@@ -163,7 +150,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
 		};
 
-		await rlm("test query", undefined, { callLLM });
+		await press("test query", undefined, { callLLM });
 
 		expect(secondCallMessages).toBeDefined();
 		const lastMsg = secondCallMessages![secondCallMessages!.length - 1];
@@ -183,7 +170,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
 		};
 
-		await rlm("my query", undefined, {
+		await press("my query", undefined, {
 			callLLM,
 			maxDepth: 3,
 			maxIterations: 10,
@@ -206,7 +193,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
 		};
 
-		const result = await rlm("parent task", undefined, { callLLM, maxDepth: 3 });
+		const result = await press("parent task", undefined, { callLLM, maxDepth: 3 });
 
 		expect(result.answer).toBe("child done");
 	});
@@ -223,7 +210,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'console.log("iter=" + __rlm.iteration)\nreturn "done"', toolUseId: `t${callIndex}` };
 		};
 
-		await rlm("test", undefined, { callLLM });
+		await press("test", undefined, { callLLM });
 		const allOutput = lastMessages!
 			.filter(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"))
 			.map(m => m.content)
@@ -243,7 +230,7 @@ describe("rlm", () => {
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
 		};
-		await rlm("test", undefined, { callLLM });
+		await press("test", undefined, { callLLM });
 		const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
 		// In sloppy mode, assignment silently fails; depth stays 0
 		expect(toolResult!.content).toContain("depth=0");
@@ -260,7 +247,7 @@ describe("rlm", () => {
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
 		};
-		await rlm("test", undefined, { callLLM });
+		await press("test", undefined, { callLLM });
 		const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
 		expect(toolResult!.content).toContain("lineage frozen:");
 	});
@@ -278,7 +265,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: "return context", toolUseId: "tp2" };
 		};
 
-		const result = await rlm("parent query", "parent context", { callLLM, maxDepth: 3 });
+		const result = await press("parent query", "parent context", { callLLM, maxDepth: 3 });
 		expect(result.answer).toBe("parent context");
 	});
 
@@ -298,7 +285,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "no warning"', toolUseId: "tp3" };
 		};
 
-		const result = await rlm("test", undefined, { callLLM, maxDepth: 3 });
+		const result = await press("test", undefined, { callLLM, maxDepth: 3 });
 		expect(result.answer).toBe("no warning");
 	});
 
@@ -314,7 +301,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const [a, b] = await Promise.all([press("task A"), press("task B")])\nreturn a + " + " + b', toolUseId: "tp" };
 		};
 
-		const result = await rlm("parent", undefined, { callLLM, maxDepth: 3 });
+		const result = await press("parent", undefined, { callLLM, maxDepth: 3 });
 		expect(result.answer).toBe("result A + result B");
 	});
 
@@ -325,7 +312,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM,
 			pluginBodies: "## My Plugin\nDo special things.",
 		});
@@ -341,7 +328,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, { callLLM });
+		await press("test", undefined, { callLLM });
 
 		expect(capturedSystemPrompt).not.toContain("<rlm-program>");
 	});
@@ -357,7 +344,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			pluginBodies: "## My Plugin\nDo special things.",
@@ -383,7 +370,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "unexpected"', toolUseId: "tx" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 1,
 			pluginBodies: "## My Plugin\nDo special things.",
@@ -410,7 +397,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "FAST_MODEL response"', toolUseId: "tf" };
 		};
 
-		const result = await rlm("parent query", undefined, {
+		const result = await press("parent query", undefined, {
 			callLLM: defaultCallLLM,
 			maxDepth: 3,
 			models: {
@@ -434,7 +421,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "saw error"', toolUseId: "t2" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM: defaultCallLLM,
 			maxDepth: 3,
 			models: {
@@ -452,7 +439,7 @@ describe("rlm", () => {
 			tc('return myApi.greet("world")', "t1"),
 			tc('return myApi.greet("world")', "t2"),
 		]);
-		const result = await rlm("test query", undefined, {
+		const result = await press("test query", undefined, {
 			callLLM,
 			sandboxGlobals: { myApi: mockObj },
 		});
@@ -466,7 +453,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM,
 			globalDocs: "The `myApi` global provides X and Y.",
 		});
@@ -486,7 +473,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			globalDocs: "The `myApi` global provides X and Y.",
@@ -507,7 +494,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const r = await press("child task", undefined, { systemPrompt: "You are a helper." })\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			globalDocs: "The `myApi` global provides X and Y.",
@@ -532,7 +519,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "unexpected"', toolUseId: "tx" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 1,
 			globalDocs: "The `myApi` global provides X and Y.",
@@ -557,7 +544,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const r = await press("greet world")\nreturn r', toolUseId: "tp" };
 		};
 
-		const result = await rlm("parent task", undefined, {
+		const result = await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			sandboxGlobals: { myApi: mockApi },
@@ -574,7 +561,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, { callLLM });
+		await press("test", undefined, { callLLM });
 
 		expect(capturedSystemPrompt).not.toContain("## Sandbox Globals");
 	});
@@ -590,7 +577,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "test-component" })\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			childComponents: { "test-component": "You are a test component.\n\nDo test things." },
@@ -613,7 +600,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const r = await press("child task", undefined, { app: "test-app" })\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			childComponents: { "test-app": "You are a test app.\n\nDo test things." },
@@ -637,7 +624,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "saw error"', toolUseId: "t2" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM,
 			maxDepth: 3,
 			childComponents: { "test-component": "body1", "other-component": "body2" },
@@ -661,7 +648,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "saw error"', toolUseId: "t2" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM,
 			maxDepth: 3,
 			childComponents: { "test-app": "body1", "other-app": "body2" },
@@ -684,7 +671,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "test-component", systemPrompt: "Extra instructions." })\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			childComponents: { "test-component": "You are a test component.\n\nDo test things." },
@@ -707,7 +694,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "correct-component", app: "wrong-component" })\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			childComponents: { "correct-component": "Correct body.", "wrong-component": "Wrong body." },
@@ -729,7 +716,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "legacy-app" })\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			childApps: { "legacy-app": "Legacy body." },
@@ -746,7 +733,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM,
 			childComponents: { "level-solver": "body1", "oha": "body2" },
 		});
@@ -761,7 +748,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, { callLLM });
+		await press("test", undefined, { callLLM });
 
 		expect(capturedSystemPrompt).not.toContain("Available components:");
 	});
@@ -773,7 +760,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM,
 			childComponents: { "test-component": "You are a test component.\n\nDo test things." },
 		});
@@ -793,7 +780,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			pluginBodies: "## My Plugin\nRoot-only strategy.",
@@ -820,7 +807,7 @@ describe("rlm", () => {
 				return { reasoning: "Now returning.", code: 'return "done"', toolUseId: "t2" };
 			};
 
-			await rlm("test query", undefined, { callLLM });
+			await press("test query", undefined, { callLLM });
 
 			expect(secondCallMessages).toBeDefined();
 			const lastMsg = secondCallMessages![secondCallMessages!.length - 1];
@@ -839,7 +826,7 @@ describe("rlm", () => {
 				return { reasoning: "Done.", code: 'return "done"', toolUseId: "tool-456" };
 			};
 
-			await rlm("test query", undefined, { callLLM });
+			await press("test query", undefined, { callLLM });
 
 			expect(secondCallMessages).toBeDefined();
 			const assistantMsg = secondCallMessages!.find(m => m.role === "assistant" && m.content.startsWith("__TOOL_CALL__"));
@@ -861,7 +848,7 @@ describe("rlm", () => {
 				{ reasoning: "Step 2.", code: 'console.log("loop 2")', toolUseId: "t2" },
 				{ reasoning: "Step 3.", code: 'console.log("loop 3")', toolUseId: "t3" },
 			]);
-			await expect(rlm("test query", undefined, { callLLM, maxIterations: 3 })).rejects.toThrow("max iterations");
+			await expect(press("test query", undefined, { callLLM, maxIterations: 3 })).rejects.toThrow("max iterations");
 		});
 	});
 
@@ -887,7 +874,7 @@ describe("rlm", () => {
 				return { reasoning: "Done.", code: 'return "done"', toolUseId: "t2" };
 			};
 
-			await rlm("test query", undefined, { callLLM });
+			await press("test query", undefined, { callLLM });
 
 			expect(secondCallMessages).toBeDefined();
 			// Find the assistant message with __TOOL_CALL__ marker
@@ -912,7 +899,7 @@ describe("rlm", () => {
 				return { reasoning: "Done.", code: 'return "done"', toolUseId: "t2" };
 			};
 
-			await rlm("test query", undefined, { callLLM });
+			await press("test query", undefined, { callLLM });
 
 			expect(secondCallMessages).toBeDefined();
 			const assistantMsg = secondCallMessages!.find(

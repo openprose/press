@@ -61,7 +61,7 @@ import type {
 	TokenUsage,
 } from "../src/events.js";
 import type { BenchmarkResult, EvalResult } from "./types.js";
-import { rlm } from "../src/rlm.js";
+import { press } from "../src/rlm.js";
 import { fromOpenRouter } from "./drivers/openrouter.js";
 
 // ---------------------------------------------------------------------------
@@ -1272,13 +1272,13 @@ async function runLLMJudge(
 	// 7. Build pluginBodies: the evaluator IS the root node
 	const pluginBodies = judgeProgram.rootAppBody;
 
-	// 8. Call rlm()
+	// 8. Call press()
 	console.error("\nRunning LLM judge...");
 	const startTime = Date.now();
 
 	let judgeAnswer: string;
 	try {
-		const result = await rlm(query, undefined, {
+		const result = await press(query, undefined, {
 			callLLM,
 			maxIterations: 15,
 			maxDepth: 1,

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { rlm, RlmError, RlmMaxIterationsError } from "../src/rlm.js";
+import { press, RlmError, RlmMaxIterationsError } from "../src/rlm.js";
 import type { CallLLM, ModelEntry } from "../src/rlm.js";
 import { RlmObserver } from "../src/observer.js";
 import type {
@@ -44,11 +44,11 @@ export interface HarnessConfig {
 	childApps?: Record<string, string>;
 	/** Reasoning effort level for OpenRouter reasoning tokens. */
 	reasoningEffort?: string;
-	/** Create per-task sandbox globals. Called before rlm() for each task. */
+	/** Create per-task sandbox globals. Called before press() for each task. */
 	setupSandbox?: (task: EvalTask) => Record<string, unknown>;
 	/** Cleanup after each task (success or error). */
 	cleanupTask?: (task: EvalTask) => Promise<void>;
-	/** Return benchmark-specific metadata to attach to the result (e.g. scorecard IDs). Called after rlm() completes, before cleanup. */
+	/** Return benchmark-specific metadata to attach to the result (e.g. scorecard IDs). Called after press() completes, before cleanup. */
 	getResultMetadata?: (task: EvalTask) => Record<string, unknown> | undefined;
 	/** Progress callback, called after each task completes. */
 	onProgress?: (completed: number, total: number, result: EvalResult) => void;
@@ -251,7 +251,7 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 	const observer = new RlmObserver();
 
 	try {
-		const result = await rlm(task.query, task.context, {
+		const result = await press(task.query, task.context, {
 			callLLM: wrappedCallLLM,
 			maxIterations,
 			maxDepth,

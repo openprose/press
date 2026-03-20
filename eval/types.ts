@@ -25,7 +25,7 @@ export interface EvalResult {
 	bestAttempt?: number;
 	/** Benchmark-specific metadata (e.g. scorecard IDs, replay URLs). */
 	metadata?: Record<string, unknown>;
-	/** Observer events collected during this task's rlm() run. */
+	/** Observer events collected during this task's press() run. */
 	events?: RlmEvent[];
 }
 

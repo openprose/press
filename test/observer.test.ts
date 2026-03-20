@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CallLLM, CallLLMResponse } from "../src/rlm.js";
-import { rlm, RlmMaxIterationsError } from "../src/rlm.js";
+import { press, RlmMaxIterationsError } from "../src/rlm.js";
 import type { RlmEvent, RlmEventSink } from "../src/events.js";
 import { RlmObserver } from "../src/observer.js";
 
@@ -31,7 +31,7 @@ describe("observer events", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		const result = await rlm("test query", undefined, {
+		const result = await press("test query", undefined, {
 			callLLM,
 			observer: sink,
 		});
@@ -73,7 +73,7 @@ describe("observer events", () => {
 			tc('return "done"', "t3"),
 		]);
 
-		await rlm("test", undefined, { callLLM, observer: sink });
+		await press("test", undefined, { callLLM, observer: sink });
 
 		const starts = events.filter((e) => e.type === "iteration:start");
 		const ends = events.filter((e) => e.type === "iteration:end");
@@ -93,7 +93,7 @@ describe("observer events", () => {
 		};
 
 		try {
-			await rlm("test", undefined, { callLLM, observer: sink });
+			await press("test", undefined, { callLLM, observer: sink });
 		} catch {
 			// expected
 		}
@@ -128,7 +128,7 @@ describe("observer events", () => {
 		]);
 
 		await expect(
-			rlm("test", undefined, { callLLM, maxIterations: 2, observer: sink }),
+			press("test", undefined, { callLLM, maxIterations: 2, observer: sink }),
 		).rejects.toThrow("max iterations");
 
 		const invEnd = events.find((e) => e.type === "invocation:end");
@@ -139,7 +139,7 @@ describe("observer events", () => {
 		expect(runEnd!.type === "run:end" && runEnd!.answer).toBeNull();
 	});
 
-	it("delegation events fire for child rlm() calls", async () => {
+	it("delegation events fire for child press() calls", async () => {
 		const { events, sink } = collector();
 		const callLLM: CallLLM = async (messages) => {
 			const userMsg = messages[0]?.content || "";
@@ -149,7 +149,7 @@ describe("observer events", () => {
 			return tc('result = await press("child query")\nreturn result', "tp");
 		};
 
-		const result = await rlm("parent query", undefined, {
+		const result = await press("parent query", undefined, {
 			callLLM,
 			observer: sink,
 		});
@@ -176,7 +176,7 @@ describe("observer events", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		await rlm("test", undefined, { callLLM, observer: sink });
+		await press("test", undefined, { callLLM, observer: sink });
 
 		const snapshots = events.filter((e) => e.type === "sandbox:snapshot");
 		const iterEnds = events.filter((e) => e.type === "iteration:end");
@@ -187,12 +187,12 @@ describe("observer events", () => {
 		expect(snap.type === "sandbox:snapshot" && snap.state).toBeDefined();
 	});
 
-	it("no observer: rlm works normally without events", async () => {
+	it("no observer: press works normally without events", async () => {
 		const callLLM = mockToolCallLLM([
 			tc('return "hello"', "t1"),
 			tc('return "hello"', "t2"),
 		]);
-		const result = await rlm("test", undefined, { callLLM });
+		const result = await press("test", undefined, { callLLM });
 		expect(result.answer).toBe("hello");
 	});
 
@@ -203,7 +203,7 @@ describe("observer events", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		await rlm("test", undefined, { callLLM, observer: sink });
+		await press("test", undefined, { callLLM, observer: sink });
 
 		const requests = events.filter((e) => e.type === "llm:request");
 		expect(requests.length).toBeGreaterThanOrEqual(2);
@@ -223,7 +223,7 @@ describe("observer events", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		await rlm("test", undefined, { callLLM, observer: sink });
+		await press("test", undefined, { callLLM, observer: sink });
 
 		const responses = events.filter((e) => e.type === "llm:response");
 		expect(responses[0].type === "llm:response" && responses[0].reasoning).toBe("Let me think");
@@ -238,7 +238,7 @@ describe("observer events", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		await rlm("test", undefined, { callLLM, observer: sink });
+		await press("test", undefined, { callLLM, observer: sink });
 
 		const iterEnds = events.filter((e) => e.type === "iteration:end");
 		// Last iteration:end should have returned=true
@@ -418,17 +418,17 @@ describe("RlmObserver", () => {
 	});
 });
 
-// --- Integration: RlmObserver with rlm() ---
+// --- Integration: RlmObserver with press() ---
 
 describe("RlmObserver integration", () => {
-	it("collects events from a real rlm() run", async () => {
+	it("collects events from a real press() run", async () => {
 		const obs = new RlmObserver();
 		const callLLM = mockToolCallLLM([
 			tc('console.log("step 1")', "t1"),
 			tc('return "done"', "t2"),
 		]);
 
-		const result = await rlm("test query", undefined, {
+		const result = await press("test query", undefined, {
 			callLLM,
 			observer: obs,
 		});
@@ -465,7 +465,7 @@ describe("RlmObserver integration", () => {
 			return tc('result = await press("child query")\nreturn result', "tp");
 		};
 
-		await rlm("parent query", undefined, {
+		await press("parent query", undefined, {
 			callLLM,
 			observer: obs,
 		});
@@ -478,7 +478,7 @@ describe("RlmObserver integration", () => {
 		expect(tree!.children.length).toBeGreaterThanOrEqual(1);
 	});
 
-	it("on() fires during real rlm() execution", async () => {
+	it("on() fires during real press() execution", async () => {
 		const obs = new RlmObserver();
 		const queries: string[] = [];
 		obs.on("run:start", (e) => queries.push(e.query));
@@ -488,7 +488,7 @@ describe("RlmObserver integration", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		await rlm("hello world", undefined, { callLLM, observer: obs });
+		await press("hello world", undefined, { callLLM, observer: obs });
 
 		expect(queries).toEqual(["hello world"]);
 	});

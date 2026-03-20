@@ -90,7 +90,7 @@ const SNAPSHOT_EXCLUDE_KEYS = new Set([
 	'TextEncoder', 'TextDecoder',
 ]);
 
-export async function rlm(query: string, context: string | undefined, options: RlmOptions): Promise<RlmResult> {
+export async function press(query: string, context: string | undefined, options: RlmOptions): Promise<RlmResult> {
 	const components = options.childComponents ?? options.childApps ?? {};
 
 	const opts = {
@@ -122,7 +122,6 @@ export async function rlm(query: string, context: string | undefined, options: R
 
 	const snapshotExcludeKeys = new Set(SNAPSHOT_EXCLUDE_KEYS);
 	snapshotExcludeKeys.add('press');
-	snapshotExcludeKeys.add('rlm');
 	snapshotExcludeKeys.add('__rlm');
 	snapshotExcludeKeys.add('__ctx');
 	snapshotExcludeKeys.add('context');
@@ -542,7 +541,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 		}
 	}
 
-	/** The sandbox delegate function, exposed as `press()` (primary) and `rlm()` (deprecated alias). */
+	/** The sandbox delegate function, exposed as `press()`. */
 	const pressFn = (q: string, c?: string, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; /** @deprecated Use `use` instead. */ app?: string; reasoning?: string }): Promise<string> => {
 		// Reject delegation at max depth
 		if (activeDepth >= opts.maxDepth) {
@@ -655,8 +654,6 @@ export async function rlm(query: string, context: string | undefined, options: R
 	};
 
 	env.set("press", pressFn);
-	/** @deprecated Use press() instead. */
-	env.set("rlm", pressFn);
 
 	emit?.({
 		type: "run:start",
@@ -693,8 +690,3 @@ export async function rlm(query: string, context: string | undefined, options: R
 	}
 }
 
-/**
- * Primary entry point. Identical to `rlm()`.
- * @see rlm
- */
-export const press = rlm;

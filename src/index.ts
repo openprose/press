@@ -23,4 +23,4 @@ export { DEFAULT_MODEL_ALIASES } from "./models.js";
 export type { EventFilter, TreeNode } from "./observer.js";
 export { RlmObserver } from "./observer.js";
 export type { CallLLM, CallLLMOptions, CallLLMResponse, DelegationContext, ModelEntry, RlmOptions, RlmResult } from "./rlm.js";
-export { press, rlm, RlmError, RlmMaxIterationsError } from "./rlm.js";
+export { press, RlmError, RlmMaxIterationsError } from "./rlm.js";

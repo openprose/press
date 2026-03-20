@@ -71,7 +71,7 @@ Trust yourself. The engine is minimal by design; you handle ambiguity, error rec
   - \`use\` loads a named component for the child. \`model\` selects an alias (see Available Models). \`maxIterations\` caps the child's budget.
   - **Must be awaited.** Unawaited calls are silently lost.
   - Delegation depth is finite -- check \`__rlm.depth < __rlm.maxDepth\`.
-  - \`rlm()\` is a deprecated alias for \`press()\` and still works.`;
+`;
   }
 
   envBody += `
@@ -79,7 +79,7 @@ Trust yourself. The engine is minimal by design; you handle ambiguity, error rec
 - \`__ctx.shared.data\` -- the root context, readable at any depth (frozen).
 - Variables persist across iterations. Code from earlier iterations is still in scope.
 
-The sandbox is persistent and shared. All agents in the delegation tree execute in the same JavaScript VM. Variables set before \`rlm()\` are readable by the child. Variables set by the child are readable after it returns. Convention: prefix shared state with \`__\` (double underscore).`;
+The sandbox is persistent and shared. All agents in the delegation tree execute in the same JavaScript VM. Variables set before \`press()\` are readable by the child. Variables set by the child are readable after it returns. Convention: prefix shared state with \`__\` (double underscore).`;
 
   if (globalDocs) {
     envBody += `\n\n## Sandbox Globals\n\n${globalDocs}`;

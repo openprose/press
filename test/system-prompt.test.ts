@@ -47,7 +47,7 @@ describe("buildSystemPrompt", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: true });
 		expect(result).toContain("await press(query, context?, options?)");
 		expect(result).toContain("Must be awaited");
-		expect(result).toContain("rlm()` is a deprecated alias");
+		expect(result).not.toContain("rlm()");  // no deprecated alias
 	});
 
 	it("no press() docs when !canDelegate", () => {
