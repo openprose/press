@@ -43,15 +43,16 @@ describe("buildSystemPrompt", () => {
 		expect(programSection).toContain("prohibited");
 	});
 
-	it("rlm() docs when canDelegate", () => {
+	it("press() docs when canDelegate", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: true });
-		expect(result).toContain("await rlm(query, context?, options?)");
+		expect(result).toContain("await press(query, context?, options?)");
 		expect(result).toContain("Must be awaited");
+		expect(result).toContain("rlm()` is a deprecated alias");
 	});
 
-	it("no rlm() docs when !canDelegate", () => {
+	it("no press() docs when !canDelegate", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: false });
-		expect(result).not.toContain("await rlm(query, context?, options?)");
+		expect(result).not.toContain("await press(query, context?, options?)");
 	});
 
 	it("globalDocs when provided", () => {

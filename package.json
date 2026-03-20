@@ -1,7 +1,7 @@
 {
-	"name": "node-rlm",
+	"name": "@openprose/press",
 	"version": "0.1.0",
-	"description": "Recursive Language Model agent with persistent JavaScript REPL",
+	"description": "Press — Recursive Language Model agent with persistent JavaScript REPL",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -20,6 +20,7 @@
 		}
 	},
 	"bin": {
+		"press": "dist/cli.js",
 		"node-rlm": "dist/cli.js"
 	},
 	"files": [

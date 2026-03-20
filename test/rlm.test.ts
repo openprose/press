@@ -75,7 +75,20 @@ describe("rlm", () => {
 		expect(result.iterations).toBe(2);
 	});
 
-	it("rlm(): child returns to parent", async () => {
+	it("press(): child returns to parent", async () => {
+		const callLLM: CallLLM = async (messages, _systemPrompt) => {
+			const userMsg = messages[0]?.content || "";
+			if (userMsg === "child query") {
+				return { reasoning: "", code: 'return "child answer"', toolUseId: "tc" };
+			}
+			return { reasoning: "", code: 'result = await press("child query")\nreturn result', toolUseId: "tp" };
+		};
+
+		const result = await rlm("parent query", undefined, { callLLM });
+		expect(result.answer).toBe("child answer");
+	});
+
+	it("rlm(): deprecated alias still works", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "child query") {
@@ -95,7 +108,7 @@ describe("rlm", () => {
 			const userMsg = messages[0]?.content || "";
 
 			if (userMsg === "parent query") {
-				return { reasoning: "", code: 'const r = await rlm("sub query")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("sub query")\nreturn r', toolUseId: "tp" };
 			}
 			if (userMsg === "sub query") {
 				return { reasoning: "", code: 'return "child answer"', toolUseId: "tc" };
@@ -111,14 +124,14 @@ describe("rlm", () => {
 		expect(childPrompt).toContain("maximum delegation depth");
 	});
 
-	it("rlm() at max depth rejects", async () => {
+	it("press() at max depth rejects", async () => {
 		const callLLM: CallLLM = async (messages) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "parent query") {
-				return { reasoning: "", code: 'const r = await rlm("sub query")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("sub query")\nreturn r', toolUseId: "tp" };
 			}
 			if (userMsg === "sub query") {
-				return { reasoning: "", code: 'const r = await rlm("grandchild")\nreturn r', toolUseId: "tc" };
+				return { reasoning: "", code: 'const r = await press("grandchild")\nreturn r', toolUseId: "tc" };
 			}
 			return { reasoning: "", code: 'return "unexpected"', toolUseId: "tx" };
 		};
@@ -190,7 +203,7 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'console.log(JSON.stringify(__rlm))\nreturn "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task")\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
 		};
 
 		const result = await rlm("parent task", undefined, { callLLM, maxDepth: 3 });
@@ -260,7 +273,7 @@ describe("rlm", () => {
 			}
 			// Parent: first call spawns child with different context, second verifies parent context
 			if (messages.length <= 1) {
-				return { reasoning: "", code: 'const childResult = await rlm("child query", "child context")\nconsole.log("parent still sees: " + context)', toolUseId: "tp1" };
+				return { reasoning: "", code: 'const childResult = await press("child query", "child context")\nconsole.log("parent still sees: " + context)', toolUseId: "tp1" };
 			}
 			return { reasoning: "", code: "return context", toolUseId: "tp2" };
 		};
@@ -269,14 +282,14 @@ describe("rlm", () => {
 		expect(result.answer).toBe("parent context");
 	});
 
-	it("unawaited rlm() auto-awaited", async () => {
+	it("unawaited press() auto-awaited", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "fire and forget") {
 				return { reasoning: "", code: 'return "child"', toolUseId: "tc" };
 			}
 			if (messages.length <= 1) {
-				return { reasoning: "", code: 'rlm("fire and forget")\nconsole.log("continued")', toolUseId: "tp1" };
+				return { reasoning: "", code: 'press("fire and forget")\nconsole.log("continued")', toolUseId: "tp1" };
 			}
 			const lastMsg = messages[messages.length - 1]?.content || "";
 			if (lastMsg.includes("ERROR")) {
@@ -289,7 +302,7 @@ describe("rlm", () => {
 		expect(result.answer).toBe("no warning");
 	});
 
-	it("parallel rlm() via Promise.all", async () => {
+	it("parallel press() via Promise.all", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "task A") {
@@ -298,7 +311,7 @@ describe("rlm", () => {
 			if (userMsg === "task B") {
 				return { reasoning: "", code: 'return "result B"', toolUseId: "tb" };
 			}
-			return { reasoning: "", code: 'const [a, b] = await Promise.all([rlm("task A"), rlm("task B")])\nreturn a + " + " + b', toolUseId: "tp" };
+			return { reasoning: "", code: 'const [a, b] = await Promise.all([press("task A"), press("task B")])\nreturn a + " + " + b', toolUseId: "tp" };
 		};
 
 		const result = await rlm("parent", undefined, { callLLM, maxDepth: 3 });
@@ -341,7 +354,7 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task")\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
 		};
 
 		await rlm("parent task", undefined, {
@@ -362,7 +375,7 @@ describe("rlm", () => {
 			systemPrompts.push(systemPrompt);
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "parent task") {
-				return { reasoning: "", code: 'const r = await rlm("sub query")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("sub query")\nreturn r', toolUseId: "tp" };
 			}
 			if (userMsg === "sub query") {
 				return { reasoning: "", code: 'return "child answer"', toolUseId: "tc" };
@@ -389,7 +402,7 @@ describe("rlm", () => {
 			if (userMsg === "hello") {
 				return { reasoning: "", code: 'return "FAST_MODEL response"', toolUseId: "td" };
 			}
-			return { reasoning: "", code: 'result = await rlm("hello", undefined, { model: "fast" })\nreturn result', toolUseId: "tp" };
+			return { reasoning: "", code: 'result = await press("hello", undefined, { model: "fast" })\nreturn result', toolUseId: "tp" };
 		};
 
 		const fastCallLLM: CallLLM = async (_messages, _systemPrompt) => {
@@ -415,7 +428,7 @@ describe("rlm", () => {
 		const defaultCallLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { reasoning: "", code: 'result = await rlm("hello", undefined, { model: "nonexistent" })\nreturn result', toolUseId: "t1" };
+				return { reasoning: "", code: 'result = await press("hello", undefined, { model: "nonexistent" })\nreturn result', toolUseId: "t1" };
 			}
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "saw error"', toolUseId: "t2" };
@@ -470,7 +483,7 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task")\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
 		};
 
 		await rlm("parent task", undefined, {
@@ -491,7 +504,7 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { systemPrompt: "You are a helper." })\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task", undefined, { systemPrompt: "You are a helper." })\nreturn r', toolUseId: "tp" };
 		};
 
 		await rlm("parent task", undefined, {
@@ -511,7 +524,7 @@ describe("rlm", () => {
 			systemPrompts.push(systemPrompt);
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "parent task") {
-				return { reasoning: "", code: 'const r = await rlm("sub query")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("sub query")\nreturn r', toolUseId: "tp" };
 			}
 			if (userMsg === "sub query") {
 				return { reasoning: "", code: 'return "child answer"', toolUseId: "tc" };
@@ -541,7 +554,7 @@ describe("rlm", () => {
 				}
 				return { reasoning: "", code: 'return myApi.greet("world")', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("greet world")\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("greet world")\nreturn r', toolUseId: "tp" };
 		};
 
 		const result = await rlm("parent task", undefined, {
@@ -574,7 +587,7 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "test-component" })\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "test-component" })\nreturn r', toolUseId: "tp" };
 		};
 
 		await rlm("parent task", undefined, {
@@ -597,7 +610,7 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { app: "test-app" })\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task", undefined, { app: "test-app" })\nreturn r', toolUseId: "tp" };
 		};
 
 		await rlm("parent task", undefined, {
@@ -618,7 +631,7 @@ describe("rlm", () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "nonexistent" })\nreturn r', toolUseId: "t1" };
+				return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "nonexistent" })\nreturn r', toolUseId: "t1" };
 			}
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "saw error"', toolUseId: "t2" };
@@ -642,7 +655,7 @@ describe("rlm", () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { reasoning: "", code: 'const r = await rlm("child task", undefined, { app: "nonexistent" })\nreturn r', toolUseId: "t1" };
+				return { reasoning: "", code: 'const r = await press("child task", undefined, { app: "nonexistent" })\nreturn r', toolUseId: "t1" };
 			}
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "saw error"', toolUseId: "t2" };
@@ -668,7 +681,7 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "test-component", systemPrompt: "Extra instructions." })\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "test-component", systemPrompt: "Extra instructions." })\nreturn r', toolUseId: "tp" };
 		};
 
 		await rlm("parent task", undefined, {
@@ -691,7 +704,7 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "correct-component", app: "wrong-component" })\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "correct-component", app: "wrong-component" })\nreturn r', toolUseId: "tp" };
 		};
 
 		await rlm("parent task", undefined, {
@@ -713,7 +726,7 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "legacy-app" })\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "legacy-app" })\nreturn r', toolUseId: "tp" };
 		};
 
 		await rlm("parent task", undefined, {
@@ -777,7 +790,7 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task")\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
 		};
 
 		await rlm("parent task", undefined, {

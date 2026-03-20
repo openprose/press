@@ -146,7 +146,7 @@ describe("observer events", () => {
 			if (userMsg === "child query") {
 				return tc('return "child answer"', "tc");
 			}
-			return tc('result = await rlm("child query")\nreturn result', "tp");
+			return tc('result = await press("child query")\nreturn result', "tp");
 		};
 
 		const result = await rlm("parent query", undefined, {
@@ -462,7 +462,7 @@ describe("RlmObserver integration", () => {
 			if (userMsg === "child query") {
 				return tc('return "child answer"', "tc");
 			}
-			return tc('result = await rlm("child query")\nreturn result', "tp");
+			return tc('result = await press("child query")\nreturn result', "tp");
 		};
 
 		await rlm("parent query", undefined, {

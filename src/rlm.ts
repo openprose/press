@@ -32,7 +32,7 @@ export interface RlmOptions {
 	sandboxGlobals?: Record<string, unknown>;
 	/** Visible at all depths (root, children, flat). Document sandboxGlobals here. */
 	globalDocs?: string;
-	/** Keyed by name; looked up when a parent calls `rlm(query, ctx, { use: "name" })`. */
+	/** Keyed by name; looked up when a parent calls `press(query, ctx, { use: "name" })`. */
 	childComponents?: Record<string, string>;
 	/** @deprecated Use childComponents instead. */
 	childApps?: Record<string, string>;
@@ -63,7 +63,7 @@ export class RlmMaxIterationsError extends RlmError {
 	}
 }
 
-/** Read-only metadata injected into the sandbox as `__rlm`. */
+/** Read-only metadata injected into the sandbox as `__rlm`. (Name kept for internal compatibility.) */
 export interface DelegationContext {
 	depth: number;
 	maxDepth: number;
@@ -121,6 +121,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 	}
 
 	const snapshotExcludeKeys = new Set(SNAPSHOT_EXCLUDE_KEYS);
+	snapshotExcludeKeys.add('press');
 	snapshotExcludeKeys.add('rlm');
 	snapshotExcludeKeys.add('__rlm');
 	snapshotExcludeKeys.add('__ctx');
@@ -431,9 +432,9 @@ export async function rlm(query: string, context: string | undefined, options: R
 							count,
 						});
 						const warning =
-							`[ERROR] ${count} rlm() call(s) were NOT awaited. Their results are LOST and the API calls were wasted. ` +
-							`You MUST write: const result = await rlm("query", context). ` +
-							`Never call rlm() without await.`;
+							`[ERROR] ${count} press() call(s) were NOT awaited. Their results are LOST and the API calls were wasted. ` +
+							`You MUST write: const result = await press("query", context). ` +
+							`Never call press() without await.`;
 						combinedOutput += (combinedOutput ? "\n" : "") + warning;
 						pendingRlmCalls.clear();
 					}
@@ -541,7 +542,8 @@ export async function rlm(query: string, context: string | undefined, options: R
 		}
 	}
 
-	env.set("rlm", (q: string, c?: string, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; /** @deprecated Use `use` instead. */ app?: string; reasoning?: string }): Promise<string> => {
+	/** The sandbox delegate function, exposed as `press()` (primary) and `rlm()` (deprecated alias). */
+	const pressFn = (q: string, c?: string, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; /** @deprecated Use `use` instead. */ app?: string; reasoning?: string }): Promise<string> => {
 		// Reject delegation at max depth
 		if (activeDepth >= opts.maxDepth) {
 			return Promise.reject(
@@ -650,7 +652,11 @@ export async function rlm(query: string, context: string | undefined, options: R
 		promise.finally(() => pendingRlmCalls.delete(promise));
 
 		return promise;
-	});
+	};
+
+	env.set("press", pressFn);
+	/** @deprecated Use press() instead. */
+	env.set("rlm", pressFn);
 
 	emit?.({
 		type: "run:start",
@@ -686,3 +692,9 @@ export async function rlm(query: string, context: string | undefined, options: R
 		});
 	}
 }
+
+/**
+ * Primary entry point. Identical to `rlm()`.
+ * @see rlm
+ */
+export const press = rlm;

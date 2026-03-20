@@ -67,10 +67,11 @@ Trust yourself. The engine is minimal by design; you handle ambiguity, error rec
 
   if (canDelegate) {
     envBody += `
-- \`await rlm(query, context?, options?)\` -- delegate to a child RLM. Options: \`{ systemPrompt?, model?, maxIterations?, use? }\`.
+- \`await press(query, context?, options?)\` -- delegate to a child RLM. Options: \`{ systemPrompt?, model?, maxIterations?, use? }\`.
   - \`use\` loads a named component for the child. \`model\` selects an alias (see Available Models). \`maxIterations\` caps the child's budget.
   - **Must be awaited.** Unawaited calls are silently lost.
-  - Delegation depth is finite -- check \`__rlm.depth < __rlm.maxDepth\`.`;
+  - Delegation depth is finite -- check \`__rlm.depth < __rlm.maxDepth\`.
+  - \`rlm()\` is a deprecated alias for \`press()\` and still works.`;
   }
 
   envBody += `
@@ -123,7 +124,7 @@ ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDes
   // 4. Rules
   let rulesBody = `- One execute_code tool call per response. Stop and wait for output.
 - \`return(value)\` only after verifying via \`console.log()\`.
-- Always \`await\` rlm() calls -- unawaited calls are silently lost.
+- Always \`await\` press() calls -- unawaited calls are silently lost.
 - Each iteration must produce observable progress. Write code, observe, adapt.
 - Errors are surfaced, not swallowed. Read them and adapt.
 - Never return a value you have not first logged and confirmed in output.`;
@@ -171,11 +172,11 @@ export function buildModelTable(
 
   return (
     `\n\n## Available Models\n\n` +
-    `When delegating with \`rlm()\`, you can select a model by alias:\n\n` +
+    `When delegating with \`press()\`, you can select a model by alias:\n\n` +
     `| Alias | Tags | Description |\n` +
     `|-------|------|-------------|\n` +
     rows.join("\n") +
-    `\n\nUsage: \`await rlm("query", context, { model: "fast" })\`\n` +
+    `\n\nUsage: \`await press("query", context, { model: "fast" })\`\n` +
     `Default (no model specified): uses the same model as the current agent.`
   );
 }
