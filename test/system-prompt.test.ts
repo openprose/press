@@ -116,7 +116,7 @@ describe("buildSystemPrompt", () => {
 		const result = buildSystemPrompt(BASE_OPTS);
 		expect(result).toContain("One execute_code tool call per response");
 		expect(result).toContain("await");
-		expect(result).toContain("verifying via");
+		expect(result).toContain("Verify your answer before returning");
 	});
 
 	it("delegation possible when canDelegate", () => {

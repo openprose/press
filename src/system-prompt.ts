@@ -1,3 +1,5 @@
+import { isResolvablePath, resolveValue } from "./press-resolver.js";
+
 export const EXECUTE_CODE_TOOL = {
   type: "function" as const,
   function: {
@@ -71,9 +73,11 @@ Trust yourself. The engine is minimal by design; you handle ambiguity, error rec
 </rlm-preamble>`);
 
   // 2. Environment
-  let envBody = `- \`context\` -- task data from your caller. Each agent has its own.
+  let envBody = `- \`context\` -- task data from your caller (always an object). Each agent has its own.
+  - \`context.__root\` -- the root context data, readable at any depth.
+  - \`context.__stack\` -- read-only array of ancestor context frames (for debugging).
 - \`console.log()\` -- observe results between iterations.
-- \`return(value)\` -- terminate and return your answer. Only call after verifying via console.log.
+- \`return(value)\` -- terminate and return your answer. You may console.log(value) and return(value) in the same iteration.
 - \`require()\` -- Node.js built-in modules only.`;
 
   if (canDelegate) {
@@ -82,14 +86,12 @@ Trust yourself. The engine is minimal by design; you handle ambiguity, error rec
   - \`use\` loads a named component for the child. \`model\` selects an alias (see Available Models). \`maxIterations\` caps the child's budget.
   - **Must be awaited.** Unawaited calls are silently lost.
   - Delegation depth is finite -- check \`__rlm.depth < __rlm.maxDepth\`.
+  - IMPORTANT: Child press() calls execute in the same JavaScript sandbox. Variables declared by a child (like \`ctx\`, \`result\`) may shadow your own. After a child returns, re-read your variables from \`context\` rather than relying on locals set before the delegation.
 `;
   }
 
   envBody += `
 - \`__rlm\` (read-only) -- delegation metadata: \`{ depth, maxDepth, iteration, maxIterations, lineage, invocationId, parentId }\`
-- \`__ctx.shared.data\` -- the root context, readable at any depth (frozen).
-- \`__ctx.stack.frames\` -- read-only array of ancestor context frames (\`{ depth, data, label }\`). Index 0 = root.
-- \`__ctx.stack.depth\` -- current delegation depth.
 - Variables persist across iterations. Code from earlier iterations is still in scope.
 
 The sandbox is persistent and shared. All agents in the delegation tree execute in the same JavaScript VM. Variables set before \`press()\` are readable by the child. Variables set by the child are readable after it returns. Convention: prefix shared state with \`__\` (double underscore).`;
@@ -141,11 +143,10 @@ ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDes
 
   // 4. Rules
   let rulesBody = `- One execute_code tool call per response. Stop and wait for output.
-- \`return(value)\` only after verifying via \`console.log()\`.
+- Verify your answer before returning, but you don't need a separate iteration for verification. You may console.log(value) and return(value) in the same iteration.
 - Always \`await\` press() calls -- unawaited calls are silently lost.
 - Each iteration must produce observable progress. Write code, observe, adapt.
-- Errors are surfaced, not swallowed. Read them and adapt.
-- Never return a value you have not first logged and confirmed in output.`;
+- Errors are surfaced, not swallowed. Read them and adapt.`;
 
   if (canDelegate) {
     rulesBody += `
@@ -177,6 +178,34 @@ ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDes
 
 const MAX_FRAME_CHARS = 5000;
 
+/**
+ * Resolve a single context value for rendering in the system prompt.
+ * If the value is a string that looks like a file path (per isResolvablePath),
+ * read the file and return its content. Otherwise return as-is.
+ */
+function resolveContextValue(value: unknown): unknown {
+  if (typeof value === "string" && isResolvablePath(value)) {
+    try {
+      return resolveValue(value);
+    } catch {
+      return `[file not found: ${value}]`;
+    }
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => {
+      if (typeof v === "string" && isResolvablePath(v)) {
+        try {
+          return resolveValue(v);
+        } catch {
+          return `[file not found: ${v}]`;
+        }
+      }
+      return v;
+    });
+  }
+  return value;
+}
+
 function renderFrameData(data: Record<string, unknown> | string | undefined): string {
   if (data === undefined) return "(no data)";
   if (typeof data === "string") {
@@ -185,7 +214,32 @@ function renderFrameData(data: Record<string, unknown> | string | undefined): st
     }
     return data;
   }
-  const rendered = JSON.stringify(data, null, 2);
+  // Render each key-value pair, auto-resolving file paths
+  const lines: string[] = [];
+  for (const [key, rawValue] of Object.entries(data)) {
+    const value = resolveContextValue(rawValue);
+    if (typeof value === "string") {
+      // If the resolved value is multi-line (e.g. file contents), render it block-style
+      if (value.includes("\n") || value.length > 200) {
+        lines.push(`${key}:\n${value}`);
+      } else {
+        lines.push(`${key}: ${value}`);
+      }
+    } else if (Array.isArray(value)) {
+      const resolvedItems = value.map((v: unknown) =>
+        typeof v === "string" ? v : JSON.stringify(v),
+      );
+      // If any item is multi-line, render block-style
+      if (resolvedItems.some((item: string) => item.includes("\n"))) {
+        lines.push(`${key}:\n${resolvedItems.join("\n---\n")}`);
+      } else {
+        lines.push(`${key}: ${JSON.stringify(resolvedItems)}`);
+      }
+    } else {
+      lines.push(`${key}: ${JSON.stringify(value)}`);
+    }
+  }
+  const rendered = lines.join("\n\n");
   if (rendered.length > MAX_FRAME_CHARS) {
     return rendered.substring(0, MAX_FRAME_CHARS) + `\n[truncated: ${rendered.length - MAX_FRAME_CHARS} chars omitted]`;
   }

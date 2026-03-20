@@ -23,6 +23,23 @@ describe("press", () => {
 		expect(result.iterations).toBe(2);
 	});
 
+	it("early-return guard: children (depth > 0) can return on first iteration", async () => {
+		const callLLM: CallLLM = async (messages, _systemPrompt) => {
+			const userMsg = messages[0]?.content || "";
+			if (userMsg === "child task") {
+				// Child returns immediately on its first iteration
+				return { reasoning: "", code: 'return "instant"', toolUseId: "tc" };
+			}
+			// Parent delegates to child
+			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
+		};
+
+		const result = await press("parent task", undefined, { callLLM, maxDepth: 3 });
+		expect(result.answer).toBe("instant");
+		// Child returns in 1 iteration (no interception), parent returns in 2 (guard + return)
+		expect(result.iterations).toBe(2);
+	});
+
 	it("multi-iteration", async () => {
 		const callLLM = mockToolCallLLM([tc('console.log("thinking...")', "t1"), tc('return "done"', "t2")]);
 		const result = await press("test query", undefined, { callLLM });
@@ -1071,6 +1088,46 @@ describe("press", () => {
 			const depth0Pos = grandchildPrompt.indexOf('<context depth="0"');
 			const depth2Pos = grandchildPrompt.indexOf('<context depth="2"');
 			expect(depth0Pos).toBeLessThan(depth2Pos);
+		});
+	});
+
+	describe("prompt content", () => {
+		it("does not contain 'Only call after verifying'", async () => {
+			let capturedSystemPrompt = "";
+			const callLLM: CallLLM = async (_messages, systemPrompt) => {
+				capturedSystemPrompt = systemPrompt;
+				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+			};
+
+			await press("test", undefined, { callLLM });
+
+			expect(capturedSystemPrompt).not.toContain("Only call after verifying");
+			expect(capturedSystemPrompt).not.toContain("Never return a value you have not first logged");
+		});
+
+		it("contains same-iteration return language", async () => {
+			let capturedSystemPrompt = "";
+			const callLLM: CallLLM = async (_messages, systemPrompt) => {
+				capturedSystemPrompt = systemPrompt;
+				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+			};
+
+			await press("test", undefined, { callLLM });
+
+			expect(capturedSystemPrompt).toContain("console.log(value) and return(value) in the same iteration");
+		});
+
+		it("contains sandbox variable scoping warning when canDelegate", async () => {
+			let capturedSystemPrompt = "";
+			const callLLM: CallLLM = async (_messages, systemPrompt) => {
+				capturedSystemPrompt = systemPrompt;
+				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+			};
+
+			await press("test", undefined, { callLLM, maxDepth: 3 });
+
+			expect(capturedSystemPrompt).toContain("Child press() calls execute in the same JavaScript sandbox");
+			expect(capturedSystemPrompt).toContain("re-read your variables from");
 		});
 	});
 });

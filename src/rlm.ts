@@ -79,14 +79,8 @@ export interface DelegationContext {
 /** A single frame in the context stack. */
 export interface ContextFrame {
 	depth: number;
-	data: Record<string, unknown> | string | undefined;
+	data: Record<string, unknown> | undefined;
 	label?: string;
-}
-
-/** The full context stack accessible via context.__stack. */
-export interface ContextStack {
-	frames: readonly ContextFrame[];
-	current: Record<string, unknown> | string | undefined;
 }
 
 export type ContextLayout = "mirror" | "cache-efficient";
@@ -107,7 +101,10 @@ const SNAPSHOT_EXCLUDE_KEYS = new Set([
 	'TextEncoder', 'TextDecoder',
 ]);
 
-export async function press(query: string, context: string | undefined, options: RlmOptions): Promise<RlmResult> {
+export async function press(query: string, context: Record<string, unknown> | undefined, options: RlmOptions): Promise<RlmResult> {
+	if (context !== undefined && typeof context === 'string') {
+		throw new Error('press() context must be an object, got string. Use { data: yourString } instead.');
+	}
 	const components = options.childComponents ?? options.childApps ?? {};
 
 	const opts = {
@@ -141,7 +138,7 @@ export async function press(query: string, context: string | undefined, options:
 	const snapshotExcludeKeys = new Set(SNAPSHOT_EXCLUDE_KEYS);
 	snapshotExcludeKeys.add('press');
 	snapshotExcludeKeys.add('__rlm');
-	snapshotExcludeKeys.add('__ctx');
+	snapshotExcludeKeys.add('__ctxInternal');
 	snapshotExcludeKeys.add('context');
 	if (opts.sandboxGlobals) {
 		for (const key of Object.keys(opts.sandboxGlobals)) {
@@ -161,8 +158,9 @@ export async function press(query: string, context: string | undefined, options:
 
 	let childCounter = 0;
 
-	// Create a Proxy for __ctx.local that routes based on active invocation ID
-	const localProxy = new Proxy({} as Record<string, unknown>, {
+	// Internal context routing proxy — NOT exposed to the sandbox as __ctx.
+	// The sandbox only sees `context` (with __root and __stack getters).
+	const ctxInternalProxy = new Proxy({} as Record<string, unknown>, {
 		get(_target, prop: string) {
 			const activeId = invocationStack[invocationStack.length - 1];
 			if (!activeId) return undefined;
@@ -202,42 +200,28 @@ export async function press(query: string, context: string | undefined, options:
 		},
 	});
 
-	const readLocal = (id: string): Readonly<Record<string, unknown>> => {
-		const store = contextStore.locals.get(id);
-		if (!store) return Object.freeze({});
-		return Object.freeze({ ...store });
-	};
-
 	if (context !== undefined) {
 		contextStore.shared = Object.freeze({ data: context });
 	}
 
-	// Create proxied accessors for stack/depth that route by invocation
-	const stackProxy = {
-		get frames() {
+	// Internal-only: used by context getter to route per-invocation. Not model-facing.
+	env.set("__ctxInternal", {
+		shared: contextStore.shared,
+		local: ctxInternalProxy,
+		getStack() {
 			const activeId = invocationStack[invocationStack.length - 1];
 			if (!activeId) return [];
 			const store = contextStore.locals.get(activeId);
 			return store?.__contextStack ?? [];
 		},
-		get depth() {
-			const activeId = invocationStack[invocationStack.length - 1];
-			if (!activeId) return 0;
-			const store = contextStore.locals.get(activeId);
-			return (store?.__contextDepth as number) ?? 0;
+		getRootData() {
+			return contextStore.shared.data;
 		},
-	};
-
-	env.set("__ctx", {
-		shared: contextStore.shared,
-		local: localProxy,
-		readLocal,
-		stack: stackProxy,
 	});
 
 	async function rlmInternal(
 		query: string,
-		context: string | undefined,
+		context: Record<string, unknown> | undefined,
 		depth: number,
 		lineage: readonly string[],
 		invocationId: string,
@@ -332,23 +316,23 @@ export async function press(query: string, context: string | undefined, options:
 				`Object.defineProperty(globalThis, 'context', {\n` +
 				`  get() {\n` +
 				`    let val;\n` +
-				`    const local = __ctx.local.context;\n` +
+				`    const local = __ctxInternal.local.context;\n` +
 				`    if (local !== undefined) { val = local; }\n` +
-				`    else { val = __ctx.shared.data; }\n` +
-				`    // Attach __stack and __depth for object contexts\n` +
+				`    else { val = __ctxInternal.shared.data; }\n` +
+				`    // Attach __root and __stack for object contexts\n` +
 				`    if (val && typeof val === 'object' && !Object.isFrozen(val)) {\n` +
 				`      try {\n` +
-				`        if (!Object.prototype.hasOwnProperty.call(val, '__stack')) {\n` +
-				`          Object.defineProperty(val, '__stack', { get() { return __ctx.stack.frames; }, enumerable: false, configurable: true });\n` +
+				`        if (!Object.prototype.hasOwnProperty.call(val, '__root')) {\n` +
+				`          Object.defineProperty(val, '__root', { get() { return __ctxInternal.getRootData(); }, enumerable: false, configurable: true });\n` +
 				`        }\n` +
-				`        if (!Object.prototype.hasOwnProperty.call(val, '__depth')) {\n` +
-				`          Object.defineProperty(val, '__depth', { get() { return __ctx.stack.depth; }, enumerable: false, configurable: true });\n` +
+				`        if (!Object.prototype.hasOwnProperty.call(val, '__stack')) {\n` +
+				`          Object.defineProperty(val, '__stack', { get() { return __ctxInternal.getStack(); }, enumerable: false, configurable: true });\n` +
 				`        }\n` +
 				`      } catch(e) {}\n` +
 				`    }\n` +
 				`    return val;\n` +
 				`  },\n` +
-				`  set(v) { __ctx.local.context = v; },\n` +
+				`  set(v) { __ctxInternal.local.context = v; },\n` +
 				`  configurable: true,\n` +
 				`  enumerable: true,\n` +
 				`})`,
@@ -517,8 +501,8 @@ export async function press(query: string, context: string | undefined, options:
 				}
 
 				if (returnValue !== undefined) {
-					if (iteration === 0) {
-						// Force verification: reject first-iteration returns
+					if (iteration === 0 && depth === 0) {
+						// Force verification: reject first-iteration returns (root only)
 						combinedOutput +=
 							(combinedOutput ? "\n" : "") +
 							`[early return intercepted] You returned: ${String(returnValue)}\nVerify this is correct by examining the data before returning.`;
@@ -619,7 +603,7 @@ export async function press(query: string, context: string | undefined, options:
 	}
 
 	/** The sandbox delegate function, exposed as `press()`. */
-	const pressFn = (q: string, c?: string, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; /** @deprecated Use `use` instead. */ app?: string; reasoning?: string; contextLayout?: ContextLayout }): Promise<string> => {
+	const pressFn = (q: string, c?: Record<string, unknown>, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; /** @deprecated Use `use` instead. */ app?: string; reasoning?: string; contextLayout?: ContextLayout }): Promise<string> => {
 		// Reject delegation at max depth
 		if (activeDepth >= opts.maxDepth) {
 			return Promise.reject(
@@ -684,7 +668,7 @@ export async function press(query: string, context: string | undefined, options:
 			depth: savedDepth,
 			childId: childInvocationId,
 			query: q,
-			context: c != null ? (typeof c === 'string' ? c.slice(0, 5000) : JSON.stringify(c).slice(0, 5000)) : undefined,
+			context: c != null ? JSON.stringify(c).slice(0, 5000) : undefined,
 			modelAlias: rlmOpts?.model,
 			maxIterations: rlmOpts?.maxIterations,
 			componentName,
@@ -772,4 +756,3 @@ export async function press(query: string, context: string | undefined, options:
 		});
 	}
 }
-
