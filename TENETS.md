@@ -1,10 +1,10 @@
 # Tenets
 
-What node-rlm believes.
+What Press believes.
 
 ## The RLM is an Intelligent Computer
 
-node-rlm is a self-contained computer whose core is the RLM: a while loop, a model, and a sandbox. The model lives inside the environment. It executes JavaScript, observes results, calls itself recursively, and subdivides work across invocations. This is not a chatbot with tools bolted on. It is a general-purpose computer that runs programs.
+Press is a self-contained computer whose core is the RLM: a while loop, a model, and a sandbox. The model lives inside the environment. It executes JavaScript, observes results, calls itself recursively, and subdivides work across invocations. This is not a chatbot with tools bolted on. It is a general-purpose computer that runs programs.
 
 ## Trust the Model
 
@@ -36,7 +36,7 @@ Errors are surfaced, not swallowed. If the model's code fails, the error goes ba
 
 ## Cost-Aware Delegation
 
-`rlm()` is a recursive loop. A small `maxIterations` (e.g., 1 or 3) makes it cheap and fast. A large budget makes it thorough. The model should calibrate the iteration budget to the subtask: use `rlm("query", ctx, { maxIterations: 1 })` for one-shot classification, and a full budget when the problem demands iterative refinement.
+`press()` is a recursive loop. A small `maxIterations` (e.g., 1 or 3) makes it cheap and fast. A large budget makes it thorough. The model should calibrate the iteration budget to the subtask: use `press("query", ctx, { maxIterations: 1 })` for one-shot classification, and a full budget when the problem demands iterative refinement.
 
 ## Multi-Polarity Over Monologue
 

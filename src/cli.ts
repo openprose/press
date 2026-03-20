@@ -8,7 +8,7 @@ import { press } from "./rlm.js";
 import type { ModelEntry } from "./rlm.js";
 
 function usage(): never {
-	console.log(`Usage: node-rlm --query <query> [options]
+	console.log(`Usage: press --query <query> [options]
 
 Options:
   --query <text>          The question or task (required)
@@ -24,12 +24,12 @@ Options:
 Model format: provider/model-id (e.g. openrouter/google/gemini-3-flash-preview, openai/gpt-4o)
 
 Examples:
-  node-rlm --query "Summarize this file" --context-file ./data.txt
-  node-rlm --query "Find all TODO comments" --context-dir ./src/
-  node-rlm --query "What is 2+2"
-  node-rlm --query "Hello" --model openai/gpt-4o
-  node-rlm --query "Hello" --model custom/my-model --base-url http://localhost:11434/v1
-  node-rlm --query "Hello" --model-alias fast=openrouter/google/gemini-3-flash-preview:fast,cheap
+  press --query "Summarize this file" --context-file ./data.txt
+  press --query "Find all TODO comments" --context-dir ./src/
+  press --query "What is 2+2"
+  press --query "Hello" --model openai/gpt-4o
+  press --query "Hello" --model custom/my-model --base-url http://localhost:11434/v1
+  press --query "Hello" --model-alias fast=openrouter/google/gemini-3-flash-preview:fast,cheap
 `);
 	process.exit(1);
 }

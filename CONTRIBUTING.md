@@ -1,4 +1,4 @@
-# Contributing to node-rlm
+# Contributing to Press
 
 Thanks for your interest in contributing.
 

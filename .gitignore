@@ -20,9 +20,6 @@ eval/analyses/*
 .prose/agents/
 .prose/.env
 
-# Archive
-.archive/
-
 # External repos
 arcgentica/
 arc3-docs/

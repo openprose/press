@@ -416,7 +416,7 @@ export async function press(query: string, context: string | undefined, options:
 				if (output) combinedOutput += (combinedOutput ? "\n" : "") + output;
 				if (error) combinedError = error;
 
-				// Check for unawaited rlm() calls
+				// Check for unawaited press() calls
 				if (pendingRlmCalls.size > 0) {
 					await new Promise((r) => setTimeout(r, 0));
 					if (pendingRlmCalls.size > 0) {
@@ -553,7 +553,7 @@ export async function press(query: string, context: string | undefined, options:
 		// Resolve component name: `use` takes precedence over deprecated `app`
 		const componentName = rlmOpts?.use ?? rlmOpts?.app;
 		if (rlmOpts?.app && !rlmOpts?.use) {
-			console.warn('[node-rlm] { app: "..." } is deprecated. Use { use: "..." } instead.');
+			console.warn('[press] { app: "..." } is deprecated. Use { use: "..." } instead.');
 		}
 
 		// Resolve component plugin if requested
