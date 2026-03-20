@@ -1,4 +1,4 @@
-name: Aggregate Trajectories
+name: Press Aggregate Trajectories
 
 on:
   workflow_dispatch:

@@ -1,4 +1,4 @@
-name: Eval
+name: Press Eval
 
 on:
   workflow_dispatch:
