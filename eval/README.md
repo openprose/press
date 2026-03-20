@@ -1,5 +1,5 @@
 ---
-purpose: Benchmarking suite for RLM across OOLONG, ARC-AGI-2, ARC-AGI-3, and S-NIAH — harness, scoring, analysis, drivers, datasets, and results; 18 numbered analysis directories document the full experimental history
+purpose: Benchmarking suite for Press across OOLONG, ARC-AGI-2, ARC-AGI-3, and S-NIAH — harness, scoring, analysis, drivers, datasets, and results; 18 numbered analysis directories document the full experimental history
 related:
   - ../README.md
   - ./analyses/README.md
@@ -17,9 +17,9 @@ glossary:
   pass@N: Evaluation protocol running each task N times and keeping the best score
 ---
 
-# RLM Eval
+# Press Eval
 
-Benchmarks for measuring RLM performance across models.
+Benchmarks for measuring Press performance across models.
 
 ## Setup
 
@@ -135,7 +135,7 @@ Results are saved as timestamped JSON files in `eval/results/` (gitignored). Eac
 
 ### Model Aliases
 
-The `rlm()` function accepts a `models` option — a map of named model aliases that child agents can use when delegating. Agents see the available aliases in their system prompt and can select one by name.
+The `press()` function accepts a `models` option — a map of named model aliases that child agents can use when delegating. Agents see the available aliases in their system prompt and can select one by name.
 
 The CLI provides three built-in aliases:
 
@@ -168,7 +168,7 @@ npx tsx eval/analyze.ts eval/results/s-niah_anthropic_claude-sonnet-4_2026-02-08
 The analyzer reports:
 
 - **Iteration and code volume** — iterations per task, code blocks, code lines (mean, p20, median, p80, min, max)
-- **Behavioral patterns** — eager RETURN rate, self-correction rate, recursive `rlm()` usage, `console.log` usage, `let/const` usage, error rate
+- **Behavioral patterns** — eager RETURN rate, self-correction rate, recursive `press()` usage, `console.log` usage, `let/const` usage, error rate
 - **Score and iteration distributions** — histograms with success rates
 - **Context-length breakdown** — for S-NIAH, accuracy and patterns grouped by context size
 

@@ -11,7 +11,7 @@ glossary:
 
 # docs
 
-Internal documentation for the node-rlm project.
+Internal documentation for the Press project.
 
 ## Contents
 

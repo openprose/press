@@ -1,10 +1,10 @@
-# node-rlm
+# Press
 
-An LLM in a Node.js REPL loop that can call anything, including itself.
+The runtime for [Prose](https://github.com/openprose/prose) programs. An LLM in a Node.js REPL loop that can call anything, including itself.
 
 ## Overview
 
-node-rlm (Recursive Language Model) puts a language model inside a persistent Node.js sandbox. The model writes JavaScript, observes the output, and loops until it calls `return()`. Any invocation can spawn a child via `await rlm(query, context?)` — a separate message history and iteration budget sharing the same sandbox. This is not a chatbot with tools bolted on; it is a general-purpose computer that runs programs.
+Press (`@openprose/press`) puts a language model inside a persistent Node.js sandbox. The model writes JavaScript, observes the output, and loops until it calls `return()`. Any invocation can spawn a child via `await press(query, context?)` — a separate message history and iteration budget sharing the same sandbox. This is not a chatbot with tools bolted on; it is a general-purpose computer that runs programs written in Prose.
 
 Only runtime dependency is `acorn` (JS parser). Models route through OpenRouter by default; other OpenAI-compatible APIs are supported via `--base-url`.
 
@@ -13,7 +13,7 @@ Only runtime dependency is `acorn` (JS parser). Models route through OpenRouter 
 - `src/` — Core runtime: REPL loop (`rlm.ts`), sandbox (`environment.ts`), plugin loader (`plugins.ts`), system prompt construction, CLI entry point, and OpenRouter-compatible driver
 - `lib/` — Markdown-encoded standard library of reusable patterns: multi-agent composites (observer-actor-arbiter, worker-critic, ratchet, dialectic…), flow controls (pipeline, map-reduce, gate…), single-agent roles (critic, verifier, extractor…), and model-specific driver profiles
 - `eval/` — Benchmark harness for OOLONG, ARC-AGI-2, ARC-AGI-3, and S-NIAH; includes scoring, analysis tooling, and 18 numbered run analyses documenting experimental history
-- `programs/` — Domain-specific agent architectures loaded as `--app` plugins: ARC-AGI-2 compound learning, ARC-AGI-3 game solver, S-NIAH retrieval, and LLM-as-judge evaluator
+- `programs/` — Domain-specific agent architectures loaded as components: ARC-AGI-2 compound learning, ARC-AGI-3 game solver, S-NIAH retrieval, and LLM-as-judge evaluator
 - `arc3-docs/` — ARC-AGI-3 platform documentation: REST API reference, agent quickstart, game catalog, and benchmarking methodology
 - `arcgentica/` — Reference Python implementation achieving 85.28% on ARC-AGI-2 with Claude Opus 4.6 (nested git repo)
 - `test/` — Vitest unit and integration tests
@@ -24,8 +24,8 @@ Only runtime dependency is `acorn` (JS parser). Models route through OpenRouter 
 Requires Node.js ≥ 20.
 
 ```bash
-git clone https://github.com/openprose/node-rlm.git
-cd node-rlm
+git clone https://github.com/openprose/press.git
+cd press
 npm install
 ```
 
@@ -53,11 +53,11 @@ End-to-end tests run automatically when `OPENROUTER_API_KEY` is set, and are ski
 ## CLI
 
 ```bash
-npx node-rlm --query "What is the capital of France?"
-npx node-rlm --query "Summarize this file" --context-file ./data.txt
-npx node-rlm --query "Find all TODO comments" --context-dir ./src/
-npx node-rlm --query "Analyze this data" --model openai/gpt-4o
-npx node-rlm --query "Hello" --model custom/my-model --base-url http://localhost:11434/v1
+npx press --query "What is the capital of France?"
+npx press --query "Summarize this file" --context-file ./data.txt
+npx press --query "Find all TODO comments" --context-dir ./src/
+npx press --query "Analyze this data" --model openai/gpt-4o
+npx press --query "Hello" --model custom/my-model --base-url http://localhost:11434/v1
 ```
 
 | Flag                    | Default                                    | Description                                               |
@@ -68,7 +68,7 @@ npx node-rlm --query "Hello" --model custom/my-model --base-url http://localhost
 | `--model <provider/id>` | `openrouter/google/gemini-3-flash-preview` | Model in `provider/model-id` format                       |
 | `--base-url <url>`      | --                                         | Custom API base URL (for Ollama, vLLM, etc.)              |
 | `--max-iterations <n>`  | 15                                         | Maximum REPL loop iterations (root)                       |
-| `--max-depth <n>`       | 3                                          | Maximum recursion depth; agents at maxDepth cannot call `rlm()` |
+| `--max-depth <n>`       | 3                                          | Maximum recursion depth; agents at maxDepth cannot call `press()` |
 | `--model-alias <spec>`  | --                                         | Add or override a named model alias (repeatable)          |
 
 ### Model aliases
@@ -81,7 +81,7 @@ Three default aliases are always available:
 | `orchestrator` | orchestrator, medium    | Claude Sonnet 4.5  | Balanced orchestration  |
 | `intelligent`  | intelligent, expensive  | Claude Opus 4.6    | Highest capability      |
 
-Use `--model-alias` to add new aliases or override the defaults. Format: `alias=provider/model[:tag1,tag2,...]`. The agent sees an "Available Models" table in its system prompt and can delegate with `await rlm("subtask", data, { model: "fast" })`.
+Use `--model-alias` to add new aliases or override the defaults. Format: `alias=provider/model[:tag1,tag2,...]`. The agent sees an "Available Models" table in its system prompt and can delegate with `await press("subtask", data, { model: "fast" })`.
 
 ### Providers
 
@@ -94,11 +94,11 @@ The CLI routes models by the first path segment:
 ## Programmatic API
 
 ```typescript
-import { rlm, DEFAULT_MODEL_ALIASES } from "node-rlm";
-import { fromProviderModel } from "node-rlm/drivers/openrouter-compatible";
+import { press, DEFAULT_MODEL_ALIASES } from "@openprose/press";
+import { fromProviderModel } from "@openprose/press/drivers/openrouter-compatible";
 
 const callLLM = fromProviderModel("openrouter/google/gemini-3-flash-preview");
-const result = await rlm("What is 2 + 2?", undefined, {
+const result = await press("What is 2 + 2?", undefined, {
   callLLM,
   maxIterations: 15,
   maxDepth: 3,
@@ -106,14 +106,13 @@ const result = await rlm("What is 2 + 2?", undefined, {
 
 console.log(result.answer);     // "4"
 console.log(result.iterations); // number of REPL turns used
-console.log(result.trace);      // { reasoning, code, output, error } per turn
 ```
 
-### `rlm(query, context?, options)`
+### `press(query, context?, options)`
 
-Returns `RlmResult`: `{ answer, iterations, trace }`.
+Returns `RlmResult`: `{ answer, iterations }`.
 
-Throws `RlmMaxIterationsError` if the iteration budget is exhausted (carries partial `trace` for inspection).
+Throws `RlmMaxIterationsError` if the iteration budget is exhausted.
 
 ### Options
 
@@ -133,7 +132,7 @@ Throws `RlmMaxIterationsError` if the iteration budget is exhausted (carries par
 | `context`                                       | Task data (reads `__ctx.local.context`, falling back to `__ctx.shared.data`).                                           |
 | `console.log()`                                 | Output visible to the model between iterations.                                                                         |
 | `return(value)`                                 | Ends the loop and sets the final answer. First-iteration returns are intercepted for verification.                      |
-| `await rlm(query, context?, { systemPrompt?, model?, maxIterations? })` | Spawn a child RLM. Shared sandbox, own message history. Must be awaited. |
+| `await press(query, context?, { systemPrompt?, model?, maxIterations? })` | Spawn a child agent. Shared sandbox, own message history. Must be awaited. |
 | `__rlm`                                         | Read-only delegation context: `depth`, `maxDepth`, `iteration`, `maxIterations`, `lineage`, `invocationId`, `parentId`. |
 | `__ctx.shared.data`                             | Root context (frozen, readable by all depths).                                                                          |
 | `__ctx.local`                                   | This invocation's writable workspace.                                                                                   |
@@ -142,17 +141,15 @@ Throws `RlmMaxIterationsError` if the iteration budget is exhausted (carries par
 
 ## Plugins
 
-Plugins are markdown files concatenated into the agent's system prompt. Three kinds:
+Plugins are markdown files concatenated into the agent's system prompt. Two kinds:
 
 - **Drivers** (`lib/drivers/`) — Model-specific reliability patches (e.g., enforce await discipline, verify-before-return). Stack multiple per run.
-- **Apps** (`programs/`) — Task architectures loaded via `--app` (e.g., `structured-data-aggregation`, `arc3-player`).
 - **Profiles** (`lib/profiles/`) — Named bundles of drivers for a model family. Auto-detected from `--model` when no `--profile` is given.
 
 ```typescript
-import { loadStack } from "node-rlm/plugins";
+import { loadStack } from "@openprose/press/plugins";
 const pluginBodies = await loadStack({
   model: "openrouter/google/gemini-3-flash-preview", // auto-detects profile
-  use: "structured-data-aggregation",
 });
 ```
 
@@ -187,18 +184,18 @@ npx tsx eval/run.ts --benchmark arc --model anthropic/claude-opus-4-6 \
 
 # ARC-AGI-3 (API-based, set ARC3_API_KEY)
 npx tsx eval/run.ts --benchmark arc3 --model anthropic/claude-opus-4-6 \
-  --game ls20 --max-iterations 25 --max-depth 2 --app arc3-player
+  --game ls20 --max-iterations 25 --max-depth 2
 ```
 
 See [eval/README.md](eval/README.md) for the full set of options, plugin configuration, and result analysis.
 
 ## See Also
 
+- [Prose](https://github.com/openprose/prose) — The programming language Press executes
 - [arcgentica](arcgentica/) — Python reference implementation; 85.28% on ARC-AGI-2 with Claude Opus 4.6
 - [arc3-docs](arc3-docs/) — ARC-AGI-3 platform documentation and API reference
-- [LANGUAGE.md](LANGUAGE.md) — The RLM programming language: declarative contracts, state schemas, and delegation patterns
 - [TENETS.md](TENETS.md) — Design principles
-- [planning/guidance/rlms.md](../planning/guidance/rlms.md) — Architectural decisions and relationship to OpenProse language
+- [OBSERVABILITY.md](OBSERVABILITY.md) — Structured event model for tracing runs
 
 ## License
 

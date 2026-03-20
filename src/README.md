@@ -1,5 +1,5 @@
 ---
-purpose: Core RLM runtime implementation — CLI entry point, REPL loop, plugin system, observability, model drivers, and system prompt construction; the executable heart of node-rlm
+purpose: Core Press runtime implementation — CLI entry point, REPL loop, plugin system, observability, model drivers, and system prompt construction; the executable heart of Press
 related:
   - ../README.md
   - ./drivers/README.md
@@ -15,7 +15,7 @@ glossary:
 
 # src
 
-Core implementation of the Node.js RLM runtime.
+Core implementation of the Press runtime.
 
 ## Contents
 

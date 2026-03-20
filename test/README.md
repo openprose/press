@@ -7,7 +7,7 @@ related:
 
 # test
 
-Vitest test suite for the node-rlm runtime. Run with `npx vitest` or `npx vitest run`.
+Vitest test suite for the Press runtime. Run with `npx vitest` or `npx vitest run`.
 
 ## Contents
 

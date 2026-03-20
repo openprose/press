@@ -148,10 +148,10 @@ for (let attempt = 0; attempt < max_retries; attempt++) {
   if (lastCritique) {
     workerBrief += `\n\nPrevious attempt was rejected.\nCritique: ${lastCritique.reasoning}`;
   }
-  lastResult = await rlm(workerBrief, null, { use: worker });
+  lastResult = await press(workerBrief, null, { use: worker });
 
   const criticBrief = `Evaluate this result against the criteria.\n\nOriginal task: ${task_brief}\nCriteria: ${criteria}\n\nResult to evaluate:\n${lastResult}`;
-  const verdict = await rlm(criticBrief, null, { use: critic });
+  const verdict = await press(criticBrief, null, { use: critic });
 
   if (/accept/i.test(String(verdict))) {
     __compositeState.result = lastResult;
@@ -182,7 +182,7 @@ __compositeState = {
   max_retries: 3
 };
 
-const result = await rlm("Run worker-critic on this task", null, { use: "worker-critic" });
+const result = await press("Run worker-critic on this task", null, { use: "worker-critic" });
 // After return: __compositeState.result has the accepted output
 ```
 
@@ -204,7 +204,7 @@ __controlState = {
   max_retries: 3
 };
 
-const result = await rlm("Retry with learning", null, { use: "retry-with-learning" });
+const result = await press("Retry with learning", null, { use: "retry-with-learning" });
 ```
 
 ```javascript
@@ -215,7 +215,7 @@ __controlState = {
   task_brief: "Analyze this dataset for anomalies."
 };
 
-const result = await rlm("Gate check", null, { use: "gate" });
+const result = await press("Gate check", null, { use: "gate" });
 // __controlState.proceeded tells you if the guard passed
 ```
 
@@ -224,7 +224,7 @@ const result = await rlm("Gate check", null, { use: "gate" });
 Roles can be used without a composite. Delegate directly when you need a single-agent behavior:
 
 ```javascript
-const summary = await rlm(
+const summary = await press(
   `Summarize this content. Preserve: key decisions, open questions.\n\n${largeContent}`,
   null,
   { use: "summarizer" }
