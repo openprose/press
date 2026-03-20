@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
 	buildPressPrompt,
+	buildRuntimeGlossary,
 	type FormePromptOptions,
 	type ProseVmPromptOptions,
 	type ServicePromptOptions,
@@ -267,5 +268,36 @@ describe("Preamble", () => {
 		expect(result).toContain("Depth: 2");
 		expect(result).toContain("Parent: parent-abc");
 		expect(result).toContain("Iteration budget: 5");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Runtime Glossary
+// ---------------------------------------------------------------------------
+
+describe("Runtime glossary", () => {
+	it("forme phase prompts contain <press-runtime>", () => {
+		const result = buildPressPrompt(formeOpts());
+		expect(result).toContain("<press-runtime>");
+		expect(result).toContain("</press-runtime>");
+	});
+
+	it("prose-vm phase prompts contain <press-runtime>", () => {
+		const result = buildPressPrompt(proseVmOpts());
+		expect(result).toContain("<press-runtime>");
+		expect(result).toContain("</press-runtime>");
+	});
+
+	it("service phase prompts do NOT contain <press-runtime>", () => {
+		const result = buildPressPrompt(serviceOpts());
+		expect(result).not.toContain("<press-runtime>");
+	});
+
+	it("glossary contains key mappings: Task tool, press(), Promise.all, AskUserQuestion", () => {
+		const glossary = buildRuntimeGlossary();
+		expect(glossary).toContain("Task tool");
+		expect(glossary).toContain("press(");
+		expect(glossary).toContain("Promise.all");
+		expect(glossary).toContain("AskUserQuestion");
 	});
 });

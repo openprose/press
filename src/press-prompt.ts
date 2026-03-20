@@ -211,6 +211,65 @@ function buildServiceContext(options: ServicePromptOptions): string {
 }
 
 // ---------------------------------------------------------------------------
+// Runtime glossary
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the Press runtime translation glossary.
+ * Maps Prose/Forme spec concepts (Task tool, subagent, AskUserQuestion)
+ * to Press sandbox equivalents.
+ */
+export function buildRuntimeGlossary(): string {
+  return `<press-runtime>
+## Runtime Translation: Prose Specs → Press Sandbox
+
+The Prose and Forme specs were written for a generic execution environment.
+In Press, the following mappings apply:
+
+### Spawning Children
+
+| Spec says | You do |
+|-----------|--------|
+| "Spawn a session via the Task tool" | \`await press(query, context)\` |
+| "Spawn a subagent" | \`await press(query, context)\` |
+| "Make multiple Task calls in a single response" | \`await Promise.all([press(...), press(...)])\` |
+| "AskUserQuestion tool" | Not available. If input is missing, signal an error. |
+
+### Passing Data
+
+| Spec says | You do |
+|-----------|--------|
+| "Pass input file paths" | Pass values directly in context, or paths that Press auto-resolves |
+| "The VM tracks pointers, not values" | In Press, small values may be passed inline via context |
+| "Read from bindings/" | \`fs.readFileSync(path, 'utf8')\` or receive via context |
+| "Write to workspace/" | \`fs.writeFileSync(path, content)\` |
+| "Copy from workspace to bindings" | \`fs.copyFileSync(src, dst)\` after child returns |
+
+### The press() Function
+
+\`await press(query, context?, options?)\` spawns a child loop.
+- Returns the value the child passed to \`return()\`
+- Children access their data via the \`context\` variable
+- The parent receives the return value from \`await press()\`
+
+### File System
+
+All filesystem operations the specs describe (mkdir, write, copy, append)
+are performed by YOU using \`require('fs')\`. Press does not perform
+filesystem operations on your behalf.
+
+### What Applies Exactly As Written
+
+- The Forme wiring algorithm (contract matching, dependency graph, manifest format)
+- The execution order from the manifest
+- The workspace/bindings directory structure
+- state.md logging
+- Error signaling via __error.md
+- Contract evaluation (ensures, invariants, strategies)
+</press-runtime>`;
+}
+
+// ---------------------------------------------------------------------------
 // Main builder
 // ---------------------------------------------------------------------------
 
@@ -235,6 +294,9 @@ export function buildPressPrompt(options: PromptOptions): string {
         "filesystem.md",
       );
       sections.push(xmlWrap("filesystem-spec", fsSpec));
+
+      // Runtime glossary (Prose spec → Press sandbox translation)
+      sections.push(buildRuntimeGlossary());
 
       // Run context
       sections.push(xmlWrap("run-context", buildRunContext(options)));
@@ -263,6 +325,9 @@ export function buildPressPrompt(options: PromptOptions): string {
         "filesystem.md",
       );
       sections.push(xmlWrap("filesystem-spec", fsSpec));
+
+      // Runtime glossary (Prose spec → Press sandbox translation)
+      sections.push(buildRuntimeGlossary());
 
       // Run context
       sections.push(xmlWrap("run-context", buildRunContext(options)));
