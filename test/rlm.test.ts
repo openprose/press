@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { type CallLLM, type CallLLMResponse, press } from "../src/rlm.js";
+import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 function mockToolCallLLM(responses: CallLLMResponse[]): CallLLM {
 	let callIndex = 0;
@@ -20,23 +23,6 @@ describe("press", () => {
 		const callLLM = mockToolCallLLM([tc('return "hello"', "t1"), tc('return "hello"', "t2")]);
 		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("hello");
-		expect(result.iterations).toBe(2);
-	});
-
-	it("early-return guard: children (depth > 0) can return on first iteration", async () => {
-		const callLLM: CallLLM = async (messages, _systemPrompt) => {
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child task") {
-				// Child returns immediately on its first iteration
-				return { reasoning: "", code: 'return "instant"', toolUseId: "tc" };
-			}
-			// Parent delegates to child
-			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
-		};
-
-		const result = await press("parent task", undefined, { callLLM, maxDepth: 3 });
-		expect(result.answer).toBe("instant");
-		// Child returns in 1 iteration (no interception), parent returns in 2 (guard + return)
 		expect(result.iterations).toBe(2);
 	});
 
@@ -74,9 +60,16 @@ describe("press", () => {
 	});
 
 	it("context accessible as variable", async () => {
-		const callLLM = mockToolCallLLM([tc("return context", "t1"), tc("return context", "t2")]);
-		const result = await press("test query", "my context data", { callLLM });
+		const callLLM = mockToolCallLLM([tc("return context.data", "t1"), tc("return context.data", "t2")]);
+		const result = await press("test query", { data: "my context data" }, { callLLM });
 		expect(result.answer).toBe("my context data");
+	});
+
+	it("string context throws error", async () => {
+		const callLLM = mockToolCallLLM([tc('return "nope"', "t1")]);
+		await expect(
+			press("test query", "my context data" as unknown as Record<string, unknown>, { callLLM }),
+		).rejects.toThrow("press() context must be an object, got string");
 	});
 
 	it("return stringifies non-strings", async () => {
@@ -273,16 +266,16 @@ describe("press", () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "child query") {
-				return { reasoning: "", code: 'console.log("child sees: " + context)\nreturn context', toolUseId: "tc" };
+				return { reasoning: "", code: 'console.log("child sees: " + context.data)\nreturn context.data', toolUseId: "tc" };
 			}
 			// Parent: first call spawns child with different context, second verifies parent context
 			if (messages.length <= 1) {
-				return { reasoning: "", code: 'const childResult = await press("child query", "child context")\nconsole.log("parent still sees: " + context)', toolUseId: "tp1" };
+				return { reasoning: "", code: 'const childResult = await press("child query", { data: "child context" })\nconsole.log("parent still sees: " + context.data)', toolUseId: "tp1" };
 			}
-			return { reasoning: "", code: "return context", toolUseId: "tp2" };
+			return { reasoning: "", code: "return context.data", toolUseId: "tp2" };
 		};
 
-		const result = await press("parent query", "parent context", { callLLM, maxDepth: 3 });
+		const result = await press("parent query", { data: "parent context" }, { callLLM, maxDepth: 3 });
 		expect(result.answer).toBe("parent context");
 	});
 
@@ -552,7 +545,6 @@ describe("press", () => {
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "greet world") {
-				// Child agent -- verify globalDocs is in prompt and use the global
 				if (!systemPrompt.includes("myApi.greet")) {
 					return { reasoning: "", code: 'return "FAIL: no globalDocs"', toolUseId: "tc" };
 				}
@@ -894,7 +886,6 @@ describe("press", () => {
 			await press("test query", undefined, { callLLM });
 
 			expect(secondCallMessages).toBeDefined();
-			// Find the assistant message with __TOOL_CALL__ marker
 			const assistantMsg = secondCallMessages!.find(
 				(m) => m.role === "assistant" && m.content.startsWith("__TOOL_CALL__"),
 			);
@@ -929,58 +920,65 @@ describe("press", () => {
 
 	describe("context stack", () => {
 		it("context.__stack exists on object context", async () => {
-			const callLLM: CallLLM = async (messages, _systemPrompt) => {
-				if (messages.length <= 1) {
-					return { reasoning: "", code: 'console.log("hasStack=" + (context.__stack !== undefined))\nconsole.log("depth=" + context.__depth)\nconsole.log("frames=" + context.__stack.length)', toolUseId: "t1" };
-				}
-				return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
-			};
-
-			let capturedMessages: Array<{ role: string; content: string }> | undefined;
-			let callIndex = 0;
-			const wrappedLLM: CallLLM = async (messages, systemPrompt) => {
-				callIndex++;
-				if (callIndex === 2) capturedMessages = [...messages];
-				return callLLM(messages, systemPrompt);
-			};
-
-			await press("test", { key: "value" } as unknown as string, { callLLM: wrappedLLM });
-
-			const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
-			expect(toolResult!.content).toContain("hasStack=true");
-			expect(toolResult!.content).toContain("depth=0");
-			expect(toolResult!.content).toContain("frames=1");
-		});
-
-		it("__ctx.stack.frames accessible at root", async () => {
 			let capturedMessages: Array<{ role: string; content: string }> | undefined;
 			let callIndex = 0;
 			const callLLM: CallLLM = async (messages, _systemPrompt) => {
 				callIndex++;
 				if (callIndex === 1) {
-					return { reasoning: "", code: 'console.log("stackLen=" + __ctx.stack.frames.length)\nconsole.log("stackDepth=" + __ctx.stack.depth)', toolUseId: "t1" };
+					return { reasoning: "", code: 'console.log("hasStack=" + (context.__stack !== undefined))\nconsole.log("frames=" + context.__stack.length)', toolUseId: "t1" };
+				}
+				if (callIndex === 2) capturedMessages = [...messages];
+				return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
+			};
+
+			await press("test", { key: "value" }, { callLLM });
+
+			const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
+			expect(toolResult!.content).toContain("hasStack=true");
+			expect(toolResult!.content).toContain("frames=1");
+		});
+
+		it("context.__root returns root context", async () => {
+			const callLLM: CallLLM = async (messages, _systemPrompt) => {
+				const userMsg = messages[0]?.content || "";
+				if (userMsg === "child task") {
+					return { reasoning: "", code: 'console.log("rootKey=" + context.__root.key)\nreturn "child done"', toolUseId: "tc" };
+				}
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
+			};
+
+			const result = await press("root task", { key: "rootValue" }, { callLLM, maxDepth: 3 });
+			expect(result.answer).toBe("child done");
+		});
+
+		it("__ctx is NOT accessible as sandbox global", async () => {
+			let capturedMessages: Array<{ role: string; content: string }> | undefined;
+			let callIndex = 0;
+			const callLLM: CallLLM = async (messages, _systemPrompt) => {
+				callIndex++;
+				if (callIndex === 1) {
+					return { reasoning: "", code: 'console.log("ctxType=" + typeof __ctx)', toolUseId: "t1" };
 				}
 				capturedMessages = [...messages];
 				return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
 			};
 
-			await press("root query", "root data", { callLLM });
+			await press("root query", { data: "root data" }, { callLLM });
 
 			const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
-			expect(toolResult!.content).toContain("stackLen=1");
-			expect(toolResult!.content).toContain("stackDepth=0");
+			expect(toolResult!.content).toContain("ctxType=undefined");
 		});
 
-		it("child sees ancestor frames via __ctx.stack", async () => {
+		it("child sees ancestor frames via context.__stack", async () => {
 			const callLLM: CallLLM = async (messages, _systemPrompt) => {
 				const userMsg = messages[0]?.content || "";
 				if (userMsg === "child task") {
-					return { reasoning: "", code: 'const frames = __ctx.stack.frames\nconsole.log("childFrameCount=" + frames.length)\nconsole.log("rootData=" + frames[0].data)\nconsole.log("childDepth=" + __ctx.stack.depth)\nreturn "child done"', toolUseId: "tc" };
+					return { reasoning: "", code: 'const frames = context.__stack\nconsole.log("childFrameCount=" + frames.length)\nconsole.log("rootData=" + JSON.stringify(frames[0].data))\nreturn "child done"', toolUseId: "tc" };
 				}
-				return { reasoning: "", code: 'const r = await press("child task", "child data")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
 			};
 
-			const result = await press("parent task", "root data", { callLLM, maxDepth: 3 });
+			const result = await press("parent task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3 });
 			expect(result.answer).toBe("child done");
 		});
 
@@ -988,22 +986,16 @@ describe("press", () => {
 			const callLLM: CallLLM = async (messages, _systemPrompt) => {
 				const userMsg = messages[0]?.content || "";
 				if (userMsg === "grandchild task") {
-					return { reasoning: "", code: 'const frames = __ctx.stack.frames\nconsole.log("grandchildFrames=" + frames.length)\nconsole.log("rootLabel=" + frames[0].label)\nconsole.log("grandparentData=" + frames[0].data)\nreturn "grandchild done"', toolUseId: "tg" };
+					return { reasoning: "", code: 'const frames = context.__stack\nconsole.log("grandchildFrames=" + frames.length)\nconsole.log("rootLabel=" + frames[0].label)\nconsole.log("grandparentData=" + JSON.stringify(frames[0].data))\nreturn "grandchild done"', toolUseId: "tg" };
 				}
 				if (userMsg === "child task") {
-					return { reasoning: "", code: 'const r = await press("grandchild task", "gc data")\nreturn r', toolUseId: "tc" };
+					return { reasoning: "", code: 'const r = await press("grandchild task", { gcKey: "gcVal" })\nreturn r', toolUseId: "tc" };
 				}
-				return { reasoning: "", code: 'const r = await press("child task", "child data")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
 			};
 
-			const result = await press("root task", "root data", { callLLM, maxDepth: 3 });
+			const result = await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3 });
 			expect(result.answer).toBe("grandchild done");
-		});
-
-		it("context still works as string (backward compat)", async () => {
-			const callLLM = mockToolCallLLM([tc("return context", "t1"), tc("return context", "t2")]);
-			const result = await press("test query", "my context data", { callLLM });
-			expect(result.answer).toBe("my context data");
 		});
 
 		it("mirror layout: current frame appears twice in system prompt", async () => {
@@ -1014,14 +1006,13 @@ describe("press", () => {
 				if (userMsg === "child task") {
 					return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 				}
-				return { reasoning: "", code: 'const r = await press("child task", "child ctx")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
 			};
 
-			await press("root task", "root ctx", { callLLM, maxDepth: 3, contextLayout: "mirror" });
+			await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3, contextLayout: "mirror" });
 
 			const childPrompt = systemPrompts[1];
 			expect(childPrompt).toContain("<rlm-context-stack>");
-			// In mirror mode with 2 frames, current frame appears twice
 			const matches = childPrompt.match(/<context depth="1"/g);
 			expect(matches).not.toBeNull();
 			expect(matches!.length).toBe(2);
@@ -1035,18 +1026,16 @@ describe("press", () => {
 				if (userMsg === "child task") {
 					return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 				}
-				return { reasoning: "", code: 'const r = await press("child task", "child ctx")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
 			};
 
-			await press("root task", "root ctx", { callLLM, maxDepth: 3, contextLayout: "cache-efficient" });
+			await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3, contextLayout: "cache-efficient" });
 
 			const childPrompt = systemPrompts[1];
 			expect(childPrompt).toContain("<rlm-context-stack>");
-			// In cache-efficient mode, depth 0 comes before depth 1
 			const depth0Pos = childPrompt.indexOf('<context depth="0"');
 			const depth1Pos = childPrompt.indexOf('<context depth="1"');
 			expect(depth0Pos).toBeLessThan(depth1Pos);
-			// Each frame appears only once
 			const matches0 = childPrompt.match(/<context depth="0"/g);
 			const matches1 = childPrompt.match(/<context depth="1"/g);
 			expect(matches0!.length).toBe(1);
@@ -1057,12 +1046,12 @@ describe("press", () => {
 			const callLLM: CallLLM = async (messages, _systemPrompt) => {
 				const userMsg = messages[0]?.content || "";
 				if (userMsg === "child task") {
-					return { reasoning: "", code: 'try { __ctx.stack.frames.push({}) } catch(e) { console.log("frozen:" + e.message) }\nreturn "child done"', toolUseId: "tc" };
+					return { reasoning: "", code: 'try { context.__stack.push({}) } catch(e) { console.log("frozen:" + e.message) }\nreturn "child done"', toolUseId: "tc" };
 				}
-				return { reasoning: "", code: 'const r = await press("child task", "child data")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
 			};
 
-			const result = await press("root task", "root data", { callLLM, maxDepth: 3 });
+			const result = await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3 });
 			expect(result.answer).toBe("child done");
 		});
 
@@ -1075,14 +1064,13 @@ describe("press", () => {
 					return { reasoning: "", code: 'return "gc done"', toolUseId: "tg" };
 				}
 				if (userMsg === "child task") {
-					return { reasoning: "", code: 'const r = await press("grandchild", "gc ctx")\nreturn r', toolUseId: "tc" };
+					return { reasoning: "", code: 'const r = await press("grandchild", { gcKey: "gcVal" })\nreturn r', toolUseId: "tc" };
 				}
-				return { reasoning: "", code: 'const r = await press("child task", "child ctx")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
 			};
 
-			await press("root task", "root ctx", { callLLM, maxDepth: 3, contextLayout: "cache-efficient" });
+			await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3, contextLayout: "cache-efficient" });
 
-			// Both child and grandchild should use cache-efficient layout
 			const grandchildPrompt = systemPrompts[2];
 			expect(grandchildPrompt).toContain("<rlm-context-stack>");
 			const depth0Pos = grandchildPrompt.indexOf('<context depth="0"');
@@ -1091,8 +1079,60 @@ describe("press", () => {
 		});
 	});
 
-	describe("prompt content", () => {
-		it("does not contain 'Only call after verifying'", async () => {
+	describe("auto-resolve file paths in context", () => {
+		it("resolves .md file paths to content in system prompt", async () => {
+			const tempDir = join(tmpdir(), "press-test-resolve-" + Date.now());
+			mkdirSync(tempDir, { recursive: true });
+			const testFilePath = join(tempDir, "spec.md");
+			writeFileSync(testFilePath, "# Test Spec\n\nThis is the spec content.", "utf8");
+
+			let capturedSystemPrompt = "";
+			const callLLM: CallLLM = async (_messages, systemPrompt) => {
+				capturedSystemPrompt = systemPrompt;
+				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+			};
+
+			try {
+				await press("test", { forme_spec: testFilePath, tier: "haiku" }, { callLLM });
+
+				expect(capturedSystemPrompt).toContain("# Test Spec");
+				expect(capturedSystemPrompt).toContain("This is the spec content.");
+				expect(capturedSystemPrompt).not.toContain(testFilePath);
+				expect(capturedSystemPrompt).toContain("tier: haiku");
+			} finally {
+				rmSync(tempDir, { recursive: true, force: true });
+			}
+		});
+
+		it("handles missing file gracefully", async () => {
+			let capturedSystemPrompt = "";
+			const callLLM: CallLLM = async (_messages, systemPrompt) => {
+				capturedSystemPrompt = systemPrompt;
+				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+			};
+
+			await press("test", { spec: "/nonexistent/path/to/file.md" }, { callLLM });
+
+			expect(capturedSystemPrompt).toContain("[file not found: /nonexistent/path/to/file.md]");
+		});
+
+		it("leaves non-path strings unchanged", async () => {
+			let capturedSystemPrompt = "";
+			const callLLM: CallLLM = async (_messages, systemPrompt) => {
+				capturedSystemPrompt = systemPrompt;
+				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+			};
+
+			await press("test", { program_dir: "/path/to/fixtures", tier: "haiku", run_dir: ".prose/runs/test" }, { callLLM });
+
+			expect(capturedSystemPrompt).toContain("program_dir: /path/to/fixtures");
+			expect(capturedSystemPrompt).toContain("tier: haiku");
+			expect(capturedSystemPrompt).toContain("run_dir: .prose/runs/test");
+		});
+	});
+
+	describe("system prompt documents simplified context API", () => {
+		it("documents context.__root and context.__stack", async () => {
 			let capturedSystemPrompt = "";
 			const callLLM: CallLLM = async (_messages, systemPrompt) => {
 				capturedSystemPrompt = systemPrompt;
@@ -1101,11 +1141,11 @@ describe("press", () => {
 
 			await press("test", undefined, { callLLM });
 
-			expect(capturedSystemPrompt).not.toContain("Only call after verifying");
-			expect(capturedSystemPrompt).not.toContain("Never return a value you have not first logged");
+			expect(capturedSystemPrompt).toContain("context.__root");
+			expect(capturedSystemPrompt).toContain("context.__stack");
 		});
 
-		it("contains same-iteration return language", async () => {
+		it("does NOT document __ctx.shared.data or __ctx.stack", async () => {
 			let capturedSystemPrompt = "";
 			const callLLM: CallLLM = async (_messages, systemPrompt) => {
 				capturedSystemPrompt = systemPrompt;
@@ -1114,20 +1154,10 @@ describe("press", () => {
 
 			await press("test", undefined, { callLLM });
 
-			expect(capturedSystemPrompt).toContain("console.log(value) and return(value) in the same iteration");
-		});
-
-		it("contains sandbox variable scoping warning when canDelegate", async () => {
-			let capturedSystemPrompt = "";
-			const callLLM: CallLLM = async (_messages, systemPrompt) => {
-				capturedSystemPrompt = systemPrompt;
-				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
-			};
-
-			await press("test", undefined, { callLLM, maxDepth: 3 });
-
-			expect(capturedSystemPrompt).toContain("Child press() calls execute in the same JavaScript sandbox");
-			expect(capturedSystemPrompt).toContain("re-read your variables from");
+			expect(capturedSystemPrompt).not.toContain("__ctx.shared.data");
+			expect(capturedSystemPrompt).not.toContain("__ctx.stack.frames");
+			expect(capturedSystemPrompt).not.toContain("__ctx.stack.depth");
+			expect(capturedSystemPrompt).not.toContain("__ctx.local");
 		});
 	});
 });

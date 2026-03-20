@@ -3,7 +3,7 @@ import type { RlmEvent } from "../src/events.js";
 export interface EvalTask {
 	id: string;
 	query: string;
-	context: string;
+	context: Record<string, unknown>;
 	expected: string | string[];
 	metadata?: Record<string, unknown>;
 }

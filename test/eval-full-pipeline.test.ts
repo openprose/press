@@ -46,7 +46,7 @@ describeIf("Eval 8: Full pipeline via bootloader (Sonnet)", () => {
       "",
       "## Your context data",
       "",
-      "Your `context` variable is a JSON string. Parse it to get:",
+      "Your `context` variable is an object with these keys:",
       "- `spec_dir` -- directory with Prose/Forme spec files",
       "- `program_path` -- path to the program entry point",
       "- `program_dir` -- directory containing the program and service files",
@@ -89,20 +89,20 @@ describeIf("Eval 8: Full pipeline via bootloader (Sonnet)", () => {
       "",
       "- Always `await` press() calls.",
       "- Use `require('fs')` to read/write files.",
-      "- Parse context with `JSON.parse(context)` in your first iteration.",
+      "- Access context properties directly (e.g., context.spec_dir).",
       "- Do Phase 1 first, verify manifest exists, then do Phase 2.",
-      "- Pass specs as part of the context STRING to children -- they will see the specs",
+      "- Pass specs as part of the context object to children -- they will see the specs",
       "  in the <rlm-context-stack> section of their system prompt.",
     ].join("\n");
 
-    // Context is a JSON string with all paths and inputs
-    const bootContext = JSON.stringify({
+    // Context is an object with all paths and inputs
+    const bootContext: Record<string, unknown> = {
       spec_dir: specDir,
       program_path: join(fixtureDir, "index.md"),
       program_dir: fixtureDir,
       run_dir: runDir,
       caller_inputs: { text: "hello world this is a test" },
-    });
+    };
 
     console.log("\n========== STARTING EVAL 8 (Sonnet) ==========\n");
     console.log("Spec dir:", specDir);

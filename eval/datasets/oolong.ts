@@ -61,8 +61,8 @@ export async function loadOolongTasks(
 
 	return tasks.map((row) => ({
 		id: `oolong-${row.id}`,
-		query: `The data is available in the \`context\` variable. ${row.question}`,
-		context: withLabels ? row.context_window_text_with_labels : row.context_window_text,
+		query: `The data is available in \`context.data\`. ${row.question}`,
+		context: { data: withLabels ? row.context_window_text_with_labels : row.context_window_text },
 		expected: normalizeAnswer(row.answer),
 		metadata: {
 			dataset: row.dataset,

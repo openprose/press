@@ -140,11 +140,11 @@ function loadContextDir(dirPath: string): string {
 async function main() {
 	const args = parseArgs(process.argv.slice(2));
 
-	let context: string | undefined;
+	let context: Record<string, unknown> | undefined;
 	if (args.contextFile) {
-		context = readFileSync(resolve(args.contextFile), "utf-8");
+		context = { data: readFileSync(resolve(args.contextFile), "utf-8") };
 	} else if (args.contextDir) {
-		context = loadContextDir(args.contextDir);
+		context = { data: loadContextDir(args.contextDir) };
 	}
 
 	const callLLM = fromProviderModel(args.model, {
@@ -169,7 +169,7 @@ async function main() {
 	console.log(`Model: ${args.model}`);
 	if (args.baseUrl) console.log(`Base URL: ${args.baseUrl}`);
 	if (Object.keys(models).length > 0) console.log(`Model aliases: ${Object.keys(models).join(", ")}`);
-	if (context) console.log(`Context: ${context.length.toLocaleString()} characters`);
+	if (context) console.log(`Context: ${JSON.stringify(context).length.toLocaleString()} characters`);
 	console.log(`Max iterations: ${args.maxIterations}`);
 	console.log(`Max depth: ${args.maxDepth}`);
 	console.log(`---`);

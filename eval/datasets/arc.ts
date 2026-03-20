@@ -54,10 +54,10 @@ export async function loadArcTasks(
 		}
 
 		// Build the context: the full task data
-		const context = JSON.stringify({
+		const context: Record<string, unknown> = {
 			train: challenge.train,
 			test: challenge.test,
-		});
+		};
 
 		// Build expected answer
 		// Most tasks have 1 test input; some have multiple
@@ -122,7 +122,7 @@ export async function loadArcCompoundBundle(
 	const metaTask: EvalTask = {
 		id: "arc-compound",
 		query: `You are running a compound ARC-AGI-2 learning session with ${taskIds.length} tasks. The orchestrator plugin describes your full workflow. Task data is pre-loaded on globalThis.__arcTasks. Read from the environment.`,
-		context: "",
+		context: {},
 		expected: JSON.stringify(expectedMap),
 		metadata: {
 			taskIds,
@@ -139,9 +139,9 @@ function buildArcQuery(challenge: ArcChallenge): string {
 		? "Return the output as a JSON 2D array of integers, e.g.: [[1,2,3],[4,5,6]]"
 		: `There are ${numTests} test inputs. Return an array of ${numTests} output grids as JSON, e.g.: [[[1,2],[3,4]], [[5,6],[7,8]]]`;
 
-	return `You are solving an ARC-AGI task. The task data is available in the \`context\` variable as a JSON string.
+	return `You are solving an ARC-AGI task. The task data is available in the \`context\` variable as an object.
 
-The JSON contains:
+The object contains:
 - "train": Training examples, each with "input" and "output" grids (2D arrays of ints 0-9)
 - "test": Test inputs with "input" grids only (you must predict the outputs)
 

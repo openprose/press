@@ -116,8 +116,8 @@ export async function generateSNIAHTasks(
 
 			tasks.push({
 				id: `sniah-${contextLen}-${i}`,
-				query: `${question} The answer is in the \`context\` variable. Search through it to find and return the answer.`,
-				context,
+				query: `${question} The answer is in \`context.data\`. Search through it to find and return the answer.`,
+				context: { data: context },
 				expected: answer,
 				metadata: {
 					contextLenTarget: contextLen,

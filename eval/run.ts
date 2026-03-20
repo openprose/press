@@ -767,7 +767,7 @@ async function main(): Promise<void> {
 	// Show sample task
 	const sample = tasks[0];
 	console.log(`  Sample task: "${sample.query.slice(0, 100)}${sample.query.length > 100 ? "..." : ""}"`);
-	console.log(`  Context length: ${sample.context.length.toLocaleString()} chars`);
+	console.log(`  Context keys: ${Object.keys(sample.context).join(", ") || "(empty)"}`);
 	console.log(`  Expected: "${String(sample.expected).slice(0, 80)}"`);
 	console.log();
 
