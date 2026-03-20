@@ -1,6 +1,6 @@
 import { JsEnvironment } from "./environment.js";
 import type { RlmEvent, RlmEventSink } from "./events.js";
-import { buildModelTable, buildSystemPrompt } from "./system-prompt.js";
+import { buildModelTable, buildSystemPrompt, renderContextStack } from "./system-prompt.js";
 
 export interface CallLLMResponse {
 	reasoning: string;
@@ -38,6 +38,8 @@ export interface RlmOptions {
 	childApps?: Record<string, string>;
 	reasoningEffort?: string;
 	observer?: RlmEventSink;
+	/** Layout mode for context stack in child system prompts. Default: "mirror". */
+	contextLayout?: ContextLayout;
 }
 
 export interface RlmResult {
@@ -74,6 +76,21 @@ export interface DelegationContext {
 	parentId: string | null;
 }
 
+/** A single frame in the context stack. */
+export interface ContextFrame {
+	depth: number;
+	data: Record<string, unknown> | string | undefined;
+	label?: string;
+}
+
+/** The full context stack accessible via context.__stack. */
+export interface ContextStack {
+	frames: readonly ContextFrame[];
+	current: Record<string, unknown> | string | undefined;
+}
+
+export type ContextLayout = "mirror" | "cache-efficient";
+
 interface LocalStore {
 	[key: string]: unknown;
 }
@@ -103,6 +120,7 @@ export async function press(query: string, context: string | undefined, options:
 		globalDocs: options.globalDocs,
 		childComponents: components,
 		reasoningEffort: options.reasoningEffort,
+		contextLayout: options.contextLayout ?? "mirror" as ContextLayout,
 	};
 
 	const emit: ((event: RlmEvent) => void) | undefined = options.observer
@@ -194,10 +212,27 @@ export async function press(query: string, context: string | undefined, options:
 		contextStore.shared = Object.freeze({ data: context });
 	}
 
+	// Create proxied accessors for stack/depth that route by invocation
+	const stackProxy = {
+		get frames() {
+			const activeId = invocationStack[invocationStack.length - 1];
+			if (!activeId) return [];
+			const store = contextStore.locals.get(activeId);
+			return store?.__contextStack ?? [];
+		},
+		get depth() {
+			const activeId = invocationStack[invocationStack.length - 1];
+			if (!activeId) return 0;
+			const store = contextStore.locals.get(activeId);
+			return (store?.__contextDepth as number) ?? 0;
+		},
+	};
+
 	env.set("__ctx", {
 		shared: contextStore.shared,
 		local: localProxy,
 		readLocal,
+		stack: stackProxy,
 	});
 
 	async function rlmInternal(
@@ -211,6 +246,8 @@ export async function press(query: string, context: string | undefined, options:
 		callLLMOverride?: CallLLM,
 		maxIterationsOverride?: number,
 		reasoningEffortOverride?: string,
+		ancestorFrames?: readonly ContextFrame[],
+		contextLayoutOverride?: ContextLayout,
 	): Promise<RlmResult> {
 		const callLLM = callLLMOverride ?? opts.callLLM;
 		const effectiveReasoningEffort = reasoningEffortOverride ?? opts.reasoningEffort;
@@ -220,6 +257,17 @@ export async function press(query: string, context: string | undefined, options:
 			: opts.maxIterations;
 
 		const canDelegate = depth < opts.maxDepth;
+		const effectiveContextLayout = contextLayoutOverride ?? opts.contextLayout;
+
+		// Build the context frame for this invocation
+		const currentFrame: ContextFrame = {
+			depth,
+			data: context,
+			label: query.length > 80 ? query.substring(0, 80) + "..." : query,
+		};
+		const allFrames: readonly ContextFrame[] = ancestorFrames
+			? [...ancestorFrames, currentFrame]
+			: [currentFrame];
 
 		let programContent: string | undefined;
 		if (customSystemPrompt) {
@@ -229,6 +277,12 @@ export async function press(query: string, context: string | undefined, options:
 		}
 
 		const componentKeys = Object.keys(opts.childComponents);
+		const contextStackSection = allFrames.length > 1
+			? renderContextStack(allFrames, effectiveContextLayout)
+			: (context !== undefined
+				? renderContextStack(allFrames, effectiveContextLayout)
+				: undefined);
+
 		const effectiveSystemPrompt = buildSystemPrompt({
 			canDelegate,
 			invocationId,
@@ -241,6 +295,7 @@ export async function press(query: string, context: string | undefined, options:
 			globalDocs: opts.globalDocs,
 			modelTable,
 			...(componentKeys.length > 0 ? { availableComponents: componentKeys } : {}),
+			contextStackContent: contextStackSection,
 		});
 
 		emit?.({
@@ -262,14 +317,36 @@ export async function press(query: string, context: string | undefined, options:
 			contextStore.locals.get(invocationId)!.context = context;
 		}
 
+		// Store frozen context stack for this invocation
+		const frozenStack = Object.freeze(allFrames.map(f => Object.freeze({
+			depth: f.depth,
+			data: typeof f.data === 'object' && f.data !== null ? Object.freeze({ ...f.data as Record<string, unknown> }) : f.data,
+			label: f.label,
+		})));
+		contextStore.locals.get(invocationId)!.__contextStack = frozenStack;
+		contextStore.locals.get(invocationId)!.__contextDepth = depth;
+
 		invocationStack.push(invocationId);
 		try {
 			await env.exec(
 				`Object.defineProperty(globalThis, 'context', {\n` +
 				`  get() {\n` +
+				`    let val;\n` +
 				`    const local = __ctx.local.context;\n` +
-				`    if (local !== undefined) return local;\n` +
-				`    return __ctx.shared.data;\n` +
+				`    if (local !== undefined) { val = local; }\n` +
+				`    else { val = __ctx.shared.data; }\n` +
+				`    // Attach __stack and __depth for object contexts\n` +
+				`    if (val && typeof val === 'object' && !Object.isFrozen(val)) {\n` +
+				`      try {\n` +
+				`        if (!Object.prototype.hasOwnProperty.call(val, '__stack')) {\n` +
+				`          Object.defineProperty(val, '__stack', { get() { return __ctx.stack.frames; }, enumerable: false, configurable: true });\n` +
+				`        }\n` +
+				`        if (!Object.prototype.hasOwnProperty.call(val, '__depth')) {\n` +
+				`          Object.defineProperty(val, '__depth', { get() { return __ctx.stack.depth; }, enumerable: false, configurable: true });\n` +
+				`        }\n` +
+				`      } catch(e) {}\n` +
+				`    }\n` +
+				`    return val;\n` +
 				`  },\n` +
 				`  set(v) { __ctx.local.context = v; },\n` +
 				`  configurable: true,\n` +
@@ -542,7 +619,7 @@ export async function press(query: string, context: string | undefined, options:
 	}
 
 	/** The sandbox delegate function, exposed as `press()`. */
-	const pressFn = (q: string, c?: string, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; /** @deprecated Use `use` instead. */ app?: string; reasoning?: string }): Promise<string> => {
+	const pressFn = (q: string, c?: string, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; /** @deprecated Use `use` instead. */ app?: string; reasoning?: string; contextLayout?: ContextLayout }): Promise<string> => {
 		// Reject delegation at max depth
 		if (activeDepth >= opts.maxDepth) {
 			return Promise.reject(
@@ -614,9 +691,15 @@ export async function press(query: string, context: string | undefined, options:
 			appName: componentName,
 		});
 
+		// Capture the parent's context frames for the child
+		const parentFrames: readonly ContextFrame[] = (() => {
+			const callerLocals = contextStore.locals.get(callerInvocationId);
+			return (callerLocals?.__contextStack as readonly ContextFrame[] | undefined) ?? [];
+		})();
+
 		const promise = (async () => {
 			try {
-				const result = await rlmInternal(q, c, savedDepth + 1, childLineage, childInvocationId, callerInvocationId, resolvedSystemPrompt, modelCallLLM, rlmOpts?.maxIterations, rlmOpts?.reasoning);
+				const result = await rlmInternal(q, c, savedDepth + 1, childLineage, childInvocationId, callerInvocationId, resolvedSystemPrompt, modelCallLLM, rlmOpts?.maxIterations, rlmOpts?.reasoning, parentFrames, rlmOpts?.contextLayout);
 				emit?.({
 					type: "delegation:return",
 					runId,
@@ -670,7 +753,7 @@ export async function press(query: string, context: string | undefined, options:
 	let runResult: RlmResult | undefined;
 	let runError: unknown;
 	try {
-		runResult = await rlmInternal(query, context, 0, [query], "root", null);
+		runResult = await rlmInternal(query, context, 0, [query], "root", null, undefined, undefined, undefined, undefined, [], undefined);
 		return runResult;
 	} catch (err) {
 		runError = err;

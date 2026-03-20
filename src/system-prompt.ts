@@ -19,6 +19,14 @@ export const TOOL_CHOICE = {
   function: { name: "execute_code" },
 };
 
+export interface ContextFrameInput {
+  depth: number;
+  data: Record<string, unknown> | string | undefined;
+  label?: string;
+}
+
+export type ContextLayoutMode = "mirror" | "cache-efficient";
+
 export interface BuildSystemPromptOptions {
   canDelegate: boolean;
   invocationId: string;
@@ -31,6 +39,8 @@ export interface BuildSystemPromptOptions {
   globalDocs?: string;
   modelTable?: string;
   availableComponents?: string[];
+  /** Pre-rendered context stack section to include in the prompt. */
+  contextStackContent?: string;
 }
 
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
@@ -46,6 +56,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     globalDocs,
     modelTable,
     availableComponents,
+    contextStackContent,
   } = options;
 
   const sections: string[] = [];
@@ -77,6 +88,8 @@ Trust yourself. The engine is minimal by design; you handle ambiguity, error rec
   envBody += `
 - \`__rlm\` (read-only) -- delegation metadata: \`{ depth, maxDepth, iteration, maxIterations, lineage, invocationId, parentId }\`
 - \`__ctx.shared.data\` -- the root context, readable at any depth (frozen).
+- \`__ctx.stack.frames\` -- read-only array of ancestor context frames (\`{ depth, data, label }\`). Index 0 = root.
+- \`__ctx.stack.depth\` -- current delegation depth.
 - Variables persist across iterations. Code from earlier iterations is still in scope.
 
 The sandbox is persistent and shared. All agents in the delegation tree execute in the same JavaScript VM. Variables set before \`press()\` are readable by the child. Variables set by the child are readable after it returns. Convention: prefix shared state with \`__\` (double underscore).`;
@@ -121,6 +134,11 @@ Iteration budget: ${maxIterations} iterations.
 ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDesc}
 </rlm-context>`);
 
+  // 3b. Context stack
+  if (contextStackContent) {
+    sections.push(`<rlm-context-stack>\n${contextStackContent}\n</rlm-context-stack>`);
+  }
+
   // 4. Rules
   let rulesBody = `- One execute_code tool call per response. Stop and wait for output.
 - \`return(value)\` only after verifying via \`console.log()\`.
@@ -155,6 +173,65 @@ ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDes
   }
 
   return sections.join("\n\n");
+}
+
+const MAX_FRAME_CHARS = 5000;
+
+function renderFrameData(data: Record<string, unknown> | string | undefined): string {
+  if (data === undefined) return "(no data)";
+  if (typeof data === "string") {
+    if (data.length > MAX_FRAME_CHARS) {
+      return data.substring(0, MAX_FRAME_CHARS) + `\n[truncated: ${data.length - MAX_FRAME_CHARS} chars omitted]`;
+    }
+    return data;
+  }
+  const rendered = JSON.stringify(data, null, 2);
+  if (rendered.length > MAX_FRAME_CHARS) {
+    return rendered.substring(0, MAX_FRAME_CHARS) + `\n[truncated: ${rendered.length - MAX_FRAME_CHARS} chars omitted]`;
+  }
+  return rendered;
+}
+
+function renderFrame(frame: ContextFrameInput): string {
+  const labelAttr = frame.label ? ` label="${frame.label}"` : "";
+  return `<context depth="${frame.depth}"${labelAttr}>\n${renderFrameData(frame.data)}\n</context>`;
+}
+
+export function renderContextStack(
+  frames: readonly ContextFrameInput[],
+  layout: ContextLayoutMode = "mirror",
+): string {
+  if (frames.length === 0) return "";
+
+  const sections: string[] = [];
+
+  if (layout === "cache-efficient") {
+    // Oldest first, simple append order
+    for (const frame of frames) {
+      sections.push(renderFrame(frame));
+    }
+  } else {
+    // Mirror mode: current at top, ancestors in middle (deepest first), current at bottom
+    const current = frames[frames.length - 1];
+    const ancestors = frames.slice(0, -1);
+
+    sections.push(renderFrame(current));
+
+    // Ancestors from deepest to shallowest (reverse order)
+    for (let i = ancestors.length - 1; i >= 0; i--) {
+      sections.push(renderFrame(ancestors[i]));
+    }
+
+    // If there are ancestors, repeat them shallowest to deepest, then current again
+    if (ancestors.length > 0) {
+      for (const ancestor of ancestors) {
+        sections.push(renderFrame(ancestor));
+      }
+      sections.push(renderFrame(current));
+    }
+  }
+
+  return sections.join("\n");
 }
 
 export function buildModelTable(
