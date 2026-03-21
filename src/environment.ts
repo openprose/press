@@ -1,5 +1,8 @@
 import vm from "node:vm";
+import { createRequire } from "node:module";
 import * as acorn from "acorn";
+
+const nodeRequire = createRequire(import.meta.url);
 
 export interface RlmEnvironment {
 	exec(code: string): Promise<{ output: string; error: string | null; returnValue?: unknown }>;
@@ -41,7 +44,7 @@ export class JsEnvironment implements RlmEnvironment {
 			require: (id: string) => {
 				const moduleId = id.startsWith("node:") ? id : `node:${id}`;
 				try {
-					return require(moduleId);
+					return nodeRequire(moduleId);
 				} catch {
 					throw new Error(`Cannot require '${id}'. Only Node.js built-in modules are available.`);
 				}

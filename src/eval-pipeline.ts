@@ -154,28 +154,30 @@ function loadEnvFile(): void {
 // Default eval spec
 // ---------------------------------------------------------------------------
 
+const PROJECT_ROOT = resolve(new URL(".", import.meta.url).pathname, "..");
+
 const DEFAULT_EVAL_SPEC: EvalConfig[] = [
 	{
 		program: "trivial-pipeline",
-		programPath: "test/fixtures/trivial-program/index.md",
-		programDir: "test/fixtures/trivial-program",
-		model: "anthropic/claude-sonnet-4-6",
+		programPath: resolve(PROJECT_ROOT, "test/fixtures/trivial-program/index.md"),
+		programDir: resolve(PROJECT_ROOT, "test/fixtures/trivial-program"),
+		model: "anthropic/claude-sonnet-4.6",
 		question: "Q2",
 		callerInputs: { text: "hello world this is a test" },
 	},
 	{
 		program: "parallel-analysis",
-		programPath: "test/fixtures/parallel-program/index.md",
-		programDir: "test/fixtures/parallel-program",
-		model: "anthropic/claude-sonnet-4-6",
+		programPath: resolve(PROJECT_ROOT, "test/fixtures/parallel-program/index.md"),
+		programDir: resolve(PROJECT_ROOT, "test/fixtures/parallel-program"),
+		model: "anthropic/claude-sonnet-4.6",
 		question: "Q2",
 		callerInputs: { text: "hello world\nthis is a test\nwith three lines" },
 	},
 	{
 		program: "haiku-refiner",
-		programPath: "test/fixtures/worker-critic/index.md",
-		programDir: "test/fixtures/worker-critic",
-		model: "anthropic/claude-sonnet-4-6",
+		programPath: resolve(PROJECT_ROOT, "test/fixtures/worker-critic/index.md"),
+		programDir: resolve(PROJECT_ROOT, "test/fixtures/worker-critic"),
+		model: "anthropic/claude-sonnet-4.6",
 		question: "Q2",
 		callerInputs: { topic: "autumn rain" },
 	},
@@ -190,7 +192,7 @@ async function runSingleEval(
 	options: { specDir: string },
 ): Promise<EvalResult> {
 	const runId = generateRunId();
-	const runDir = `.prose/runs/${runId}`;
+	const runDir = resolve(`.prose/runs/${runId}`);
 	const observer = new RlmObserver();
 	const start = Date.now();
 
@@ -399,7 +401,7 @@ function parseCliArgs(argv: string[]): CliOptions {
 		compare: false,
 		budget: null,
 		specDir: resolve(join(import.meta.url.replace("file://", ""), "..", "..", "..", "prose", "skills", "open-prose")),
-		model: "anthropic/claude-sonnet-4-6",
+		model: "anthropic/claude-sonnet-4.6",
 	};
 
 	for (let i = 0; i < argv.length; i++) {

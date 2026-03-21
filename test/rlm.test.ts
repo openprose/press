@@ -512,7 +512,8 @@ describe("press", () => {
 
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("You are a helper.");
-		expect(childPrompt).toContain("The `myApi` global provides X and Y.");
+		// With customSystemPrompt, it replaces the default prompt entirely.
+		// globalDocs are NOT included — the custom prompt is self-contained.
 	});
 
 	it("globalDocs: in max-depth child prompt", async () => {
@@ -595,7 +596,8 @@ describe("press", () => {
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("You are a test component.");
 		expect(childPrompt).toContain("Do test things.");
-		expect(childPrompt).toContain("<rlm-environment>");
+		// With customSystemPrompt (from `use`), the component IS the full prompt.
+		// No generic <rlm-environment> wrapping.
 	});
 
 	it("app: child receives component prompt (backwards compat)", async () => {
@@ -618,7 +620,7 @@ describe("press", () => {
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("You are a test app.");
 		expect(childPrompt).toContain("Do test things.");
-		expect(childPrompt).toContain("<rlm-environment>");
+		// With customSystemPrompt (from `app`), the component IS the full prompt.
 	});
 
 	it("use: unknown name errors with list", async () => {

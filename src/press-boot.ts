@@ -55,9 +55,8 @@ export async function pressRun(options: PressRunOptions): Promise<PressRunResult
   const entryPoint = readFileSync(programPath, "utf8");
 
   // Build the Forme system prompt using buildPressPrompt().
-  // This includes the RLM preamble, <forme-spec>, <filesystem-spec>,
-  // <press-runtime> glossary, and <run-context>.
-  // We pass it as pluginBodies so it renders inside <rlm-program>.
+  // This replaces the default system prompt entirely with <forme-spec>,
+  // <filesystem-spec>, <press-runtime> glossary, and <run-context>.
   const formePrompt = buildPressPrompt({
     phase: "forme",
     runId,
@@ -80,7 +79,7 @@ export async function pressRun(options: PressRunOptions): Promise<PressRunResult
       callLLM,
       maxIterations,
       maxDepth: 1,  // Forme doesn't need deep delegation
-      pluginBodies: formePrompt,
+      systemPrompt: formePrompt,
       observer,
     },
   );
@@ -124,7 +123,7 @@ export async function pressRun(options: PressRunOptions): Promise<PressRunResult
       callLLM,
       maxIterations,
       maxDepth,  // VM needs depth for service delegation
-      pluginBodies: vmPrompt,
+      systemPrompt: vmPrompt,
       observer,
     },
   );

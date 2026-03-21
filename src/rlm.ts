@@ -28,6 +28,8 @@ export interface RlmOptions {
 	maxIterations?: number;
 	maxDepth?: number;
 	pluginBodies?: string;
+	/** Replace the default system prompt entirely with this content. */
+	systemPrompt?: string;
 	models?: Record<string, ModelEntry>;
 	sandboxGlobals?: Record<string, unknown>;
 	/** Visible at all depths (root, children, flat). Document sandboxGlobals here. */
@@ -254,10 +256,10 @@ export async function press(query: string, context: Record<string, unknown> | un
 			: [currentFrame];
 
 		let programContent: string | undefined;
-		if (customSystemPrompt) {
-			programContent = customSystemPrompt;
-		} else if (depth === 0 && opts.pluginBodies) {
-			programContent = opts.pluginBodies;
+		if (!customSystemPrompt) {
+			if (depth === 0 && opts.pluginBodies) {
+				programContent = opts.pluginBodies;
+			}
 		}
 
 		const componentKeys = Object.keys(opts.childComponents);
@@ -267,7 +269,12 @@ export async function press(query: string, context: Record<string, unknown> | un
 				? renderContextStack(allFrames, effectiveContextLayout)
 				: undefined);
 
-		const effectiveSystemPrompt = buildSystemPrompt({
+		// When a custom system prompt is provided, use it directly
+		// (don't wrap it inside buildSystemPrompt's generic preamble).
+		// The custom prompt is self-contained — it has its own preamble and structure.
+		const effectiveSystemPrompt = customSystemPrompt
+			? customSystemPrompt
+			: buildSystemPrompt({
 			canDelegate,
 			invocationId,
 			parentId,
@@ -737,7 +744,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 	let runResult: RlmResult | undefined;
 	let runError: unknown;
 	try {
-		runResult = await rlmInternal(query, context, 0, [query], "root", null, undefined, undefined, undefined, undefined, [], undefined);
+		runResult = await rlmInternal(query, context, 0, [query], "root", null, options.systemPrompt, undefined, undefined, undefined, [], undefined);
 		return runResult;
 	} catch (err) {
 		runError = err;
