@@ -13,6 +13,7 @@
  * Options:
  *   --spec <json>          Inline JSON eval spec (array of EvalConfig)
  *   --spec-file <path>     Path to JSON file with eval spec
+ *   --tier <tier>          Eval tier: quick (3 cheap), standard (6 default), full (all)
  *   --auto                 Use the researcher to determine what to run
  *   --concurrency <n>      Max parallel eval runs (default: 3)
  *   --results-dir <path>   Where to store results (default: eval-results/)
@@ -20,7 +21,7 @@
  *   --compare              Run the comparator across all results
  *   --budget <usd>         Cost budget for auto mode
  *   --spec-dir <path>      Path to Prose/Forme specs (default: ../prose/skills/open-prose)
- *   --model <id>           Default model for researcher/judge/comparator
+ *   --model <id>           Override model for all evals (and researcher/judge/comparator)
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -150,12 +151,15 @@ function loadEnvFile(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Default eval spec
+// Eval tiers and specs
 // ---------------------------------------------------------------------------
+
+export type EvalTier = "quick" | "standard" | "full";
 
 const PROJECT_ROOT = resolve(new URL(".", import.meta.url).pathname, "..");
 
-const DEFAULT_EVAL_SPEC: EvalConfig[] = [
+/** Quick tier: 3 cheap Sonnet evals (~$2, ~3 min). Used on every PR. */
+const QUICK_EVAL_SPEC: EvalConfig[] = [
 	{
 		program: "trivial-pipeline",
 		programPath: resolve(PROJECT_ROOT, "test/fixtures/trivial-program/index.md"),
@@ -180,6 +184,11 @@ const DEFAULT_EVAL_SPEC: EvalConfig[] = [
 		question: "Q2",
 		callerInputs: { topic: "autumn rain" },
 	},
+];
+
+/** Standard tier: all 6 current evals (~$4, ~5 min). */
+const STANDARD_EVAL_SPEC: EvalConfig[] = [
+	...QUICK_EVAL_SPEC,
 	{
 		program: "bilingual-haiku",
 		programPath: resolve(PROJECT_ROOT, "test/fixtures/bilingual-haiku/index.md"),
@@ -205,6 +214,23 @@ const DEFAULT_EVAL_SPEC: EvalConfig[] = [
 		callerInputs: { text: "hello world this is a test" },
 	},
 ];
+
+/**
+ * Full tier: standard + additional expensive evals.
+ * TODO: Add could-haiku and other expensive evals when fixtures exist.
+ */
+const FULL_EVAL_SPEC: EvalConfig[] = [
+	...STANDARD_EVAL_SPEC,
+	// Future: could-haiku and other expensive/slow evals go here
+];
+
+const DEFAULT_EVAL_SPEC = STANDARD_EVAL_SPEC;
+
+const TIER_SPECS: Record<EvalTier, EvalConfig[]> = {
+	quick: QUICK_EVAL_SPEC,
+	standard: STANDARD_EVAL_SPEC,
+	full: FULL_EVAL_SPEC,
+};
 
 // ---------------------------------------------------------------------------
 // Core: run a single eval
@@ -403,6 +429,7 @@ function indexResults(batch: EvalBatchResult, resultsDir: string): void {
 interface CliOptions {
 	spec: EvalConfig[] | null;
 	specFile: string | null;
+	tier: EvalTier | null;
 	auto: boolean;
 	concurrency: number;
 	resultsDir: string;
@@ -411,20 +438,33 @@ interface CliOptions {
 	budget: number | null;
 	specDir: string;
 	model: string;
+	modelOverride: boolean;
+}
+
+function resolveSpecDir(): string {
+	// Try sibling repo first (local dev), then ./prose/ (CI checkout)
+	const siblingPath = resolve(PROJECT_ROOT, "..", "prose", "skills", "open-prose");
+	if (existsSync(siblingPath)) return siblingPath;
+	const ciPath = resolve(PROJECT_ROOT, "prose", "skills", "open-prose");
+	if (existsSync(ciPath)) return ciPath;
+	// Fall back to sibling path (will fail later with a clear error)
+	return siblingPath;
 }
 
 function parseCliArgs(argv: string[]): CliOptions {
 	const opts: CliOptions = {
 		spec: null,
 		specFile: null,
+		tier: null,
 		auto: false,
 		concurrency: 3,
 		resultsDir: "eval-results",
 		judge: false,
 		compare: false,
 		budget: null,
-		specDir: resolve(join(import.meta.url.replace("file://", ""), "..", "..", "..", "prose", "skills", "open-prose")),
+		specDir: resolveSpecDir(),
 		model: "anthropic/claude-sonnet-4.6",
+		modelOverride: false,
 	};
 
 	for (let i = 0; i < argv.length; i++) {
@@ -443,6 +483,13 @@ function parseCliArgs(argv: string[]): CliOptions {
 			opts.spec = JSON.parse(argv[++i]);
 		} else if (arg === "--spec-file" && i + 1 < argv.length) {
 			opts.specFile = argv[++i];
+		} else if (arg === "--tier" && i + 1 < argv.length) {
+			const tier = argv[++i] as EvalTier;
+			if (!["quick", "standard", "full"].includes(tier)) {
+				console.error(`ERROR: Invalid tier "${tier}". Must be quick, standard, or full.`);
+				process.exit(1);
+			}
+			opts.tier = tier;
 		} else if (arg === "--concurrency" && i + 1 < argv.length) {
 			opts.concurrency = parseInt(argv[++i], 10);
 		} else if (arg === "--results-dir" && i + 1 < argv.length) {
@@ -453,6 +500,7 @@ function parseCliArgs(argv: string[]): CliOptions {
 			opts.specDir = argv[++i];
 		} else if (arg === "--model" && i + 1 < argv.length) {
 			opts.model = argv[++i];
+			opts.modelOverride = true;
 		}
 	}
 
@@ -465,6 +513,7 @@ function printUsage(): void {
 Usage: npx tsx src/eval-pipeline.ts [options]
 
 Options:
+  --tier <tier>          Eval tier: quick (3 cheap), standard (6 default), full (all)
   --spec <json>          Inline JSON eval spec (array of EvalConfig)
   --spec-file <path>     Path to JSON file with eval spec
   --auto                 Use the researcher to determine what to run (default if no spec)
@@ -474,10 +523,14 @@ Options:
   --compare              Run the comparator across all results
   --budget <usd>         Cost budget for auto mode
   --spec-dir <path>      Path to Prose/Forme specs
-  --model <id>           Default model for researcher/judge/comparator
+  --model <id>           Override model for all evals
 
-If no --spec, --spec-file, or --auto is provided, runs the default spec
-(trivial-pipeline, parallel-analysis, haiku-refiner).
+Tiers:
+  quick      3 cheap Sonnet evals (trivial, parallel, haiku-refiner) — ~$2, ~3 min
+  standard   All 6 current evals — ~$4, ~5 min (default)
+  full       Standard + expensive evals — ~$6+, ~15 min
+
+If no --tier, --spec, --spec-file, or --auto is provided, runs the standard tier.
 `);
 }
 
@@ -516,9 +569,18 @@ async function main(): Promise<void> {
 		// For now, fall back to defaults
 		console.log("Auto mode not yet implemented — using default spec");
 		configs = DEFAULT_EVAL_SPEC;
+	} else if (opts.tier) {
+		configs = TIER_SPECS[opts.tier];
+		console.log(`Using ${opts.tier} tier: ${configs.length} eval(s)`);
 	} else {
 		configs = DEFAULT_EVAL_SPEC;
 		console.log(`Using default spec: ${configs.length} eval(s)`);
+	}
+
+	// Apply --model override to all configs if provided
+	if (opts.modelOverride) {
+		configs = configs.map(c => ({ ...c, model: opts.model }));
+		console.log(`  Model override: ${opts.model}`);
 	}
 
 	console.log();
