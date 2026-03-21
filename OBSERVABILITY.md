@@ -5,11 +5,11 @@ The RLM engine emits structured events during execution. An observer collects th
 ## Quick start
 
 ```typescript
-import { press, RlmObserver } from "@openprose/press";
+import { pressRun, RlmObserver } from "@openprose/press";
 
 const observer = new RlmObserver();
 
-const result = await press("What is 2 + 2?", undefined, {
+const result = await pressRun("What is 2 + 2?", undefined, {
   callLLM: myDriver,
   observer,
 });
@@ -31,7 +31,7 @@ const tree = observer.getTree(events[0].runId);
 The engine emits events through an `RlmEventSink` interface (a single `emit(event)` method). `RlmObserver` is the built-in implementation that collects events in memory and provides query/subscription APIs. You can also implement `RlmEventSink` directly for custom consumers (streaming, logging, metrics).
 
 ```
-press() ──emit──▶ RlmEventSink ──▶ RlmObserver
+pressRun() ──emit──▶ RlmEventSink ──▶ RlmObserver
                                     ├── .on(type, handler)
                                     ├── .getEvents(filter?)
                                     └── .getTree(runId)
@@ -47,7 +47,7 @@ Every event extends a common base shape:
 
 | Field          | Type             | Description                                                |
 |----------------|------------------|------------------------------------------------------------|
-| `runId`        | `string`         | Unique ID for the top-level `press()` call                  |
+| `runId`        | `string`         | Unique ID for the top-level `pressRun()` call               |
 | `timestamp`    | `number`         | `performance.now()` at emission time (monotonic ms, not epoch) |
 | `invocationId` | `string`         | Unique ID for this invocation (root or child)               |
 | `parentId`     | `string \| null` | Parent's `invocationId`, or `null` for the root             |
@@ -68,8 +68,8 @@ observer.on("llm:response", (event) => {
 
 | Type | Emitted when | Key fields |
 |------|-------------|------------|
-| `run:start` | Top-level `press()` begins | `query`, `maxIterations`, `maxDepth` |
-| `run:end` | Top-level `press()` completes | `answer`, `error`, `iterations` |
+| `run:start` | Top-level `pressRun()` begins | `query`, `maxIterations`, `maxDepth` |
+| `run:end` | Top-level `pressRun()` completes | `answer`, `error`, `iterations` |
 | `invocation:start` | Any invocation (root or child) begins | `query`, `systemPrompt` |
 | `invocation:end` | Any invocation completes | `answer`, `error`, `iterations` |
 | `iteration:start` | REPL loop iteration begins | `iteration`, `budgetRemaining` |
@@ -89,7 +89,7 @@ observer.on("llm:response", (event) => {
 
 | Type | Emitted when | Key fields |
 |------|-------------|------------|
-| `delegation:spawn` | Child `press()` call starts | `childId`, `query`, `modelAlias?`, `maxIterations?`, `componentName?` |
+| `delegation:spawn` | Child `pressRun()` call starts | `childId`, `query`, `modelAlias?`, `maxIterations?`, `componentName?` |
 | `delegation:return` | Child returns successfully | `childId`, `answer`, `iterations` |
 | `delegation:error` | Child throws | `childId`, `error`, `iterations` |
 | `delegation:unawaited` | Iteration ends with unawaited child promises | `count` |
@@ -171,7 +171,7 @@ const streamingSink: RlmEventSink = {
   },
 };
 
-await press("query", undefined, { callLLM: myDriver, observer: streamingSink });
+await pressRun("query", undefined, { callLLM: myDriver, observer: streamingSink });
 ```
 
 ## Eval harness integration

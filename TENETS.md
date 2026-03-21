@@ -28,7 +28,7 @@ Drivers, components, and programs are markdown files -- strings -- injected into
 
 ## Explicit Termination
 
-The loop runs until the model calls `return()`. There is no implicit termination. There is no timeout-as-success. The model must decide it is done and say so. This is a hard contract.
+The loop runs until the model calls `RETURN()`. There is no implicit termination. There is no timeout-as-success. The model must decide it is done and say so. This is a hard contract.
 
 ## Fail Loudly
 

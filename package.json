@@ -20,12 +20,10 @@
 		}
 	},
 	"bin": {
-		"press": "dist/cli.js",
-		"node-rlm": "dist/cli.js"
+		"press": "dist/cli.js"
 	},
 	"files": [
 		"dist",
-		"plugins",
 		"README.md"
 	],
 	"scripts": {

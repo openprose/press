@@ -1,3 +1,5 @@
+> **Note:** This document describes planned/aspirational features. See README.md for the current API.
+
 # The Standard Library
 
 A collection of reusable program components for composing multi-agent systems. Three categories: composites (multi-agent structural patterns), roles (single-agent behaviors), and controls (delegation flow patterns). Seventeen components total, expressed as prose `.md` files in `lib/`.
@@ -156,7 +158,7 @@ for (let attempt = 0; attempt < max_retries; attempt++) {
   if (/accept/i.test(String(verdict))) {
     __compositeState.result = lastResult;
     __compositeState.attempts = attempt + 1;
-    return(lastResult);
+    RETURN(lastResult);
   }
   lastCritique = verdict;
 }
