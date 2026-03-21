@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { press } from "../src/rlm.js";
-import { RlmObserver } from "../src/observer.js";
-import type { RlmEvent, InvocationStartEvent, IterationEndEvent } from "../src/events.js";
+import { PressObserver } from "../src/observer.js";
+import type { PressEvent, InvocationStartEvent, IterationEndEvent } from "../src/events.js";
 import { fromOpenRouter } from "../eval/drivers/openrouter.js";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ const describeIf = apiKey ? describe : describe.skip;
 describeIf("Eval 5: Forme wires a trivial program (live API)", () => {
   it("produces a valid manifest for a 2-service pipeline", async () => {
     const callLLM = fromOpenRouter("google/gemini-2.0-flash-001", apiKey!, {});
-    const observer = new RlmObserver();
+    const observer = new PressObserver();
 
     // Load specs
     const proseRepoSkills = "/Users/sl/code/openprose/prose/skills/open-prose";

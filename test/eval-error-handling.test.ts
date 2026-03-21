@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { pressRun } from "../src/press-boot.js";
-import { RlmObserver } from "../src/observer.js";
+import { PressObserver } from "../src/observer.js";
 import type { InvocationStartEvent, IterationEndEvent, DelegationSpawnEvent } from "../src/events.js";
 import { fromOpenRouter } from "../eval/drivers/openrouter.js";
 import { existsSync, readFileSync, writeFileSync, rmSync, readdirSync } from "node:fs";
@@ -37,7 +37,7 @@ describeIf("Eval 13: Error handling and graceful degradation (Sonnet)", () => {
     rmSync(runDir, { recursive: true, force: true });
 
     const callLLM = fromOpenRouter("anthropic/claude-sonnet-4-6", apiKey!, {});
-    const observer = new RlmObserver();
+    const observer = new PressObserver();
 
     console.log("\n========== STARTING EVAL 13A: HAPPY PATH ==========\n");
 
@@ -160,7 +160,7 @@ describeIf("Eval 13: Error handling and graceful degradation (Sonnet)", () => {
     rmSync(runDir, { recursive: true, force: true });
 
     const callLLM = fromOpenRouter("anthropic/claude-sonnet-4-6", apiKey!, {});
-    const observer = new RlmObserver();
+    const observer = new PressObserver();
 
     console.log("\n========== STARTING EVAL 13B: ERROR PATH ==========\n");
 

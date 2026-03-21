@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { pressRun } from "../src/press-boot.js";
-import { RlmObserver } from "../src/observer.js";
+import { PressObserver } from "../src/observer.js";
 import type { DelegationSpawnEvent } from "../src/events.js";
 import { fromOpenRouter } from "../eval/drivers/openrouter.js";
 import { rmSync, writeFileSync, mkdirSync } from "node:fs";
@@ -18,7 +18,7 @@ describeIf("Eval 12: bilingual-haiku (service reuse, sequential composition)", (
     rmSync(runDir, { recursive: true, force: true });
 
     const callLLM = fromOpenRouter("anthropic/claude-sonnet-4-6", apiKey!, {});
-    const observer = new RlmObserver();
+    const observer = new PressObserver();
 
     console.log("\n========== STARTING EVAL 12 (bilingual-haiku) ==========\n");
     console.log("Spec dir:", specDir);

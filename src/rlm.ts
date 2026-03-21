@@ -1,5 +1,5 @@
 import { JsEnvironment } from "./environment.js";
-import type { RlmEvent, RlmEventSink } from "./events.js";
+import type { PressEvent, PressEventSink } from "./events.js";
 import { buildModelTable, buildSystemPrompt, renderContextStack } from "./system-prompt.js";
 
 export interface CallLLMResponse {
@@ -25,7 +25,7 @@ export interface ModelEntry {
 	description?: string;
 }
 
-export interface RlmOptions {
+export interface PressOptions {
 	callLLM: CallLLM;
 	maxIterations?: number;
 	maxDepth?: number;
@@ -41,31 +41,31 @@ export interface RlmOptions {
 	/** @deprecated Use childComponents instead. */
 	childApps?: Record<string, string>;
 	reasoningEffort?: string;
-	observer?: RlmEventSink;
+	observer?: PressEventSink;
 	/** Layout mode for context stack in child system prompts. Default: "mirror". */
 	contextLayout?: ContextLayout;
 }
 
-export interface RlmResult {
+export interface PressResult {
 	answer: string;
 	iterations: number;
 }
 
-export class RlmError extends Error {
+export class PressError extends Error {
 	readonly iterations: number;
 
 	constructor(message: string, iterations: number) {
 		super(message);
-		this.name = "RlmError";
+		this.name = "PressError";
 		this.iterations = iterations;
 	}
 }
 
 /** Thrown when the iteration limit is reached. */
-export class RlmMaxIterationsError extends RlmError {
+export class PressMaxIterationsError extends PressError {
 	constructor(maxIterations: number) {
 		super(`RLM reached max iterations (${maxIterations}) without returning an answer`, maxIterations);
-		this.name = "RlmMaxIterationsError";
+		this.name = "PressMaxIterationsError";
 	}
 }
 
@@ -105,7 +105,7 @@ const SNAPSHOT_EXCLUDE_KEYS = new Set([
 	'TextEncoder', 'TextDecoder',
 ]);
 
-export async function press(query: string, context: Record<string, unknown> | undefined, options: RlmOptions): Promise<RlmResult> {
+export async function press(query: string, context: Record<string, unknown> | undefined, options: PressOptions): Promise<PressResult> {
 	if (context !== undefined && typeof context === 'string') {
 		throw new Error('press() context must be an object, got string. Use { data: yourString } instead.');
 	}
@@ -124,7 +124,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 		contextLayout: options.contextLayout ?? "mirror" as ContextLayout,
 	};
 
-	const emit: ((event: RlmEvent) => void) | undefined = options.observer
+	const emit: ((event: PressEvent) => void) | undefined = options.observer
 		? (event) => options.observer!.emit(event)
 		: undefined;
 	const runId = globalThis.crypto.randomUUID();
@@ -236,7 +236,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 		reasoningEffortOverride?: string,
 		ancestorFrames?: readonly ContextFrame[],
 		contextLayoutOverride?: ContextLayout,
-	): Promise<RlmResult> {
+	): Promise<PressResult> {
 		const callLLM = callLLMOverride ?? opts.callLLM;
 		const effectiveReasoningEffort = reasoningEffortOverride ?? opts.reasoningEffort;
 
@@ -373,7 +373,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 
 		const messages: Array<{ role: string; content: string; meta?: Record<string, unknown> }> = [{ role: "user", content: query }];
 
-		let invocationResult: RlmResult | undefined;
+		let invocationResult: PressResult | undefined;
 		let invocationError: unknown;
 		try {
 		for (let iteration = 0; iteration < effectiveMaxIterations; iteration++) {
@@ -426,7 +426,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 					duration: llmEnd - llmStart,
 				});
 				iterationError = llmError;
-				throw new RlmError(llmError, iteration);
+				throw new PressError(llmError, iteration);
 			}
 
 			const llmEnd = performance.now();
@@ -589,7 +589,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 			}
 		}
 
-		const maxIterErr = new RlmMaxIterationsError(effectiveMaxIterations);
+		const maxIterErr = new PressMaxIterationsError(effectiveMaxIterations);
 		invocationError = maxIterErr;
 		throw maxIterErr;
 
@@ -606,7 +606,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 				depth,
 				answer: invocationResult?.answer ?? null,
 				error: invocationError instanceof Error ? invocationError.message : invocationError ? String(invocationError) : null,
-				iterations: invocationResult?.iterations ?? (invocationError instanceof RlmError ? invocationError.iterations : 0),
+				iterations: invocationResult?.iterations ?? (invocationError instanceof PressError ? invocationError.iterations : 0),
 			});
 		}
 	}
@@ -715,7 +715,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 					depth: savedDepth,
 					childId: childInvocationId,
 					error: err instanceof Error ? err.message : String(err),
-					iterations: err instanceof RlmError ? err.iterations : 0,
+					iterations: err instanceof PressError ? err.iterations : 0,
 				});
 				throw err;
 			} finally {
@@ -743,7 +743,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 		maxDepth: opts.maxDepth,
 	});
 
-	let runResult: RlmResult | undefined;
+	let runResult: PressResult | undefined;
 	let runError: unknown;
 	try {
 		runResult = await rlmInternal(query, context, 0, [query], "root", null, options.systemPrompt, undefined, undefined, undefined, [], undefined);
@@ -761,7 +761,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 			depth: 0,
 			answer: runResult?.answer ?? null,
 			error: runError instanceof Error ? runError.message : runError ? String(runError) : null,
-			iterations: runResult?.iterations ?? (runError instanceof RlmError ? runError.iterations : 0),
+			iterations: runResult?.iterations ?? (runError instanceof PressError ? runError.iterations : 0),
 		});
 	}
 }

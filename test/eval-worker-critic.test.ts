@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { pressRun } from "../src/press-boot.js";
-import { RlmObserver } from "../src/observer.js";
+import { PressObserver } from "../src/observer.js";
 import type {
   InvocationStartEvent,
   IterationEndEvent,
@@ -24,7 +24,7 @@ describeIf("Eval 11: worker-critic loop (iterative refinement)", () => {
     rmSync(runDir, { recursive: true, force: true });
 
     const callLLM = fromOpenRouter("anthropic/claude-sonnet-4-6", apiKey!, {});
-    const observer = new RlmObserver();
+    const observer = new PressObserver();
 
     console.log("\n========== STARTING EVAL 11 (worker-critic loop) ==========\n");
     console.log("Spec dir:", specDir);

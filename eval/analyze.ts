@@ -3,7 +3,7 @@
 
 import { appendFileSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { RlmEvent, IterationEndEvent, LlmResponseEvent } from "../src/events.js";
+import type { PressEvent, IterationEndEvent, LlmResponseEvent } from "../src/events.js";
 import type { BenchmarkResult, EvalResult } from "./types.js";
 import { formatDuration } from "./utils.js";
 
@@ -25,7 +25,7 @@ interface TaskAnalysis {
 }
 
 function analyzeTask(result: EvalResult): TaskAnalysis {
-	const events: RlmEvent[] = result.events ?? [];
+	const events: PressEvent[] = result.events ?? [];
 	if (events.length === 0 && result.iterations > 0) {
 		console.warn(`[analyze] ${result.taskId}: no events (pre-observability result file), code analysis will be empty`);
 	}

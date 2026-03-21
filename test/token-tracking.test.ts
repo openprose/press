@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { CallLLM, CallLLMResponse } from "../src/rlm.js";
 import { press } from "../src/rlm.js";
-import type { RlmEvent, RlmEventSink, LlmResponseEvent } from "../src/events.js";
-import { RlmObserver } from "../src/observer.js";
+import type { PressEvent, PressEventSink, LlmResponseEvent } from "../src/events.js";
+import { PressObserver } from "../src/observer.js";
 
 function mockCallLLMWithUsage(responses: CallLLMResponse[]): CallLLM {
 	let callIndex = 0;
@@ -14,7 +14,7 @@ function mockCallLLMWithUsage(responses: CallLLMResponse[]): CallLLM {
 	};
 }
 
-function extractTokens(events: RlmEvent[]): { inputTokens: number; cachedInputTokens: number; outputTokens: number } {
+function extractTokens(events: PressEvent[]): { inputTokens: number; cachedInputTokens: number; outputTokens: number } {
 	let inputTokens = 0;
 	let cachedInputTokens = 0;
 	let outputTokens = 0;
@@ -32,7 +32,7 @@ function extractTokens(events: RlmEvent[]): { inputTokens: number; cachedInputTo
 
 describe("token tracking", () => {
 	it("press() emits llm:response events with usage data", async () => {
-		const observer = new RlmObserver();
+		const observer = new PressObserver();
 		const callLLM = mockCallLLMWithUsage([
 			{
 				reasoning: "",
@@ -71,7 +71,7 @@ describe("token tracking", () => {
 	});
 
 	it("extractTokens correctly sums token usage from events", async () => {
-		const observer = new RlmObserver();
+		const observer = new PressObserver();
 		const callLLM = mockCallLLMWithUsage([
 			{
 				reasoning: "",
@@ -98,7 +98,7 @@ describe("token tracking", () => {
 	});
 
 	it("extractTokens returns zero when usage is missing", async () => {
-		const observer = new RlmObserver();
+		const observer = new PressObserver();
 		const callLLM = mockCallLLMWithUsage([
 			{ reasoning: "", code: 'return("done")', toolUseId: "t1" },
 			{ reasoning: "", code: 'return("done")', toolUseId: "t2" },

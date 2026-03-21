@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { press, RlmError, RlmMaxIterationsError } from "../src/rlm.js";
+import { press, PressError, PressMaxIterationsError } from "../src/rlm.js";
 import type { CallLLM, ModelEntry } from "../src/rlm.js";
-import { RlmObserver } from "../src/observer.js";
+import { PressObserver } from "../src/observer.js";
 import type {
 	BenchmarkResult,
 	EvalResult,
@@ -248,7 +248,7 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 	};
 
 	const sandboxGlobals = setupSandbox?.(task);
-	const observer = new RlmObserver();
+	const observer = new PressObserver();
 
 	try {
 		const result = await press(task.query, task.context, {
@@ -283,7 +283,7 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 		const wallTimeMs = Date.now() - startTime;
 		const errMsg = err instanceof Error ? err.message : String(err);
 
-		const iterations = err instanceof RlmError ? err.iterations : 0;
+		const iterations = err instanceof PressError ? err.iterations : 0;
 		const metadata = getResultMetadata?.(task);
 
 		return {

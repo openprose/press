@@ -11,8 +11,8 @@ export type {
 	LlmErrorEvent,
 	LlmRequestEvent,
 	LlmResponseEvent,
-	RlmEvent,
-	RlmEventSink,
+	PressEvent,
+	PressEventSink,
 	RunEndEvent,
 	RunStartEvent,
 	SandboxSnapshotEvent,
@@ -21,8 +21,8 @@ export type {
 export type { ModelAliasDefinition } from "./models.js";
 export { DEFAULT_MODEL_ALIASES } from "./models.js";
 export type { EventFilter, TreeNode } from "./observer.js";
-export { RlmObserver } from "./observer.js";
-export type { CallLLM, CallLLMOptions, CallLLMResponse, DelegationContext, ModelEntry, RlmOptions, RlmResult } from "./rlm.js";
-export { press, RlmError, RlmMaxIterationsError } from "./rlm.js";
+export { PressObserver } from "./observer.js";
+export type { CallLLM, CallLLMOptions, CallLLMResponse, DelegationContext, ModelEntry, PressOptions, PressResult } from "./rlm.js";
+export { press, PressError, PressMaxIterationsError } from "./rlm.js";
 export type { PressRunOptions, PressRunResult } from "./press-boot.js";
 export { pressRun } from "./press-boot.js";

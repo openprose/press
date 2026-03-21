@@ -1,9 +1,9 @@
-import type { RlmEvent, RlmEventSink } from "./events.js";
+import type { PressEvent, PressEventSink } from "./events.js";
 
 export interface EventFilter {
 	runId?: string;
 	invocationId?: string;
-	type?: RlmEvent["type"] | RlmEvent["type"][];
+	type?: PressEvent["type"] | PressEvent["type"][];
 }
 
 export interface TreeNode {
@@ -11,13 +11,13 @@ export interface TreeNode {
 	children: TreeNode[];
 }
 
-type EventHandler<T extends RlmEvent> = (event: T) => void;
+type EventHandler<T extends PressEvent> = (event: T) => void;
 
-export class RlmObserver implements RlmEventSink {
-	private events: RlmEvent[] = [];
+export class PressObserver implements PressEventSink {
+	private events: PressEvent[] = [];
 	private handlers = new Map<string, EventHandler<never>[]>();
 
-	emit(event: RlmEvent): void {
+	emit(event: PressEvent): void {
 		this.events.push(event);
 		const handlers = this.handlers.get(event.type);
 		if (handlers) {
@@ -31,9 +31,9 @@ export class RlmObserver implements RlmEventSink {
 		}
 	}
 
-	on<T extends RlmEvent["type"]>(
+	on<T extends PressEvent["type"]>(
 		type: T,
-		handler: (event: Extract<RlmEvent, { type: T }>) => void,
+		handler: (event: Extract<PressEvent, { type: T }>) => void,
 	): void {
 		let list = this.handlers.get(type);
 		if (!list) {
@@ -43,7 +43,7 @@ export class RlmObserver implements RlmEventSink {
 		list.push(handler as EventHandler<never>);
 	}
 
-	getEvents(filter?: EventFilter): RlmEvent[] {
+	getEvents(filter?: EventFilter): PressEvent[] {
 		if (!filter) return [...this.events];
 
 		const types = filter.type

@@ -47,7 +47,7 @@ function loadEnvFile(): void {
 loadEnvFile();
 import type { ProgramDefinition } from "../src/plugins.js";
 import type {
-	RlmEvent,
+	PressEvent,
 	DelegationSpawnEvent,
 	DelegationReturnEvent,
 	DelegationErrorEvent,
@@ -357,18 +357,18 @@ function truncate(s: string | null | undefined, maxLen: number): string {
 // Event filtering helpers
 // ---------------------------------------------------------------------------
 
-function eventsOfType<T extends RlmEvent["type"]>(
-	events: RlmEvent[],
+function eventsOfType<T extends PressEvent["type"]>(
+	events: PressEvent[],
 	type: T,
-): Extract<RlmEvent, { type: T }>[] {
-	return events.filter((e) => e.type === type) as Extract<RlmEvent, { type: T }>[];
+): Extract<PressEvent, { type: T }>[] {
+	return events.filter((e) => e.type === type) as Extract<PressEvent, { type: T }>[];
 }
 
 // ---------------------------------------------------------------------------
 // Core extraction: RunIdentity
 // ---------------------------------------------------------------------------
 
-function extractRunIdentity(events: RlmEvent[], meta: ResultMeta): RunIdentity {
+function extractRunIdentity(events: PressEvent[], meta: ResultMeta): RunIdentity {
 	const runStarts = eventsOfType(events, "run:start");
 	const maxDepthUsed = events.reduce((max, e) => Math.max(max, e.depth), 0);
 
@@ -398,7 +398,7 @@ function extractRunIdentity(events: RlmEvent[], meta: ResultMeta): RunIdentity {
 // ---------------------------------------------------------------------------
 
 function extractShapeAdherence(
-	events: RlmEvent[],
+	events: PressEvent[],
 	nodeShapes: Map<string, NodeShape>,
 	invocationComponents: Map<string, string>,
 ): ShapeAdherence {
@@ -550,7 +550,7 @@ function findLineContaining(code: string, pattern: string): string {
 // ---------------------------------------------------------------------------
 
 function extractDelegationTree(
-	events: RlmEvent[],
+	events: PressEvent[],
 	invocationComponents: Map<string, string>,
 ): DelegationTree {
 	// Gather all invocation info
@@ -706,7 +706,7 @@ function buildTopologyString(invocations: DelegationTreeNode[]): string {
 // ---------------------------------------------------------------------------
 
 function extractResourceUsage(
-	events: RlmEvent[],
+	events: PressEvent[],
 	invocationComponents: Map<string, string>,
 ): ResourceUsage {
 	const llmResponses = eventsOfType(events, "llm:response");
@@ -812,7 +812,7 @@ function extractResourceUsage(
 // Build invocation->component mapping from delegation:spawn events
 // ---------------------------------------------------------------------------
 
-function buildInvocationComponentMap(events: RlmEvent[]): Map<string, string> {
+function buildInvocationComponentMap(events: PressEvent[]): Map<string, string> {
 	const map = new Map<string, string>();
 
 	// The root invocation gets its component from run:start or the first invocation:start
@@ -832,13 +832,13 @@ function buildInvocationComponentMap(events: RlmEvent[]): Map<string, string> {
 // ---------------------------------------------------------------------------
 
 function buildInvocationDigests(
-	events: RlmEvent[],
+	events: PressEvent[],
 	nodeShapes: Map<string, NodeShape>,
 	invocationComponents: Map<string, string>,
 	shapeAdherence: ShapeAdherence,
 ): InvocationDigest[] {
 	// Group events by invocationId
-	const eventsByInv = new Map<string, RlmEvent[]>();
+	const eventsByInv = new Map<string, PressEvent[]>();
 	for (const ev of events) {
 		const list = eventsByInv.get(ev.invocationId) ?? [];
 		list.push(ev);
@@ -965,7 +965,7 @@ function buildInvocationDigests(
 // Collect warnings about missing data
 // ---------------------------------------------------------------------------
 
-function collectWarnings(events: RlmEvent[], resources: ResourceUsage): string[] {
+function collectWarnings(events: PressEvent[], resources: ResourceUsage): string[] {
 	const warnings: string[] = [];
 
 	if (events.length === 0) {
@@ -975,7 +975,7 @@ function collectWarnings(events: RlmEvent[], resources: ResourceUsage): string[]
 
 	// Check for expected event types
 	const types = new Set(events.map((e) => e.type));
-	const expected: RlmEvent["type"][] = [
+	const expected: PressEvent["type"][] = [
 		"run:start", "run:end", "invocation:start", "invocation:end",
 		"iteration:end", "llm:response",
 	];
@@ -1012,7 +1012,7 @@ function collectWarnings(events: RlmEvent[], resources: ResourceUsage): string[]
 // ---------------------------------------------------------------------------
 
 export function buildTraceDigest(
-	events: RlmEvent[],
+	events: PressEvent[],
 	program: ProgramDefinition,
 	meta: ResultMeta,
 ): TraceDigest {
@@ -1029,7 +1029,7 @@ export function buildTraceDigest(
 }
 
 export function extractMechanicalMetrics(
-	events: RlmEvent[],
+	events: PressEvent[],
 	program: ProgramDefinition,
 	meta: ResultMeta,
 ): MechanicalMetrics {
@@ -1044,7 +1044,7 @@ export function extractMechanicalMetrics(
 }
 
 export function buildAdherenceReport(
-	events: RlmEvent[],
+	events: PressEvent[],
 	program: ProgramDefinition,
 	meta: ResultMeta,
 ): AdherenceReport {

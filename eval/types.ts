@@ -1,4 +1,4 @@
-import type { RlmEvent } from "../src/events.js";
+import type { PressEvent } from "../src/events.js";
 
 export interface EvalTask {
 	id: string;
@@ -26,7 +26,7 @@ export interface EvalResult {
 	/** Benchmark-specific metadata (e.g. scorecard IDs, replay URLs). */
 	metadata?: Record<string, unknown>;
 	/** Observer events collected during this task's press() run. */
-	events?: RlmEvent[];
+	events?: PressEvent[];
 }
 
 export interface BenchmarkResult {
