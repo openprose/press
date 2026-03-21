@@ -55,7 +55,7 @@ describeIf("Eval 5: Forme wires a trivial program (live API)", () => {
       callLLM,
       maxIterations: 10,
       maxDepth: 1,
-      pluginBodies: programContent,
+      systemPrompt: programContent,
       observer,
     });
 

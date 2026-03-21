@@ -85,7 +85,6 @@ interface CliArgs {
 	filter: string | null;
 	selectedProblems: string[];
 	modelAliases: string[];
-	childApps: string[];
 	childComponents: string[];
 	attempts: number;
 	game: string | null;
@@ -154,7 +153,6 @@ function parseArgs(argv: string[]): CliArgs {
 	const args: Record<string, string> = {};
 	const flags = new Set<string>();
 	const modelAliases: string[] = [];
-	const childApps: string[] = [];
 	const childComponents: string[] = [];
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i];
@@ -171,9 +169,7 @@ function parseArgs(argv: string[]): CliArgs {
 			const key = arg.slice(2);
 			if (key === "model-alias") {
 				modelAliases.push(argv[i + 1]);
-			} else if (key === "child-app") {
-				childApps.push(argv[i + 1]);
-			} else if (key === "child-component") {
+			} else if (key === "child-app" || key === "child-component") {
 				childComponents.push(argv[i + 1]);
 			} else {
 				args[key] = argv[i + 1];
@@ -213,8 +209,7 @@ function parseArgs(argv: string[]): CliArgs {
 			? args["selected-problems"].split(",").map((s) => s.trim())
 			: [],
 		modelAliases,
-		childApps,
-		childComponents: [...childComponents, ...childApps],
+		childComponents,
 		attempts: parseInt(args.attempts ?? "1", 10),
 		game: args.game ?? null,
 		program: args.program ?? null,
@@ -334,8 +329,6 @@ interface BenchmarkConfig {
 	scoringFn: ScoringFunction;
 	globalDocs?: string;
 	childComponents?: Record<string, string>;
-	/** @deprecated Use childComponents instead. */
-	childApps?: Record<string, string>;
 	setupSandbox?: (task: EvalTask) => Record<string, unknown>;
 	cleanupTask?: (task: EvalTask) => Promise<void>;
 	getResultMetadata?: (task: EvalTask) => Record<string, unknown> | undefined;
@@ -673,7 +666,7 @@ function resolveModel(args: CliArgs): { callLLM: CallLLM; models: Record<string,
 }
 
 async function loadAllPlugins(args: CliArgs): Promise<{
-	pluginBodies: string | undefined;
+	systemPrompt: string | undefined;
 	programGlobalDocs: string;
 	programChildComponents: Record<string, string>;
 	cliChildComponents: Record<string, string> | undefined;
@@ -700,33 +693,32 @@ async function loadAllPlugins(args: CliArgs): Promise<{
 		console.log();
 	}
 
-	// Load plugins via stack (profile + drivers + app)
-	let pluginBodies: string | undefined;
+	// Load plugins via stack (profile + drivers)
+	let systemPrompt: string | undefined;
 	const hasPlugins = args.profile || args.app || args.drivers.length > 0 || args.model;
 	if (hasPlugins) {
 		console.log("Loading plugins...");
 		const bodies = await loadStack({
 			profile: args.profile ?? undefined,
-			app: args.app ?? undefined, // null in program mode — program provides root app
 			drivers: args.drivers.length > 0 ? args.drivers : undefined,
 			model: args.model,
 		});
 		if (bodies) {
-			pluginBodies = bodies;
+			systemPrompt = bodies;
 			if (args.profile) console.log(`  Profile: ${args.profile}`);
 			if (args.app) console.log(`  App: ${args.app}`);
 			if (args.drivers.length > 0) console.log(`  Extra drivers: ${args.drivers.join(", ")}`);
-			console.log(`  Plugin bodies: ${bodies.length} chars`);
+			console.log(`  System prompt: ${bodies.length} chars`);
 		} else {
 			console.log("  No plugins loaded (no matching profile)");
 		}
 		console.log();
 	}
 
-	// In program mode, append root app body to plugin bodies (after any profile drivers)
+	// In program mode, append root app body to system prompt (after any profile drivers)
 	if (programRootBody) {
-		pluginBodies = pluginBodies
-			? `${pluginBodies}\n\n---\n\n${programRootBody}`
+		systemPrompt = systemPrompt
+			? `${systemPrompt}\n\n---\n\n${programRootBody}`
 			: programRootBody;
 	}
 
@@ -743,7 +735,7 @@ async function loadAllPlugins(args: CliArgs): Promise<{
 		console.log();
 	}
 
-	return { pluginBodies, programGlobalDocs, programChildComponents, cliChildComponents };
+	return { systemPrompt, programGlobalDocs, programChildComponents, cliChildComponents };
 }
 
 async function main(): Promise<void> {
@@ -751,7 +743,7 @@ async function main(): Promise<void> {
 	printConfig(args);
 
 	const { callLLM, models } = resolveModel(args);
-	const { pluginBodies, programGlobalDocs, programChildComponents, cliChildComponents } = await loadAllPlugins(args);
+	const { systemPrompt, programGlobalDocs, programChildComponents, cliChildComponents } = await loadAllPlugins(args);
 
 	// Load tasks
 	console.log("Loading tasks...");
@@ -783,7 +775,7 @@ async function main(): Promise<void> {
 		.join("\n\n---\n\n") || undefined;
 
 	// Merge childComponents: benchmark + program + CLI
-	const allChildComponents = { ...benchmarkConfig.childComponents, ...benchmarkConfig.childApps, ...programChildComponents, ...cliChildComponents };
+	const allChildComponents = { ...benchmarkConfig.childComponents, ...programChildComponents, ...cliChildComponents };
 	const hasChildComponents = Object.keys(allChildComponents).length > 0;
 
 	const result = await runEval(tasks, {
@@ -794,7 +786,7 @@ async function main(): Promise<void> {
 		maxIterations: args.maxIterations,
 		maxDepth: args.maxDepth,
 		concurrency: args.concurrency,
-		pluginBodies,
+		systemPrompt,
 		models,
 		attempts: args.attempts,
 		setupSandbox: benchmarkConfig.setupSandbox,

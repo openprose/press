@@ -28,8 +28,8 @@ export interface HarnessConfig {
 	concurrency?: number;
 	/** Directory to save results (default: eval/results/). */
 	resultsDir?: string;
-	/** Concatenated plugin bodies to append to the system prompt. */
-	pluginBodies?: string;
+	/** System prompt override for the press() call. */
+	systemPrompt?: string;
 	/** Named model aliases available for child delegation. */
 	models?: Record<string, ModelEntry>;
 	/** Documentation for sandbox globals, included in every agent's system prompt at all depths. */
@@ -40,8 +40,6 @@ export interface HarnessConfig {
 	attempts?: number;
 	/** Pre-loaded component bodies keyed by name, available for child agents via `use` option. */
 	childComponents?: Record<string, string>;
-	/** @deprecated Use childComponents instead. */
-	childApps?: Record<string, string>;
 	/** Reasoning effort level for OpenRouter reasoning tokens. */
 	reasoningEffort?: string;
 	/** Create per-task sandbox globals. Called before press() for each task. */
@@ -121,13 +119,13 @@ export async function runEval(
 						scoringFn: config.scoringFn,
 						maxIterations,
 						maxDepth,
-						pluginBodies: config.pluginBodies,
+						systemPrompt: config.systemPrompt,
 						models: config.models,
 						setupSandbox: config.setupSandbox,
 						cleanupTask: config.cleanupTask,
 						getResultMetadata: config.getResultMetadata,
 						globalDocs: config.globalDocs,
-						childComponents: config.childComponents ?? config.childApps,
+						childComponents: config.childComponents,
 						reasoningEffort: config.reasoningEffort,
 					});
 					attemptScores.push(result.score);
@@ -214,7 +212,7 @@ interface SingleTaskConfig {
 	scoringFn: ScoringFunction;
 	maxIterations: number;
 	maxDepth: number;
-	pluginBodies?: string;
+	systemPrompt?: string;
 	models?: Record<string, ModelEntry>;
 	setupSandbox?: (task: EvalTask) => Record<string, unknown>;
 	cleanupTask?: (task: EvalTask) => Promise<void>;
@@ -227,7 +225,7 @@ interface SingleTaskConfig {
 async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 	const {
 		task, callLLM, scoringFn, maxIterations, maxDepth,
-		pluginBodies, models, setupSandbox, cleanupTask,
+		systemPrompt, models, setupSandbox, cleanupTask,
 		getResultMetadata, globalDocs, childComponents,
 		reasoningEffort,
 	} = cfg;
@@ -255,7 +253,7 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 			callLLM: wrappedCallLLM,
 			maxIterations,
 			maxDepth,
-			pluginBodies,
+			systemPrompt,
 			models,
 			sandboxGlobals,
 			globalDocs,

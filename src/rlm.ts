@@ -29,7 +29,6 @@ export interface PressOptions {
 	callLLM: CallLLM;
 	maxIterations?: number;
 	maxDepth?: number;
-	pluginBodies?: string;
 	/** Replace the default system prompt entirely with this content. */
 	systemPrompt?: string;
 	models?: Record<string, ModelEntry>;
@@ -38,8 +37,6 @@ export interface PressOptions {
 	globalDocs?: string;
 	/** Keyed by name; looked up when a parent calls `press(query, ctx, { use: "name" })`. */
 	childComponents?: Record<string, string>;
-	/** @deprecated Use childComponents instead. */
-	childApps?: Record<string, string>;
 	reasoningEffort?: string;
 	observer?: PressEventSink;
 	/** Layout mode for context stack in child system prompts. Default: "mirror". */
@@ -109,17 +106,14 @@ export async function press(query: string, context: Record<string, unknown> | un
 	if (context !== undefined && typeof context === 'string') {
 		throw new Error('press() context must be an object, got string. Use { data: yourString } instead.');
 	}
-	const components = options.childComponents ?? options.childApps ?? {};
-
 	const opts = {
 		callLLM: options.callLLM,
 		maxIterations: options.maxIterations ?? 15,
 		maxDepth: options.maxDepth ?? 3,
-		pluginBodies: options.pluginBodies,
 		models: options.models,
 		sandboxGlobals: options.sandboxGlobals,
 		globalDocs: options.globalDocs,
-		childComponents: components,
+		childComponents: options.childComponents ?? {},
 		reasoningEffort: options.reasoningEffort,
 		contextLayout: options.contextLayout ?? "mirror" as ContextLayout,
 	};
@@ -257,13 +251,6 @@ export async function press(query: string, context: Record<string, unknown> | un
 			? [...ancestorFrames, currentFrame]
 			: [currentFrame];
 
-		let programContent: string | undefined;
-		if (!customSystemPrompt) {
-			if (depth === 0 && opts.pluginBodies) {
-				programContent = opts.pluginBodies;
-			}
-		}
-
 		const componentKeys = Object.keys(opts.childComponents);
 		const contextStackSection = allFrames.length > 1
 			? renderContextStack(allFrames, effectiveContextLayout)
@@ -284,7 +271,6 @@ export async function press(query: string, context: Record<string, unknown> | un
 			maxDepth: opts.maxDepth,
 			maxIterations: effectiveMaxIterations,
 			lineage,
-			programContent,
 			globalDocs: opts.globalDocs,
 			modelTable,
 			...(componentKeys.length > 0 ? { availableComponents: componentKeys } : {}),
@@ -612,7 +598,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 	}
 
 	/** The sandbox delegate function, exposed as `press()`. */
-	const pressFn = (q: string, c?: Record<string, unknown>, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; /** @deprecated Use `use` instead. */ app?: string; reasoning?: string; contextLayout?: ContextLayout }): Promise<string> => {
+	const pressFn = (q: string, c?: Record<string, unknown>, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; reasoning?: string; contextLayout?: ContextLayout }): Promise<string> => {
 		// Reject delegation at max depth
 		if (activeDepth >= opts.maxDepth) {
 			return Promise.reject(
@@ -620,11 +606,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 			);
 		}
 
-		// Resolve component name: `use` takes precedence over deprecated `app`
-		const componentName = rlmOpts?.use ?? rlmOpts?.app;
-		if (rlmOpts?.app && !rlmOpts?.use) {
-			console.warn('[press] { app: "..." } is deprecated. Use { use: "..." } instead.');
-		}
+		const componentName = rlmOpts?.use;
 
 		// Resolve component plugin if requested
 		let resolvedSystemPrompt: string | undefined = rlmOpts?.systemPrompt;
@@ -681,7 +663,6 @@ export async function press(query: string, context: Record<string, unknown> | un
 			modelAlias: rlmOpts?.model,
 			maxIterations: rlmOpts?.maxIterations,
 			componentName,
-			appName: componentName,
 		});
 
 		// Capture the parent's context frames for the child

@@ -170,8 +170,6 @@ export interface ProgramDefinition {
 	rootApp: string;
 	rootAppBody: string;
 	childComponents: Record<string, string>;
-	/** @deprecated Use childComponents instead. */
-	childApps: Record<string, string>;
 }
 
 // Nodes include frontmatter in the agent prompt (role, delegates, api, prohibited).
@@ -220,15 +218,11 @@ export async function loadProgram(
 		throw new Error(`Program "${name}" has no orchestrator node (role: orchestrator)`);
 	}
 
-	return { globalDocs, rootApp, rootAppBody, childComponents, childApps: childComponents };
+	return { globalDocs, rootApp, rootAppBody, childComponents };
 }
 
 export async function loadStack(options: {
 	drivers?: string[];
-	/** @deprecated No longer supported — archive apps have been removed. */
-	app?: string;
-	/** @deprecated No longer supported — archive apps have been removed. */
-	use?: string;
 	profile?: string;
 	model?: string;
 	libDir?: string;

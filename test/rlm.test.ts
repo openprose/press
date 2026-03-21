@@ -315,83 +315,6 @@ describe("press", () => {
 		expect(result.answer).toBe("result A + result B");
 	});
 
-	it("pluginBodies: in root prompt", async () => {
-		let capturedSystemPrompt = "";
-		const callLLM: CallLLM = async (_messages, systemPrompt) => {
-			capturedSystemPrompt = systemPrompt;
-			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
-		};
-
-		await press("test", undefined, {
-			callLLM,
-			pluginBodies: "## My Plugin\nDo special things.",
-		});
-
-		expect(capturedSystemPrompt).toContain("## My Plugin");
-		expect(capturedSystemPrompt).toContain("Do special things.");
-	});
-
-	it("pluginBodies: absent when undefined", async () => {
-		let capturedSystemPrompt = "";
-		const callLLM: CallLLM = async (_messages, systemPrompt) => {
-			capturedSystemPrompt = systemPrompt;
-			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
-		};
-
-		await press("test", undefined, { callLLM });
-
-		expect(capturedSystemPrompt).not.toContain("<rlm-program>");
-	});
-
-	it("pluginBodies: not in child prompt", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child task") {
-				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
-		};
-
-		await press("parent task", undefined, {
-			callLLM,
-			maxDepth: 3,
-			pluginBodies: "## My Plugin\nDo special things.",
-		});
-
-		expect(systemPrompts[0]).toContain("## My Plugin");
-		const childPrompt = systemPrompts[1];
-		expect(childPrompt).not.toContain("## My Plugin");
-		expect(childPrompt).not.toContain("Do special things.");
-	});
-
-	it("pluginBodies: not in max-depth child", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "parent task") {
-				return { reasoning: "", code: 'const r = await press("sub query")\nreturn r', toolUseId: "tp" };
-			}
-			if (userMsg === "sub query") {
-				return { reasoning: "", code: 'return "child answer"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'return "unexpected"', toolUseId: "tx" };
-		};
-
-		await press("parent task", undefined, {
-			callLLM,
-			maxDepth: 1,
-			pluginBodies: "## My Plugin\nDo special things.",
-		});
-
-		expect(systemPrompts[0]).toContain("## My Plugin");
-		const childPrompt = systemPrompts[1];
-		expect(childPrompt).not.toContain("## My Plugin");
-		expect(childPrompt).not.toContain("Do special things.");
-	});
-
 	it("model selection: child uses specified model", async () => {
 		let fastModelCalled = false;
 		const defaultCallLLM: CallLLM = async (messages, _systemPrompt) => {
@@ -600,29 +523,6 @@ describe("press", () => {
 		// No generic <rlm-environment> wrapping.
 	});
 
-	it("app: child receives component prompt (backwards compat)", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child task") {
-				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'const r = await press("child task", undefined, { app: "test-app" })\nreturn r', toolUseId: "tp" };
-		};
-
-		await press("parent task", undefined, {
-			callLLM,
-			maxDepth: 3,
-			childComponents: { "test-app": "You are a test app.\n\nDo test things." },
-		});
-
-		const childPrompt = systemPrompts[1];
-		expect(childPrompt).toContain("You are a test app.");
-		expect(childPrompt).toContain("Do test things.");
-		// With customSystemPrompt (from `app`), the component IS the full prompt.
-	});
-
 	it("use: unknown name errors with list", async () => {
 		let capturedMessages: Array<{ role: string; content: string }> | undefined;
 		let callIndex = 0;
@@ -647,30 +547,6 @@ describe("press", () => {
 		expect(toolResult!.content).toContain("other-component");
 	});
 
-	it("app: unknown name errors with list (backwards compat)", async () => {
-		let capturedMessages: Array<{ role: string; content: string }> | undefined;
-		let callIndex = 0;
-		const callLLM: CallLLM = async (messages, _systemPrompt) => {
-			callIndex++;
-			if (callIndex === 1) {
-				return { reasoning: "", code: 'const r = await press("child task", undefined, { app: "nonexistent" })\nreturn r', toolUseId: "t1" };
-			}
-			capturedMessages = [...messages];
-			return { reasoning: "", code: 'return "saw error"', toolUseId: "t2" };
-		};
-
-		await press("test", undefined, {
-			callLLM,
-			maxDepth: 3,
-			childComponents: { "test-app": "body1", "other-app": "body2" },
-		});
-
-		const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
-		expect(toolResult!.content).toContain("Unknown component");
-		expect(toolResult!.content).toContain("test-app");
-		expect(toolResult!.content).toContain("other-app");
-	});
-
 	it("use + systemPrompt concatenated", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
@@ -692,49 +568,6 @@ describe("press", () => {
 		expect(childPrompt).toContain("You are a test component.");
 		expect(childPrompt).toContain("Do test things.");
 		expect(childPrompt).toContain("Extra instructions.");
-	});
-
-	it("use wins over app when both provided", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child task") {
-				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "correct-component", app: "wrong-component" })\nreturn r', toolUseId: "tp" };
-		};
-
-		await press("parent task", undefined, {
-			callLLM,
-			maxDepth: 3,
-			childComponents: { "correct-component": "Correct body.", "wrong-component": "Wrong body." },
-		});
-
-		const childPrompt = systemPrompts[1];
-		expect(childPrompt).toContain("Correct body.");
-		expect(childPrompt).not.toContain("Wrong body.");
-	});
-
-	it("childApps backwards compat: populates childComponents", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child task") {
-				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "legacy-app" })\nreturn r', toolUseId: "tp" };
-		};
-
-		await press("parent task", undefined, {
-			callLLM,
-			maxDepth: 3,
-			childApps: { "legacy-app": "Legacy body." },
-		});
-
-		const childPrompt = systemPrompts[1];
-		expect(childPrompt).toContain("Legacy body.");
 	});
 
 	it("availableComponents wired from childComponents keys", async () => {
@@ -778,31 +611,6 @@ describe("press", () => {
 
 		expect(capturedSystemPrompt).not.toContain("You are a test component.");
 		expect(capturedSystemPrompt).not.toContain("Do test things.");
-	});
-
-	it("pluginBodies root-only, globalDocs everywhere", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child task") {
-				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
-		};
-
-		await press("parent task", undefined, {
-			callLLM,
-			maxDepth: 3,
-			pluginBodies: "## My Plugin\nRoot-only strategy.",
-			globalDocs: "The `myApi` global provides X.",
-		});
-
-		expect(systemPrompts[0]).toContain("## My Plugin");
-		expect(systemPrompts[0]).toContain("The `myApi` global provides X.");
-
-		expect(systemPrompts[1]).not.toContain("## My Plugin");
-		expect(systemPrompts[1]).toContain("The `myApi` global provides X.");
 	});
 
 	describe("tool-call specifics", () => {

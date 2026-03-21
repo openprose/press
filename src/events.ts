@@ -98,8 +98,6 @@ export interface DelegationSpawnEvent extends BaseEvent {
 	modelAlias?: string;
 	maxIterations?: number;
 	componentName?: string;
-	/** @deprecated Use componentName instead. */
-	appName?: string;
 }
 
 export interface DelegationReturnEvent extends BaseEvent {

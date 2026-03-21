@@ -818,7 +818,7 @@ function buildInvocationComponentMap(events: PressEvent[]): Map<string, string> 
 	// The root invocation gets its component from run:start or the first invocation:start
 	const spawns = eventsOfType(events, "delegation:spawn");
 	for (const spawn of spawns) {
-		const comp = spawn.componentName ?? spawn.appName ?? null;
+		const comp = spawn.componentName ?? spawn.componentName ?? null;
 		if (comp && spawn.childId) {
 			map.set(spawn.childId, comp);
 		}
@@ -906,7 +906,7 @@ function buildInvocationDigests(
 					const ret = delegationReturns.find((r) => r.childId === spawn.childId);
 					const err = delegationErrors.find((e) => e.childId === spawn.childId);
 					return {
-						child_component: spawn.componentName ?? spawn.appName ?? "unknown",
+						child_component: spawn.componentName ?? spawn.componentName ?? "unknown",
 						brief_excerpt: truncate(spawn.query, 300),
 						outcome: (err ? "error" : "returned") as "returned" | "error",
 						child_iterations: ret?.iterations ?? err?.iterations ?? 0,
@@ -994,7 +994,7 @@ function collectWarnings(events: PressEvent[], resources: ResourceUsage): string
 
 	// Check for delegation events without componentName
 	const spawns = eventsOfType(events, "delegation:spawn");
-	const missingComponent = spawns.filter((s) => !s.componentName && !s.appName).length;
+	const missingComponent = spawns.filter((s) => !s.componentName && !s.componentName).length;
 	if (missingComponent > 0) {
 		warnings.push(`${missingComponent}/${spawns.length} delegation:spawn events missing componentName`);
 	}
@@ -1269,8 +1269,8 @@ async function runLLMJudge(
 		`Warnings: ${report.digest.warnings.length}`,
 	].join("\n");
 
-	// 7. Build pluginBodies: the evaluator IS the root node
-	const pluginBodies = judgeProgram.rootAppBody;
+	// 7. Use the root app body as the system prompt for the judge
+	const judgeSystemPrompt = judgeProgram.rootAppBody;
 
 	// 8. Call press()
 	console.error("\nRunning LLM judge...");
@@ -1282,7 +1282,7 @@ async function runLLMJudge(
 			callLLM,
 			maxIterations: 15,
 			maxDepth: 1,
-			pluginBodies,
+			systemPrompt: judgeSystemPrompt,
 			sandboxGlobals,
 			globalDocs: judgeProgram.globalDocs,
 			childComponents: judgeProgram.childComponents,
