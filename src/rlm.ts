@@ -8,6 +8,8 @@ export interface CallLLMResponse {
 	toolUseId?: string;
 	/** Opaque; round-tripped to the API without inspection. */
 	reasoningDetails?: Array<Record<string, unknown>> | null;
+	/** Token usage from the LLM API response. */
+	usage?: import("./events.js").TokenUsage;
 }
 
 export type CallLLM = (messages: Array<{ role: string; content: string; meta?: Record<string, unknown> }>, systemPrompt: string, options?: CallLLMOptions) => Promise<CallLLMResponse>;
@@ -440,7 +442,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 				reasoning: response.reasoning,
 				code: response.code,
 				hasToolUse: !!response.toolUseId,
-				usage: (response as unknown as Record<string, unknown>).usage as import("./events.js").TokenUsage | undefined,
+				usage: response.usage,
 			});
 
 			const reasoning = response.reasoning;

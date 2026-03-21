@@ -31,6 +31,12 @@ interface ChatCompletionResponse {
 		finish_reason?: string;
 		native_finish_reason?: string;
 	}>;
+	usage?: {
+		prompt_tokens?: number;
+		completion_tokens?: number;
+		cache_read_input_tokens?: number;
+		cache_creation_input_tokens?: number;
+	};
 	error?: { message: string; code?: number };
 }
 
@@ -249,6 +255,14 @@ export function fromOpenRouterCompatible(options: OpenRouterCompatibleOptions): 
 			}
 			if (reasoningDetails) {
 				result.reasoningDetails = reasoningDetails;
+			}
+			if (data.usage) {
+				result.usage = {
+					promptTokens: data.usage.prompt_tokens ?? 0,
+					completionTokens: data.usage.completion_tokens ?? 0,
+					cacheReadTokens: data.usage.cache_read_input_tokens ?? 0,
+					cacheWriteTokens: data.usage.cache_creation_input_tokens ?? 0,
+				};
 			}
 			return result;
 		}

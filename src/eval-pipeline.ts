@@ -24,6 +24,7 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { pressRun } from "./press-boot.js";
 import type { PressRunResult } from "./press-boot.js";
@@ -57,6 +58,7 @@ export interface EvalResult {
 	iterations: { forme: number; vm: number };
 	cost: {
 		inputTokens: number;
+		cachedInputTokens: number;
 		outputTokens: number;
 		estimatedUsd: number;
 	};
@@ -69,7 +71,7 @@ export interface EvalBatchResult {
 	timestamp: string;
 	pressCommit: string;
 	results: EvalResult[];
-	totalCost: { inputTokens: number; outputTokens: number; estimatedUsd: number };
+	totalCost: { inputTokens: number; cachedInputTokens: number; outputTokens: number; estimatedUsd: number };
 	totalDurationMs: number;
 }
 
@@ -95,26 +97,27 @@ function makeCallLLM(model: string, apiKey: string): CallLLM {
 	});
 }
 
-function extractCost(events: RlmEvent[]): { inputTokens: number; outputTokens: number; estimatedUsd: number } {
+function extractCost(events: RlmEvent[]): { inputTokens: number; cachedInputTokens: number; outputTokens: number; estimatedUsd: number } {
 	let inputTokens = 0;
+	let cachedInputTokens = 0;
 	let outputTokens = 0;
 
 	for (const e of events) {
 		if (e.type === "llm:response" && e.usage) {
-			inputTokens += e.usage.promptTokens || 0;
-			outputTokens += e.usage.completionTokens || 0;
+			inputTokens += e.usage.promptTokens ?? 0;
+			cachedInputTokens += e.usage.cacheReadTokens ?? 0;
+			outputTokens += e.usage.completionTokens ?? 0;
 		}
 	}
 
 	// Rough cost estimate (Sonnet pricing as default)
 	const estimatedUsd = (inputTokens * 3 / 1_000_000) + (outputTokens * 15 / 1_000_000);
 
-	return { inputTokens, outputTokens, estimatedUsd: Math.round(estimatedUsd * 10000) / 10000 };
+	return { inputTokens, cachedInputTokens, outputTokens, estimatedUsd: Math.round(estimatedUsd * 10000) / 10000 };
 }
 
 function getGitCommit(): string {
 	try {
-		const { execSync } = require("node:child_process");
 		return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
 	} catch {
 		return "unknown";
@@ -527,6 +530,7 @@ async function main(): Promise<void> {
 	// Aggregate cost
 	const totalCost = {
 		inputTokens: results.reduce((s, r) => s + r.cost.inputTokens, 0),
+		cachedInputTokens: results.reduce((s, r) => s + r.cost.cachedInputTokens, 0),
 		outputTokens: results.reduce((s, r) => s + r.cost.outputTokens, 0),
 		estimatedUsd: Math.round(results.reduce((s, r) => s + r.cost.estimatedUsd, 0) * 10000) / 10000,
 	};
