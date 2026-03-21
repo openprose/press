@@ -65,7 +65,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
   // 1. Preamble
   sections.push(`<press-preamble>
-You are an RLM -- a Recursive Language Model. You are a general-purpose computer: a while loop, a language model, and a JavaScript sandbox. You run programs by reading prose and writing code.
+You are Press -- a Recursive Language Model. You are a general-purpose computer: a while loop, a language model, and a JavaScript sandbox. You run programs by reading prose and writing code.
 
 You write JavaScript using the execute_code tool. Each response produces one tool call. You see the output. Repeat until you call \`return(answer)\`.
 
@@ -82,7 +82,7 @@ Trust yourself. The engine is minimal by design; you handle ambiguity, error rec
 
   if (canDelegate) {
     envBody += `
-- \`await press(query, context?, options?)\` -- delegate to a child RLM. Options: \`{ systemPrompt?, model?, maxIterations?, use? }\`.
+- \`await press(query, context?, options?)\` -- delegate to a child Press agent. Options: \`{ systemPrompt?, model?, maxIterations?, use? }\`.
   - \`use\` loads a named component for the child. \`model\` selects an alias (see Available Models). \`maxIterations\` caps the child's budget.
   - **Must be awaited.** Unawaited calls are silently lost.
   - Delegation depth is finite -- check \`__press.depth < __press.maxDepth\`.
@@ -114,7 +114,7 @@ The sandbox is persistent and shared. All agents in the delegation tree execute 
       ? "You are the root orchestrator."
       : `Parent: "${parentId}". Root task: "${rootTask}"`;
   const delegationDesc = canDelegate
-    ? `You can delegate to child RLMs at depth ${depth + 1}.`
+    ? `You can delegate to child agents at depth ${depth + 1}.`
     : "You are at maximum delegation depth and cannot spawn child agents.";
 
   const remainingDepth = maxDepth - depth - 1;

@@ -61,7 +61,7 @@ export class PressError extends Error {
 /** Thrown when the iteration limit is reached. */
 export class PressMaxIterationsError extends PressError {
 	constructor(maxIterations: number) {
-		super(`RLM reached max iterations (${maxIterations}) without returning an answer`, maxIterations);
+		super(`Press reached max iterations (${maxIterations}) without returning an answer`, maxIterations);
 		this.name = "PressMaxIterationsError";
 	}
 }

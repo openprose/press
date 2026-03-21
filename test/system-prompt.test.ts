@@ -121,7 +121,7 @@ describe("buildSystemPrompt", () => {
 
 	it("delegation possible when canDelegate", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: true, depth: 0 });
-		expect(result).toContain("You can delegate to child RLMs at depth 1.");
+		expect(result).toContain("You can delegate to child agents at depth 1.");
 	});
 
 	it("cannot delegate when !canDelegate", () => {

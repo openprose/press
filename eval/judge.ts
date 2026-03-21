@@ -1252,7 +1252,7 @@ async function runLLMJudge(
 
 	// 6. Build the query for the judge
 	const query = [
-		"Evaluate this RLM execution trace for adherence to its program.",
+		"Evaluate this Press execution trace for adherence to its program.",
 		"",
 		"Read the sandbox globals: __traceDigest, __mechanicalMetrics, __programFiles, __specDocs.",
 		"Cross-reference the trace against the program files.",

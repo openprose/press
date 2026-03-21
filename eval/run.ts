@@ -6,7 +6,7 @@ process.on("unhandledRejection", (reason) => {
 });
 
 /**
- * CLI entry point for the RLM eval harness.
+ * CLI entry point for the Press eval harness.
  *
  * Usage:
  *   npx tsx eval/run.ts --benchmark oolong --model anthropic/claude-sonnet-4-20250514
@@ -94,7 +94,7 @@ interface CliArgs {
 }
 
 function usage(): never {
-	console.log(`RLM Eval Harness
+	console.log(`Press Eval Harness
 
 Usage: npx tsx eval/run.ts --benchmark <name> --model <provider/model-id> [options]
 
@@ -590,7 +590,7 @@ function printFinalResults(result: import("./types.js").BenchmarkResult): void {
 }
 
 function printConfig(args: CliArgs): void {
-	console.log("RLM Eval Harness");
+	console.log("Press Eval Harness");
 	console.log("================");
 	console.log();
 	console.log(`Benchmark:       ${args.benchmark}`);
