@@ -3,7 +3,7 @@
  * eval-pipeline.ts — Deterministic eval pipeline orchestrator.
  *
  * Orchestrates eval batches with configurable concurrency.
- * Deterministic code handles running, indexing, cost tracking.
+ * Deterministic code handles running, indexing, token tracking.
  * LLM intelligence (researcher, judge, comparator) called via
  * pressRun() only when needed.
  *
@@ -56,11 +56,10 @@ export interface EvalResult {
 	answer: string | null;
 	manifest: string | null;
 	iterations: { forme: number; vm: number };
-	cost: {
+	tokens: {
 		inputTokens: number;
 		cachedInputTokens: number;
 		outputTokens: number;
-		estimatedUsd: number;
 	};
 	events: RlmEvent[];
 	durationMs: number;
@@ -71,7 +70,7 @@ export interface EvalBatchResult {
 	timestamp: string;
 	pressCommit: string;
 	results: EvalResult[];
-	totalCost: { inputTokens: number; cachedInputTokens: number; outputTokens: number; estimatedUsd: number };
+	totalTokens: { inputTokens: number; cachedInputTokens: number; outputTokens: number };
 	totalDurationMs: number;
 }
 
@@ -97,7 +96,7 @@ function makeCallLLM(model: string, apiKey: string): CallLLM {
 	});
 }
 
-function extractCost(events: RlmEvent[]): { inputTokens: number; cachedInputTokens: number; outputTokens: number; estimatedUsd: number } {
+function extractTokens(events: RlmEvent[]): { inputTokens: number; cachedInputTokens: number; outputTokens: number } {
 	let inputTokens = 0;
 	let cachedInputTokens = 0;
 	let outputTokens = 0;
@@ -110,10 +109,7 @@ function extractCost(events: RlmEvent[]): { inputTokens: number; cachedInputToke
 		}
 	}
 
-	// Rough cost estimate (Sonnet pricing as default)
-	const estimatedUsd = (inputTokens * 3 / 1_000_000) + (outputTokens * 15 / 1_000_000);
-
-	return { inputTokens, cachedInputTokens, outputTokens, estimatedUsd: Math.round(estimatedUsd * 10000) / 10000 };
+	return { inputTokens, cachedInputTokens, outputTokens };
 }
 
 function getGitCommit(): string {
@@ -254,7 +250,7 @@ async function runSingleEval(
 		]);
 
 		const events = observer.getEvents();
-		const cost = extractCost(events);
+		const tokens = extractTokens(events);
 
 		return {
 			config,
@@ -266,13 +262,13 @@ async function runSingleEval(
 				forme: result.phaseResults.forme.iterations,
 				vm: result.phaseResults.vm.iterations,
 			},
-			cost,
+			tokens,
 			events,
 			durationMs: Date.now() - start,
 		};
 	} catch (err: unknown) {
 		const events = observer.getEvents();
-		const cost = extractCost(events);
+		const tokens = extractTokens(events);
 		const message = err instanceof Error ? err.message : String(err);
 
 		return {
@@ -282,7 +278,7 @@ async function runSingleEval(
 			answer: null,
 			manifest: null,
 			iterations: { forme: 0, vm: 0 },
-			cost,
+			tokens,
 			events,
 			durationMs: Date.now() - start,
 			error: message,
@@ -309,10 +305,10 @@ async function runEvalBatch(
 			results.push(result);
 
 			const status = result.status === "pass" ? "PASS" : result.status.toUpperCase();
-			const cost = `$${result.cost.estimatedUsd.toFixed(4)}`;
 			const time = formatDuration(result.durationMs);
 			const iters = `forme=${result.iterations.forme}, vm=${result.iterations.vm}`;
-			console.log(`  [${status}] ${config.program} — ${time}, ${iters}, ${cost}`);
+			const tok = `${result.tokens.inputTokens.toLocaleString()}in/${result.tokens.outputTokens.toLocaleString()}out`;
+			console.log(`  [${status}] ${config.program} — ${time}, ${iters}, ${tok}`);
 			if (result.error) {
 				console.log(`         error: ${result.error.slice(0, 200)}`);
 			}
@@ -351,7 +347,7 @@ function indexResults(batch: EvalBatchResult, resultsDir: string): void {
 	writeFileSync(join(batchDir, "batch.json"), JSON.stringify({
 		timestamp: batch.timestamp,
 		pressCommit: batch.pressCommit,
-		totalCost: batch.totalCost,
+		totalTokens: batch.totalTokens,
 		totalDurationMs: batch.totalDurationMs,
 		results: batch.results.map(r => ({
 			runId: r.runId,
@@ -360,7 +356,7 @@ function indexResults(batch: EvalBatchResult, resultsDir: string): void {
 			question: r.config.question,
 			status: r.status,
 			durationMs: r.durationMs,
-			cost: r.cost,
+			tokens: r.tokens,
 			answer: r.answer?.slice(0, 500),
 			iterations: r.iterations,
 		})),
@@ -376,7 +372,7 @@ function indexResults(batch: EvalBatchResult, resultsDir: string): void {
 			runId: result.runId,
 			status: result.status,
 			durationMs: result.durationMs,
-			cost: result.cost,
+			tokens: result.tokens,
 			answer: result.answer?.slice(0, 1000),
 			iterations: result.iterations,
 			error: result.error,
@@ -395,8 +391,8 @@ function indexResults(batch: EvalBatchResult, resultsDir: string): void {
 			});
 		}).join("\n"));
 
-		// Write cost attribution
-		writeFileSync(join(resultDir, "cost.json"), JSON.stringify(result.cost, null, 2));
+		// Write token attribution
+		writeFileSync(join(resultDir, "tokens.json"), JSON.stringify(result.tokens, null, 2));
 	}
 }
 
@@ -551,12 +547,11 @@ async function main(): Promise<void> {
 
 	const batchDurationMs = Date.now() - batchStart;
 
-	// Aggregate cost
-	const totalCost = {
-		inputTokens: results.reduce((s, r) => s + r.cost.inputTokens, 0),
-		cachedInputTokens: results.reduce((s, r) => s + r.cost.cachedInputTokens, 0),
-		outputTokens: results.reduce((s, r) => s + r.cost.outputTokens, 0),
-		estimatedUsd: Math.round(results.reduce((s, r) => s + r.cost.estimatedUsd, 0) * 10000) / 10000,
+	// Aggregate tokens
+	const totalTokens = {
+		inputTokens: results.reduce((s, r) => s + r.tokens.inputTokens, 0),
+		cachedInputTokens: results.reduce((s, r) => s + r.tokens.cachedInputTokens, 0),
+		outputTokens: results.reduce((s, r) => s + r.tokens.outputTokens, 0),
 	};
 
 	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -564,7 +559,7 @@ async function main(): Promise<void> {
 		timestamp,
 		pressCommit: getGitCommit(),
 		results,
-		totalCost,
+		totalTokens,
 		totalDurationMs: batchDurationMs,
 	};
 
@@ -606,16 +601,15 @@ async function main(): Promise<void> {
 	if (timedOut > 0) console.log(`  Timeouts:      ${timedOut}`);
 	console.log();
 	console.log(`  Total time:    ${formatDuration(batchDurationMs)}`);
-	console.log(`  Total cost:    $${totalCost.estimatedUsd.toFixed(4)}`);
-	console.log(`  Input tokens:  ${totalCost.inputTokens.toLocaleString()}`);
-	console.log(`  Output tokens: ${totalCost.outputTokens.toLocaleString()}`);
+	console.log(`  Total tokens:  ${totalTokens.inputTokens.toLocaleString()}in/${totalTokens.outputTokens.toLocaleString()}out`);
+	console.log(`  Cached input:  ${totalTokens.cachedInputTokens.toLocaleString()}`);
 	console.log();
 
 	for (const r of results) {
 		const status = r.status === "pass" ? "PASS" : r.status.toUpperCase();
 		const time = formatDuration(r.durationMs);
-		const cost = `$${r.cost.estimatedUsd.toFixed(4)}`;
-		console.log(`  [${status}] ${r.config.program} — ${time}, forme=${r.iterations.forme} vm=${r.iterations.vm}, ${cost}`);
+		const tok = `${r.tokens.inputTokens.toLocaleString()}in/${r.tokens.outputTokens.toLocaleString()}out`;
+		console.log(`  [${status}] ${r.config.program} — ${time}, forme=${r.iterations.forme} vm=${r.iterations.vm}, ${tok}`);
 		if (r.answer) {
 			console.log(`         answer: ${r.answer.slice(0, 120)}${r.answer.length > 120 ? "..." : ""}`);
 		}

@@ -14,7 +14,7 @@ function mockCallLLMWithUsage(responses: CallLLMResponse[]): CallLLM {
 	};
 }
 
-function extractCost(events: RlmEvent[]): { inputTokens: number; cachedInputTokens: number; outputTokens: number } {
+function extractTokens(events: RlmEvent[]): { inputTokens: number; cachedInputTokens: number; outputTokens: number } {
 	let inputTokens = 0;
 	let cachedInputTokens = 0;
 	let outputTokens = 0;
@@ -70,7 +70,7 @@ describe("token tracking", () => {
 		expect(llmResponses[1].usage!.completionTokens).toBe(80);
 	});
 
-	it("extractCost correctly sums token usage from events", async () => {
+	it("extractTokens correctly sums token usage from events", async () => {
 		const observer = new RlmObserver();
 		const callLLM = mockCallLLMWithUsage([
 			{
@@ -90,14 +90,14 @@ describe("token tracking", () => {
 		await press("test", undefined, { callLLM, observer });
 
 		const events = observer.getEvents();
-		const cost = extractCost(events);
+		const cost = extractTokens(events);
 
 		expect(cost.inputTokens).toBe(300);
 		expect(cost.outputTokens).toBe(130);
 		expect(cost.cachedInputTokens).toBe(40);
 	});
 
-	it("extractCost returns zero when usage is missing", async () => {
+	it("extractTokens returns zero when usage is missing", async () => {
 		const observer = new RlmObserver();
 		const callLLM = mockCallLLMWithUsage([
 			{ reasoning: "", code: 'return("done")', toolUseId: "t1" },
@@ -107,7 +107,7 @@ describe("token tracking", () => {
 		await press("test", undefined, { callLLM, observer });
 
 		const events = observer.getEvents();
-		const cost = extractCost(events);
+		const cost = extractTokens(events);
 
 		expect(cost.inputTokens).toBe(0);
 		expect(cost.outputTokens).toBe(0);
