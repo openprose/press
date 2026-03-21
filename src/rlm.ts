@@ -69,7 +69,7 @@ export class PressMaxIterationsError extends PressError {
 	}
 }
 
-/** Read-only metadata injected into the sandbox as `__rlm`. (Name kept for internal compatibility.) */
+/** Read-only metadata injected into the sandbox as `__press`. (Name kept for internal compatibility.) */
 export interface DelegationContext {
 	depth: number;
 	maxDepth: number;
@@ -141,7 +141,7 @@ export async function press(query: string, context: Record<string, unknown> | un
 
 	const snapshotExcludeKeys = new Set(SNAPSHOT_EXCLUDE_KEYS);
 	snapshotExcludeKeys.add('press');
-	snapshotExcludeKeys.add('__rlm');
+	snapshotExcludeKeys.add('__press');
 	snapshotExcludeKeys.add('__ctxInternal');
 	snapshotExcludeKeys.add('context');
 	if (opts.sandboxGlobals) {
@@ -458,9 +458,9 @@ export async function press(query: string, context: Record<string, unknown> | un
 			for (const block of codeBlocks) {
 				activeDepth = depth;
 
-				// Inject __rlm delegation context before each exec
+				// Inject __press delegation context before each exec
 				env.set(
-					"__rlm",
+					"__press",
 					Object.freeze({
 						depth,
 						maxDepth: opts.maxDepth,
@@ -658,9 +658,9 @@ export async function press(query: string, context: Record<string, unknown> | un
 		}
 
 		const savedDepth = activeDepth;
-		const childLineage = [...((env.get("__rlm") as DelegationContext | undefined)?.lineage ?? [q]), q];
-		const callerInvocationId = (env.get("__rlm") as DelegationContext | undefined)?.invocationId ?? "root";
-		const callerParentId = (env.get("__rlm") as DelegationContext | undefined)?.parentId ?? null;
+		const childLineage = [...((env.get("__press") as DelegationContext | undefined)?.lineage ?? [q]), q];
+		const callerInvocationId = (env.get("__press") as DelegationContext | undefined)?.invocationId ?? "root";
+		const callerParentId = (env.get("__press") as DelegationContext | undefined)?.parentId ?? null;
 
 		const childIndex = childCounter++;
 		const childDepthLabel = `d${savedDepth + 1}-c${childIndex}`;

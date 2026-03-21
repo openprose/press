@@ -85,13 +85,13 @@ Trust yourself. The engine is minimal by design; you handle ambiguity, error rec
 - \`await press(query, context?, options?)\` -- delegate to a child RLM. Options: \`{ systemPrompt?, model?, maxIterations?, use? }\`.
   - \`use\` loads a named component for the child. \`model\` selects an alias (see Available Models). \`maxIterations\` caps the child's budget.
   - **Must be awaited.** Unawaited calls are silently lost.
-  - Delegation depth is finite -- check \`__rlm.depth < __rlm.maxDepth\`.
+  - Delegation depth is finite -- check \`__press.depth < __press.maxDepth\`.
   - IMPORTANT: Child press() calls execute in the same JavaScript sandbox. Variables declared by a child (like \`ctx\`, \`result\`) may shadow your own. After a child returns, re-read your variables from \`context\` rather than relying on locals set before the delegation.
 `;
   }
 
   envBody += `
-- \`__rlm\` (read-only) -- delegation metadata: \`{ depth, maxDepth, iteration, maxIterations, lineage, invocationId, parentId }\`
+- \`__press\` (read-only) -- delegation metadata: \`{ depth, maxDepth, iteration, maxIterations, lineage, invocationId, parentId }\`
 - Variables persist across iterations. Code from earlier iterations is still in scope.
 
 The sandbox is persistent and shared. All agents in the delegation tree execute in the same JavaScript VM. Variables set before \`press()\` are readable by the child. Variables set by the child are readable after it returns. Convention: prefix shared state with \`__\` (double underscore).`;

@@ -168,13 +168,13 @@ describe("press", () => {
 		expect(lastMsg.role).toBe("user");
 	});
 
-	it("__rlm: root depth 0, correct lineage", async () => {
+	it("__press: root depth 0, correct lineage", async () => {
 		let capturedMessages: Array<{ role: string; content: string }> | undefined;
 		let callIndex = 0;
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { reasoning: "", code: 'console.log(JSON.stringify(__rlm))', toolUseId: "t1" };
+				return { reasoning: "", code: 'console.log(JSON.stringify(__press))', toolUseId: "t1" };
 			}
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
@@ -194,11 +194,11 @@ describe("press", () => {
 		expect(parsed.lineage).toEqual(["my query"]);
 	});
 
-	it("__rlm: child depth 1, parent in lineage", async () => {
+	it("__press: child depth 1, parent in lineage", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "child task") {
-				return { reasoning: "", code: 'console.log(JSON.stringify(__rlm))\nreturn "child done"', toolUseId: "tc" };
+				return { reasoning: "", code: 'console.log(JSON.stringify(__press))\nreturn "child done"', toolUseId: "tc" };
 			}
 			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
 		};
@@ -208,16 +208,16 @@ describe("press", () => {
 		expect(result.answer).toBe("child done");
 	});
 
-	it("__rlm: iteration increments", async () => {
+	it("__press: iteration increments", async () => {
 		let lastMessages: Array<{ role: string; content: string }> | undefined;
 		let callIndex = 0;
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			lastMessages = [...messages];
 			if (callIndex <= 2) {
-				return { reasoning: "", code: 'console.log("iter=" + __rlm.iteration)', toolUseId: `t${callIndex}` };
+				return { reasoning: "", code: 'console.log("iter=" + __press.iteration)', toolUseId: `t${callIndex}` };
 			}
-			return { reasoning: "", code: 'console.log("iter=" + __rlm.iteration)\nreturn "done"', toolUseId: `t${callIndex}` };
+			return { reasoning: "", code: 'console.log("iter=" + __press.iteration)\nreturn "done"', toolUseId: `t${callIndex}` };
 		};
 
 		await press("test", undefined, { callLLM });
@@ -229,13 +229,13 @@ describe("press", () => {
 		expect(iters).toEqual([0, 1]);
 	});
 
-	it("__rlm: frozen", async () => {
+	it("__press: frozen", async () => {
 		let capturedMessages: Array<{ role: string; content: string }> | undefined;
 		let callIndex = 0;
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { reasoning: "", code: '__rlm.depth = 99\nconsole.log("depth=" + __rlm.depth)', toolUseId: "t1" };
+				return { reasoning: "", code: '__press.depth = 99\nconsole.log("depth=" + __press.depth)', toolUseId: "t1" };
 			}
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
@@ -246,13 +246,13 @@ describe("press", () => {
 		expect(toolResult!.content).toContain("depth=0");
 	});
 
-	it("__rlm: lineage frozen", async () => {
+	it("__press: lineage frozen", async () => {
 		let capturedMessages: Array<{ role: string; content: string }> | undefined;
 		let callIndex = 0;
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { reasoning: "", code: 'try { __rlm.lineage.push("hacked") } catch(e) { console.log("lineage frozen: " + e.message) }', toolUseId: "t1" };
+				return { reasoning: "", code: 'try { __press.lineage.push("hacked") } catch(e) { console.log("lineage frozen: " + e.message) }', toolUseId: "t1" };
 			}
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
