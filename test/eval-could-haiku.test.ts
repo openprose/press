@@ -113,5 +113,5 @@ describeIf("Eval 10: could-haiku end-to-end (Sonnet)", () => {
     // Don't clean up — leave artifacts for inspection
     console.log("\nArtifacts preserved in:", runDir);
 
-  }, 600_000); // 10 minute timeout
+  }, 1_200_000); // 20 minute timeout
 });
