@@ -184,6 +184,30 @@ const DEFAULT_EVAL_SPEC: EvalConfig[] = [
 		question: "Q2",
 		callerInputs: { topic: "autumn rain" },
 	},
+	{
+		program: "bilingual-haiku",
+		programPath: resolve(PROJECT_ROOT, "test/fixtures/bilingual-haiku/index.md"),
+		programDir: resolve(PROJECT_ROOT, "test/fixtures/bilingual-haiku"),
+		model: "anthropic/claude-sonnet-4.6",
+		question: "Q2",
+		callerInputs: { topic: "autumn rain", language: "Japanese" },
+	},
+	{
+		program: "error-handling",
+		programPath: resolve(PROJECT_ROOT, "test/fixtures/error-handling/index.md"),
+		programDir: resolve(PROJECT_ROOT, "test/fixtures/error-handling"),
+		model: "anthropic/claude-sonnet-4.6",
+		question: "Q2",
+		callerInputs: { url: "https://this-domain-definitely-does-not-exist-xyz123.com/page" },
+	},
+	{
+		program: "trivial-pipeline-flash",
+		programPath: resolve(PROJECT_ROOT, "test/fixtures/trivial-program/index.md"),
+		programDir: resolve(PROJECT_ROOT, "test/fixtures/trivial-program"),
+		model: "google/gemini-3-flash-preview",
+		question: "Q2",
+		callerInputs: { text: "hello world this is a test" },
+	},
 ];
 
 // ---------------------------------------------------------------------------
