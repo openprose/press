@@ -29,13 +29,9 @@ export interface ResolvedPressCall {
 // ---------------------------------------------------------------------------
 
 /**
- * Determine if a value looks like a file path that should be resolved.
- *
- * A value is treated as a path if it contains `/` AND ends with `.md`,
- * unless it looks like an HTTP(S) URL.
- *
- * Literal values like `"haiku"`, `"standard"`, or `"ExampleSDK"` pass
- * through unchanged.
+ * Determine if a value looks like a resolvable file path (contains `/` and ends with `.md`, excluding URLs).
+ * @param value - The input string to check.
+ * @returns `true` if the value should be read from disk during input resolution.
  */
 export function isResolvablePath(value: string): boolean {
 	if (value.startsWith("http://") || value.startsWith("https://")) {
@@ -202,13 +198,11 @@ export function parseEnsuresOutputs(serviceDefinition: string): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Fully resolve a press() call.
- *
- * 1. Loads the service definition from `services/{serviceName}.md`.
- * 2. Resolves all input values (paths → file content, literals → as-is).
- * 3. Parses ensures output names from the service definition.
- *
- * Returns everything needed to build the child's system prompt.
+ * Fully resolve a press() call: load service definition, resolve inputs, and parse outputs.
+ * @param runDir - The run directory containing `services/` subdirectory.
+ * @param serviceName - Name of the service to resolve.
+ * @param args - Caller-provided inputs and optional workspace override.
+ * @returns Everything needed to build the child service's system prompt.
  */
 export function resolvePressCall(
 	runDir: string,

@@ -13,9 +13,10 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pressRun } from "./press-boot.js";
-import { RlmObserver } from "./observer.js";
+import { PressObserver } from "./observer.js";
 import { fromOpenRouterCompatible } from "./drivers/openrouter-compatible.js";
-import type { RlmEvent, TokenUsage } from "./events.js";
+import { loadEnvFile, formatDuration, formatNumber } from "./utils.js";
+import type { PressEvent, TokenUsage } from "./events.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -36,35 +37,6 @@ const RESERVED_FLAGS = new Set([
 const DEFAULT_MODEL = "anthropic/claude-sonnet-4.6";
 const DEFAULT_MAX_ITERATIONS = 15;
 const DEFAULT_MAX_DEPTH = 3;
-
-// ---------------------------------------------------------------------------
-// .env loader
-// ---------------------------------------------------------------------------
-
-function loadEnvFile(): void {
-	const envPath = resolve(process.cwd(), ".env");
-	try {
-		const content = readFileSync(envPath, "utf-8");
-		for (const line of content.split("\n")) {
-			const trimmed = line.trim();
-			if (!trimmed || trimmed.startsWith("#")) continue;
-			const eqIdx = trimmed.indexOf("=");
-			if (eqIdx === -1) continue;
-			const key = trimmed.slice(0, eqIdx).trim();
-			let value = trimmed.slice(eqIdx + 1).trim();
-			// Strip surrounding quotes
-			if ((value.startsWith('"') && value.endsWith('"')) ||
-				(value.startsWith("'") && value.endsWith("'"))) {
-				value = value.slice(1, -1);
-			}
-			if (!process.env[key]) {
-				process.env[key] = value;
-			}
-		}
-	} catch {
-		// File not found, continue
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Help / version
@@ -237,7 +209,7 @@ function parseRunArgs(argv: string[]): ParsedArgs {
 // Token extraction
 // ---------------------------------------------------------------------------
 
-function extractTokens(events: RlmEvent[]): {
+function extractTokens(events: PressEvent[]): {
 	inputTokens: number;
 	cachedInputTokens: number;
 	outputTokens: number;
@@ -255,22 +227,6 @@ function extractTokens(events: RlmEvent[]): {
 	}
 
 	return { inputTokens, cachedInputTokens, outputTokens };
-}
-
-// ---------------------------------------------------------------------------
-// Formatting helpers
-// ---------------------------------------------------------------------------
-
-function formatDuration(ms: number): string {
-	if (ms < 1000) return `${ms}ms`;
-	if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-	const mins = Math.floor(ms / 60_000);
-	const secs = Math.round((ms % 60_000) / 1000);
-	return `${mins}m ${secs}s`;
-}
-
-function formatNumber(n: number): string {
-	return n.toLocaleString();
 }
 
 // ---------------------------------------------------------------------------
@@ -338,7 +294,7 @@ async function main(): Promise<void> {
 	});
 
 	// Set up observer
-	const observer = new RlmObserver();
+	const observer = new PressObserver();
 
 	// Verbose progress on stderr
 	if (args.verbose) {

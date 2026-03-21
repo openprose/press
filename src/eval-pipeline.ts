@@ -29,8 +29,9 @@ import { execSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { pressRun } from "./press-boot.js";
 import type { PressRunResult } from "./press-boot.js";
-import { RlmObserver } from "./observer.js";
-import type { RlmEvent, TokenUsage } from "./events.js";
+import { PressObserver } from "./observer.js";
+import { generateRunId, formatDuration, loadEnvFile } from "./utils.js";
+import type { PressEvent, TokenUsage } from "./events.js";
 import type { CallLLM } from "./rlm.js";
 import { fromOpenRouterCompatible } from "./drivers/openrouter-compatible.js";
 
@@ -62,7 +63,7 @@ export interface EvalResult {
 		cachedInputTokens: number;
 		outputTokens: number;
 	};
-	events: RlmEvent[];
+	events: PressEvent[];
 	durationMs: number;
 	error?: string;
 }
@@ -79,12 +80,8 @@ export interface EvalBatchResult {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function generateRunId(): string {
-	const now = new Date();
-	const date = now.toISOString().slice(0, 10).replace(/-/g, "");
-	const time = now.toISOString().slice(11, 19).replace(/:/g, "");
-	const rand = Math.random().toString(36).slice(2, 8);
-	return `eval-${date}-${time}-${rand}`;
+function generateEvalRunId(): string {
+	return `eval-${generateRunId()}`;
 }
 
 function makeCallLLM(model: string, apiKey: string): CallLLM {
@@ -97,7 +94,7 @@ function makeCallLLM(model: string, apiKey: string): CallLLM {
 	});
 }
 
-function extractTokens(events: RlmEvent[]): { inputTokens: number; cachedInputTokens: number; outputTokens: number } {
+function extractTokens(events: PressEvent[]): { inputTokens: number; cachedInputTokens: number; outputTokens: number } {
 	let inputTokens = 0;
 	let cachedInputTokens = 0;
 	let outputTokens = 0;
@@ -121,34 +118,6 @@ function getGitCommit(): string {
 	}
 }
 
-function formatDuration(ms: number): string {
-	if (ms < 1000) return `${ms}ms`;
-	if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-	const mins = Math.floor(ms / 60_000);
-	const secs = Math.round((ms % 60_000) / 1000);
-	return `${mins}m ${secs}s`;
-}
-
-/** Minimal .env loader. */
-function loadEnvFile(): void {
-	const envPath = resolve(join(import.meta.url.replace("file://", ""), "..", "..", ".env"));
-	try {
-		const content = readFileSync(envPath, "utf-8");
-		for (const line of content.split("\n")) {
-			const trimmed = line.trim();
-			if (!trimmed || trimmed.startsWith("#")) continue;
-			const eqIdx = trimmed.indexOf("=");
-			if (eqIdx === -1) continue;
-			const key = trimmed.slice(0, eqIdx).trim();
-			const value = trimmed.slice(eqIdx + 1).trim();
-			if (!process.env[key]) {
-				process.env[key] = value;
-			}
-		}
-	} catch {
-		// File not found, continue
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Eval tiers and specs
@@ -240,9 +209,9 @@ async function runSingleEval(
 	config: EvalConfig,
 	options: { specDir: string },
 ): Promise<EvalResult> {
-	const runId = generateRunId();
+	const runId = generateEvalRunId();
 	const runDir = resolve(`.prose/runs/${runId}`);
-	const observer = new RlmObserver();
+	const observer = new PressObserver();
 	const start = Date.now();
 
 	const apiKey = process.env.OPENROUTER_API_KEY;

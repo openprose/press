@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 const DEFAULT_LIB_DIR = resolve(fileURLToPath(import.meta.url), "../../lib");
 const DEFAULT_PROGRAMS_DIR = resolve(fileURLToPath(import.meta.url), "../../programs");
 
-export function parseFrontmatter(content: string): { frontmatter: Record<string, any>; body: string } {
+export function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
 	const trimmed = content.trimStart();
 	if (!trimmed.startsWith("---")) {
 		return { frontmatter: {}, body: content };
@@ -26,7 +26,7 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
 	const body = trimmed.slice(endIndex + 4).replace(/^\r?\n/, "");
 
 	// Simple YAML parser for flat key-value pairs and arrays
-	const frontmatter: Record<string, any> = {};
+	const frontmatter: Record<string, unknown> = {};
 	const lines = yamlBlock.split("\n");
 	let currentKey: string | null = null;
 	let currentArray: string[] | null = null;
@@ -150,7 +150,7 @@ export async function detectProfile(
 
 		const models: string[] = Array.isArray(frontmatter.models) ? frontmatter.models : [];
 		const drivers: string[] = Array.isArray(frontmatter.drivers) ? frontmatter.drivers : [];
-		const profileName: string = frontmatter.name ?? file.replace(/\.md$/, "");
+		const profileName: string = (frontmatter.name as string) ?? file.replace(/\.md$/, "");
 
 		for (const pattern of models) {
 			const regex = globToRegExp(pattern);

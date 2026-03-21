@@ -215,9 +215,8 @@ function buildServiceContext(options: ServicePromptOptions): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the Press runtime translation glossary.
- * Maps Prose/Forme spec concepts (Task tool, subagent, AskUserQuestion)
- * to Press sandbox equivalents.
+ * Build the Press runtime translation glossary mapping Prose/Forme spec concepts to Press sandbox equivalents.
+ * @returns XML-wrapped `<press-runtime>` glossary string.
  */
 export function buildRuntimeGlossary(): string {
   return `<press-runtime>
@@ -274,7 +273,9 @@ filesystem operations on your behalf.
 // ---------------------------------------------------------------------------
 
 /**
- * Build the complete system prompt for a given phase.
+ * Build the complete system prompt for a given phase (forme, prose-vm, or service).
+ * @param options - Phase-specific configuration including spec directory and run context.
+ * @returns Assembled system prompt string with specs, glossary, and run context.
  */
 export function buildPressPrompt(options: PromptOptions): string {
   const sections: string[] = [];

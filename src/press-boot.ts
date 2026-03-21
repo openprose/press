@@ -9,8 +9,9 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { press } from "./rlm.js";
 import { buildPressPrompt } from "./press-prompt.js";
-import type { CallLLM, RlmResult } from "./rlm.js";
-import type { RlmEventSink } from "./events.js";
+import { generateRunId } from "./utils.js";
+import type { CallLLM, PressResult } from "./rlm.js";
+import type { PressEventSink } from "./events.js";
 
 export interface PressRunOptions {
   callLLM: CallLLM;
@@ -22,7 +23,7 @@ export interface PressRunOptions {
   runDir?: string;          // optional run directory (derived from runId if not provided)
   maxIterations?: number;   // iteration budget per phase (default 15)
   maxDepth?: number;        // delegation depth per phase (default 3)
-  observer?: RlmEventSink;  // optional event observer
+  observer?: PressEventSink;  // optional event observer
 }
 
 export interface PressRunResult {
@@ -34,6 +35,11 @@ export interface PressRunResult {
   };
 }
 
+/**
+ * Run a Prose program through the two-phase Press pipeline (Forme wiring, then Prose VM execution).
+ * @param options - Program path, LLM driver, caller inputs, and optional tuning knobs.
+ * @returns The final answer, manifest, and per-phase iteration counts.
+ */
 export async function pressRun(options: PressRunOptions): Promise<PressRunResult> {
   const {
     callLLM,
@@ -68,7 +74,7 @@ export async function pressRun(options: PressRunOptions): Promise<PressRunResult
 
   // Run Phase 1 — the model becomes the Forme container.
   // Context provides paths so the model can resolve files.
-  const formeResult: RlmResult = await press(
+  const formeResult: PressResult = await press(
     entryPoint,  // query: the program entry point
     {
       program_dir: programDir,
@@ -111,7 +117,7 @@ export async function pressRun(options: PressRunOptions): Promise<PressRunResult
   });
 
   // Run Phase 2 — the model becomes the Prose VM.
-  const vmResult: RlmResult = await press(
+  const vmResult: PressResult = await press(
     manifest,  // query: the manifest
     {
       caller_inputs: callerInputs,
@@ -136,12 +142,4 @@ export async function pressRun(options: PressRunOptions): Promise<PressRunResult
       vm: { answer: vmResult.answer, iterations: vmResult.iterations },
     },
   };
-}
-
-function generateRunId(): string {
-  const now = new Date();
-  const date = now.toISOString().slice(0, 10).replace(/-/g, "");
-  const time = now.toISOString().slice(11, 19).replace(/:/g, "");
-  const rand = Math.random().toString(36).slice(2, 8);
-  return `${date}-${time}-${rand}`;
 }
