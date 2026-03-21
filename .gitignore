@@ -11,6 +11,7 @@ dist/
 # Eval data
 eval/data/
 eval/results/
+eval-results/
 eval/analyses/*
 !eval/analyses/0*/
 !eval/analyses/README.md
