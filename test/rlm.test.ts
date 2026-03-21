@@ -520,7 +520,7 @@ describe("press", () => {
 		expect(childPrompt).toContain("You are a test component.");
 		expect(childPrompt).toContain("Do test things.");
 		// With customSystemPrompt (from `use`), the component IS the full prompt.
-		// No generic <rlm-environment> wrapping.
+		// No generic <press-environment> wrapping.
 	});
 
 	it("use: unknown name errors with list", async () => {
@@ -822,7 +822,7 @@ describe("press", () => {
 			await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3, contextLayout: "mirror" });
 
 			const childPrompt = systemPrompts[1];
-			expect(childPrompt).toContain("<rlm-context-stack>");
+			expect(childPrompt).toContain("<press-context-stack>");
 			const matches = childPrompt.match(/<context depth="1"/g);
 			expect(matches).not.toBeNull();
 			expect(matches!.length).toBe(2);
@@ -842,7 +842,7 @@ describe("press", () => {
 			await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3, contextLayout: "cache-efficient" });
 
 			const childPrompt = systemPrompts[1];
-			expect(childPrompt).toContain("<rlm-context-stack>");
+			expect(childPrompt).toContain("<press-context-stack>");
 			const depth0Pos = childPrompt.indexOf('<context depth="0"');
 			const depth1Pos = childPrompt.indexOf('<context depth="1"');
 			expect(depth0Pos).toBeLessThan(depth1Pos);
@@ -882,7 +882,7 @@ describe("press", () => {
 			await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3, contextLayout: "cache-efficient" });
 
 			const grandchildPrompt = systemPrompts[2];
-			expect(grandchildPrompt).toContain("<rlm-context-stack>");
+			expect(grandchildPrompt).toContain("<press-context-stack>");
 			const depth0Pos = grandchildPrompt.indexOf('<context depth="0"');
 			const depth2Pos = grandchildPrompt.indexOf('<context depth="2"');
 			expect(depth0Pos).toBeLessThan(depth2Pos);

@@ -80,11 +80,11 @@ describeIf("Eval 8: Full pipeline via deterministic boot (Sonnet)", () => {
       const hasGlossary = ev.systemPrompt.includes("<press-runtime>");
       const hasFormeSpec = ev.systemPrompt.includes("<forme-spec>");
       const hasProseVmSpec = ev.systemPrompt.includes("<prose-vm-spec>");
-      const hasRlmProgram = ev.systemPrompt.includes("<rlm-program>");
+      const hasRlmProgram = ev.systemPrompt.includes("<press-program>");
       console.log("  Has <press-runtime>:", hasGlossary);
       console.log("  Has <forme-spec>:", hasFormeSpec);
       console.log("  Has <prose-vm-spec>:", hasProseVmSpec);
-      console.log("  Has <rlm-program>:", hasRlmProgram);
+      console.log("  Has <press-program>:", hasRlmProgram);
       console.log("  System prompt (first 1500):", ev.systemPrompt.slice(0, 1500));
     }
 

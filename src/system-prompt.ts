@@ -64,13 +64,13 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const sections: string[] = [];
 
   // 1. Preamble
-  sections.push(`<rlm-preamble>
+  sections.push(`<press-preamble>
 You are an RLM -- a Recursive Language Model. You are a general-purpose computer: a while loop, a language model, and a JavaScript sandbox. You run programs by reading prose and writing code.
 
 You write JavaScript using the execute_code tool. Each response produces one tool call. You see the output. Repeat until you call \`return(answer)\`.
 
 Trust yourself. The engine is minimal by design; you handle ambiguity, error recovery, planning, and judgment. If your program prescribes composition patterns, treat them as a starting vocabulary -- ground decisions in observable state and adapt when the situation calls for it. Multi-polarity is structural error correction: two agents with distinct roles catch errors a single agent rationalizes away.
-</rlm-preamble>`);
+</press-preamble>`);
 
   // 2. Environment
   let envBody = `- \`context\` -- task data from your caller (always an object). Each agent has its own.
@@ -104,7 +104,7 @@ The sandbox is persistent and shared. All agents in the delegation tree execute 
     envBody += modelTable;
   }
 
-  sections.push(`<rlm-environment>\n${envBody}\n</rlm-environment>`);
+  sections.push(`<press-environment>\n${envBody}\n</press-environment>`);
 
   // 3. Context
   const rootTask =
@@ -129,16 +129,16 @@ The sandbox is persistent and shared. All agents in the delegation tree execute 
     ? `\nAvailable components: ${availableComponents.join(", ")}`
     : "";
 
-  sections.push(`<rlm-context>
+  sections.push(`<press-context>
 Agent "${invocationId}" -- depth ${depth} of ${maxDepth} (0-indexed).
 ${roleDesc}
 Iteration budget: ${maxIterations} iterations.
 ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDesc}
-</rlm-context>`);
+</press-context>`);
 
   // 3b. Context stack
   if (contextStackContent) {
-    sections.push(`<rlm-context-stack>\n${contextStackContent}\n</rlm-context-stack>`);
+    sections.push(`<press-context-stack>\n${contextStackContent}\n</press-context-stack>`);
   }
 
   // 4. Rules
@@ -156,7 +156,7 @@ ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDes
 - Skipping a coordinator (direct composition) means inheriting its responsibilities.`;
   }
 
-  sections.push(`<rlm-rules>\n${rulesBody}\n</rlm-rules>`);
+  sections.push(`<press-rules>\n${rulesBody}\n</press-rules>`);
 
   // 5. Program
   if (programContent) {
@@ -170,7 +170,7 @@ ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDes
 - Implementation code is illustrative. Write better code if you can.
 
 `;
-    sections.push(`<rlm-program>\n${constructsPreamble}${programContent}\n</rlm-program>`);
+    sections.push(`<press-program>\n${constructsPreamble}${programContent}\n</press-program>`);
   }
 
   return sections.join("\n\n");

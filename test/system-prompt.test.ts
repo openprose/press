@@ -14,30 +14,30 @@ const BASE_OPTS = {
 describe("buildSystemPrompt", () => {
 	it("4 mandatory XML sections", () => {
 		const result = buildSystemPrompt(BASE_OPTS);
-		expect(result).toContain("<rlm-preamble>");
-		expect(result).toContain("</rlm-preamble>");
-		expect(result).toContain("<rlm-environment>");
-		expect(result).toContain("</rlm-environment>");
-		expect(result).toContain("<rlm-context>");
-		expect(result).toContain("</rlm-context>");
-		expect(result).toContain("<rlm-rules>");
-		expect(result).toContain("</rlm-rules>");
+		expect(result).toContain("<press-preamble>");
+		expect(result).toContain("</press-preamble>");
+		expect(result).toContain("<press-environment>");
+		expect(result).toContain("</press-environment>");
+		expect(result).toContain("<press-context>");
+		expect(result).toContain("</press-context>");
+		expect(result).toContain("<press-rules>");
+		expect(result).toContain("</press-rules>");
 	});
 
-	it("omits <rlm-program> when no programContent", () => {
+	it("omits <press-program> when no programContent", () => {
 		const result = buildSystemPrompt(BASE_OPTS);
-		expect(result).not.toContain("<rlm-program>");
-		expect(result).not.toContain("</rlm-program>");
+		expect(result).not.toContain("<press-program>");
+		expect(result).not.toContain("</press-program>");
 	});
 
-	it("<rlm-program> when programContent provided", () => {
+	it("<press-program> when programContent provided", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, programContent: "## My Plugin\nDo things." });
-		expect(result).toContain("<rlm-program>");
+		expect(result).toContain("<press-program>");
 		expect(result).toContain("## My Plugin");
 		expect(result).toContain("Do things.");
-		expect(result).toContain("</rlm-program>");
-		// Program constructs reference is inside <rlm-program>
-		const programSection = result.split("<rlm-program>")[1].split("</rlm-program>")[0];
+		expect(result).toContain("</press-program>");
+		// Program constructs reference is inside <press-program>
+		const programSection = result.split("<press-program>")[1].split("</press-program>")[0];
 		expect(programSection).toContain("Contracts (ensures/requires)");
 		expect(programSection).toContain("State schemas");
 		expect(programSection).toContain("prohibited");
@@ -138,7 +138,7 @@ describe("buildSystemPrompt", () => {
 
 	it("philosophy present in preamble (always)", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, canDelegate: false });
-		const preamble = result.split("<rlm-preamble>")[1].split("</rlm-preamble>")[0];
+		const preamble = result.split("<press-preamble>")[1].split("</press-preamble>")[0];
 		expect(preamble).toContain("Trust yourself");
 		expect(preamble).toContain("structural error correction");
 		expect(preamble).toContain("observable state");
@@ -146,7 +146,7 @@ describe("buildSystemPrompt", () => {
 
 	it("program constructs reference present when programContent exists", () => {
 		const result = buildSystemPrompt({ ...BASE_OPTS, programContent: "My program." });
-		const programSection = result.split("<rlm-program>")[1].split("</rlm-program>")[0];
+		const programSection = result.split("<press-program>")[1].split("</press-program>")[0];
 		expect(programSection).toContain("Your program below uses structured prose constructs:");
 		expect(programSection).toContain("Contracts (ensures/requires)");
 		expect(programSection).toContain("State schemas");
@@ -181,7 +181,7 @@ describe("buildSystemPrompt", () => {
 			canDelegate: true,
 			availableComponents: ["level-solver", "oha"],
 		});
-		const contextSection = result.split("<rlm-context>")[1].split("</rlm-context>")[0];
+		const contextSection = result.split("<press-context>")[1].split("</press-context>")[0];
 		expect(contextSection).toContain("Available components: level-solver, oha");
 	});
 
