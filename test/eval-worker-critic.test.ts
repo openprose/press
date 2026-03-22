@@ -9,13 +9,13 @@ import type {
 } from "../src/events.js";
 import { fromOpenRouter } from "../eval/drivers/openrouter.js";
 import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const apiKey = process.env.OPENROUTER_API_KEY;
 const describeIf = apiKey ? describe : describe.skip;
 
 describeIf("Eval 11: worker-critic loop (iterative refinement)", () => {
-  const specDir = "/Users/sl/code/openprose/prose/skills/open-prose";
+  const specDir = resolve(__dirname, "../../prose/skills/open-prose");
   const fixtureDir = join(__dirname, "fixtures/worker-critic");
   const runDir = join(process.cwd(), ".prose/runs/eval-worker-critic");
 

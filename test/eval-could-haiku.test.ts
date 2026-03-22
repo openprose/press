@@ -4,14 +4,14 @@ import { PressObserver } from "../src/observer.js";
 import type { DelegationSpawnEvent } from "../src/events.js";
 import { fromOpenRouter } from "../eval/drivers/openrouter.js";
 import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const apiKey = process.env.OPENROUTER_API_KEY;
 const describeIf = apiKey ? describe : describe.skip;
 
 describeIf("Eval 10: could-haiku end-to-end (Sonnet)", () => {
-  const specDir = "/Users/sl/code/openprose/prose/skills/open-prose";
-  const programDir = "/Users/sl/code/openprose/programs/could-haiku";
+  const specDir = resolve(__dirname, "../../prose/skills/open-prose");
+  const programDir = resolve(__dirname, "../programs/could-haiku");
   const runDir = ".prose/runs/eval-could-haiku";
 
   it("runs full documentation diagnostic with 9 testers", async () => {

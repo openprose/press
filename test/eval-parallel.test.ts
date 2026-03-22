@@ -4,7 +4,7 @@ import { PressObserver } from "../src/observer.js";
 import type { InvocationStartEvent, IterationEndEvent, DelegationSpawnEvent } from "../src/events.js";
 import { fromOpenRouter } from "../eval/drivers/openrouter.js";
 import { existsSync, readFileSync, writeFileSync, rmSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const apiKey = process.env.OPENROUTER_API_KEY;
 const describeIf = apiKey ? describe : describe.skip;
@@ -26,7 +26,7 @@ function listFilesRecursive(dir: string, base = dir): string[] {
 }
 
 describeIf("Eval 9: Parallel service execution (Sonnet)", () => {
-  const specDir = "/Users/sl/code/openprose/prose/skills/open-prose";
+  const specDir = resolve(__dirname, "../../prose/skills/open-prose");
   const fixtureDir = join(__dirname, "fixtures/parallel-program");
   const runDir = join(process.cwd(), ".prose/runs/eval-parallel");
 

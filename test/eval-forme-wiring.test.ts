@@ -4,7 +4,7 @@ import { PressObserver } from "../src/observer.js";
 import type { PressEvent, InvocationStartEvent, IterationEndEvent } from "../src/events.js";
 import { fromOpenRouter } from "../eval/drivers/openrouter.js";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const apiKey = process.env.OPENROUTER_API_KEY;
 const describeIf = apiKey ? describe : describe.skip;
@@ -15,7 +15,7 @@ describeIf("Eval 5: Forme wires a trivial program (live API)", () => {
     const observer = new PressObserver();
 
     // Load specs
-    const proseRepoSkills = "/Users/sl/code/openprose/prose/skills/open-prose";
+    const proseRepoSkills = resolve(__dirname, "../../prose/skills/open-prose");
     const formeSpec = readFileSync(join(proseRepoSkills, "forme.md"), "utf8");
     const filesystemSpec = readFileSync(join(proseRepoSkills, "state/filesystem.md"), "utf8");
 

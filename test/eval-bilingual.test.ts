@@ -4,13 +4,13 @@ import { PressObserver } from "../src/observer.js";
 import type { DelegationSpawnEvent } from "../src/events.js";
 import { fromOpenRouter } from "../eval/drivers/openrouter.js";
 import { rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const apiKey = process.env.OPENROUTER_API_KEY;
 const describeIf = apiKey ? describe : describe.skip;
 
 describeIf("Eval 12: bilingual-haiku (service reuse, sequential composition)", () => {
-  const specDir = "/Users/sl/code/openprose/prose/skills/open-prose";
+  const specDir = resolve(__dirname, "../../prose/skills/open-prose");
   const programDir = join(__dirname, "fixtures/bilingual-haiku");
   const runDir = ".prose/runs/eval-bilingual-haiku";
 
