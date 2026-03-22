@@ -24,6 +24,7 @@ export interface PressRunOptions {
   maxIterations?: number;   // iteration budget per phase (default 15)
   maxDepth?: number;        // delegation depth per phase (default 3)
   observer?: PressEventSink;  // optional event observer
+  onProgress?: (message: string) => void;  // optional progress callback (called at phase transitions)
 }
 
 export interface PressRunResult {
@@ -54,6 +55,7 @@ export async function pressRun(options: PressRunOptions): Promise<PressRunResult
 
   const runId = options.runId || generateRunId();
   const runDir = options.runDir || `.prose/runs/${runId}`;
+  const onProgress = options.onProgress;
 
   // --- Phase 1: Forme (wiring) ---
 
@@ -74,6 +76,7 @@ export async function pressRun(options: PressRunOptions): Promise<PressRunResult
 
   // Run Phase 1 — the model becomes the Forme container.
   // Context provides paths so the model can resolve files.
+  onProgress?.("Phase 1 (Forme): wiring program...");
   const formeResult: PressResult = await press(
     entryPoint,  // query: the program entry point
     {
@@ -89,6 +92,8 @@ export async function pressRun(options: PressRunOptions): Promise<PressRunResult
       observer,
     },
   );
+
+  onProgress?.(`Phase 1 (Forme): complete (${formeResult.iterations} iterations)`);
 
   // Read the manifest (produced by the Forme model)
   const manifestPath = join(runDir, "manifest.md");
@@ -117,6 +122,7 @@ export async function pressRun(options: PressRunOptions): Promise<PressRunResult
   });
 
   // Run Phase 2 — the model becomes the Prose VM.
+  onProgress?.("Phase 2 (VM): executing program...");
   const vmResult: PressResult = await press(
     manifest,  // query: the manifest
     {
@@ -133,6 +139,8 @@ export async function pressRun(options: PressRunOptions): Promise<PressRunResult
       observer,
     },
   );
+
+  onProgress?.(`Phase 2 (VM): complete (${vmResult.iterations} iterations)`);
 
   return {
     answer: vmResult.answer,

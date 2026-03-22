@@ -261,14 +261,10 @@ async function main(): Promise<void> {
 
 	// Validate API key
 	const apiKey = process.env.OPENROUTER_API_KEY;
-	if (!apiKey) {
-		console.error(
-			"Error: OPENROUTER_API_KEY is not set.\n\n" +
-			"Set it in your environment or in a .env file in the current directory:\n" +
-			"  export OPENROUTER_API_KEY=sk-or-...\n" +
-			"  # or\n" +
-			"  echo 'OPENROUTER_API_KEY=sk-or-...' >> .env",
-		);
+	if (!apiKey || apiKey.trim() === "") {
+		console.error("Error: OPENROUTER_API_KEY is not set.");
+		console.error("Set it in your environment or in a .env file in the current directory.");
+		console.error("See: press --help");
 		process.exit(1);
 	}
 
@@ -322,6 +318,7 @@ async function main(): Promise<void> {
 			maxIterations: args.maxIterations,
 			maxDepth: args.maxDepth,
 			observer,
+			onProgress: (msg) => process.stderr.write(msg + "\n"),
 		});
 
 		const elapsed = Date.now() - start;
