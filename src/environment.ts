@@ -4,7 +4,7 @@ import * as acorn from "acorn";
 
 const nodeRequire = createRequire(import.meta.url);
 
-export interface RlmEnvironment {
+export interface PressEnvironment {
 	exec(code: string): Promise<{ output: string; error: string | null; returnValue?: unknown }>;
 	get(name: string): unknown;
 	set(name: string, value: unknown): void;
@@ -25,7 +25,7 @@ export const SANDBOX_BUILTINS = new Set([
 	"TextDecoder",
 ]);
 
-export class JsEnvironment implements RlmEnvironment {
+export class JsEnvironment implements PressEnvironment {
 	private context: vm.Context;
 	private maxOutput: number;
 

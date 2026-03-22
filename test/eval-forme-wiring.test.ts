@@ -27,7 +27,6 @@ describeIf("Eval 5: Forme wires a trivial program (live API)", () => {
     const runDir = ".prose/runs/eval-forme-test";
     mkdirSync(runDir, { recursive: true });
 
-    // Build the program content that gets injected via pluginBodies.
     const programContent = [
       `<forme-spec>`,
       formeSpec,

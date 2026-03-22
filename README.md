@@ -58,7 +58,7 @@ ensures:
 Run it:
 
 ```bash
-npx press run ./my-program --input text="hello world"
+npx press run ./my-program/index.md --text "hello world"
 ```
 
 Press reads the contracts, wires `uppercaser.ensures.uppercased` to `reporter.requires.uppercased`, spawns each service as an LLM session, and returns the report. No glue code. The model satisfies the contracts.
