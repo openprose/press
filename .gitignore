@@ -17,6 +17,9 @@ eval/analyses/
 # OpenProse runtime state
 .prose/
 
+# Test fixture trace files
+test/fixtures/**/last-*.json
+
 # External repos
 arcgentica/
 arc3-docs/
