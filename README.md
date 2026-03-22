@@ -76,6 +76,43 @@ Press reads the contracts, wires `uppercaser.ensures.uppercased` to `reporter.re
 
 Prose programs default to declarative contracts -- the model decides how to satisfy them. Authors who need more control can specify explicit wiring (Level 2) or step-by-step execution blocks (Level 3) for determinism.
 
+## Contract Semantics in Action
+
+Contracts aren't just documentation -- they change behavior. Here's a service
+with shape constraints and strategies:
+
+```markdown
+---
+name: researcher
+kind: service
+shape:
+  self: [evaluate sources, score confidence]
+  delegates:
+    summarizer: [compression]
+  prohibited: [direct web scraping]
+---
+
+requires:
+- topic: a research question
+
+ensures:
+- findings: sourced claims from 3+ distinct sources, each with confidence 0-1
+- if sources are unavailable: partial findings from cached data, flagged as stale
+
+strategies:
+- when few sources found: broaden search terms
+- when many low-quality sources: prioritize academic and primary sources
+```
+
+**`shape.prohibited`** prevents the model from scraping -- it must use other
+tools. **`ensures` with a conditional clause** means the service degrades
+gracefully instead of failing. **`strategies`** guide behavior without being
+prescriptive -- the model adapts based on what it observes.
+
+Programs default to declarative contracts (the model decides how). Authors
+who need more control can pin the wiring (Level 2) or write explicit execution
+blocks (Level 3) for full determinism.
+
 ## What Press Is For
 
 Press is designed for complex, multi-agent analytical and generative tasks where the overhead of the two-phase pipeline is amortized across many services.
@@ -207,6 +244,30 @@ console.log(result.phaseResults.vm.iterations);     // VM iterations used
 | `callerInputs` | `Record<string, string>` | (required) | User inputs matching the program's `requires` |
 | `maxIterations` | `number` | 15 | Iteration budget per phase |
 | `maxDepth` | `number` | 3 | Delegation depth limit |
+
+## Prose/Forme Specs
+
+Press needs the Prose and Forme specification files (`prose.md`, `forme.md`,
+`session.md`, `filesystem.md`) to tell the LLM how to wire and execute programs.
+
+**CLI users:** Press resolves specs automatically from the companion
+[openprose/prose](https://github.com/openprose/prose) repository. If you've
+cloned both repos as siblings, it just works. Otherwise, set `--spec-dir` or
+the `PRESS_SPEC_DIR` environment variable.
+
+**Programmatic API users:** Pass `specDir` pointing to the directory containing
+the spec files. Clone the [prose repo](https://github.com/openprose/prose) and
+point to `prose/skills/open-prose/`:
+
+```typescript
+const result = await pressRun({
+  specDir: "./prose/skills/open-prose",
+  // ...
+});
+```
+
+The specs define how the LLM acts as the Forme container (wiring) and the
+Prose VM (execution). They are the "instruction set" of the Press computer.
 
 ## Eval Pipeline
 
