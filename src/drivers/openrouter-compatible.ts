@@ -198,7 +198,7 @@ export function fromOpenRouterCompatible(options: OpenRouterCompatibleOptions): 
 
 				if ((status === 429 || status >= 500) && attempt < maxRetries) {
 					const delay = BASE_DELAY_MS * 2 ** attempt;
-					console.error(`[${model}] HTTP ${status}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+					if (process.env.PRESS_DEBUG) console.error(`[${model}] HTTP ${status}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
 					await sleep(delay);
 					continue;
 				}
@@ -213,7 +213,7 @@ export function fromOpenRouterCompatible(options: OpenRouterCompatibleOptions): 
 				const code = data.error.code ?? 0;
 				if ((code === 429 || code >= 500) && attempt < maxRetries) {
 					const delay = BASE_DELAY_MS * 2 ** attempt;
-					console.error(`[${model}] error ${code}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+					if (process.env.PRESS_DEBUG) console.error(`[${model}] error ${code}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
 					await sleep(delay);
 					continue;
 				}
@@ -245,7 +245,7 @@ export function fromOpenRouterCompatible(options: OpenRouterCompatibleOptions): 
 
 			const elapsed = Date.now() - t0;
 			const outChars = reasoning.length + (code?.length ?? 0);
-			console.error(
+			if (process.env.PRESS_DEBUG) console.error(
 				`[${model} #${callId}] ${elapsed}ms, in=${inputChars}c, out=${outChars}c, finish=${choice.finish_reason}`,
 			);
 
