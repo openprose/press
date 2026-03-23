@@ -94,11 +94,10 @@ export interface DelegationSpawnEvent extends BaseEvent {
 	type: "delegation:spawn";
 	childId: string;
 	query: string;
+	context?: string;           // the context/data passed to the child
 	modelAlias?: string;
 	maxIterations?: number;
 	componentName?: string;
-	/** @deprecated Use componentName instead. */
-	appName?: string;
 }
 
 export interface DelegationReturnEvent extends BaseEvent {
@@ -130,7 +129,7 @@ export interface SandboxSnapshotEvent extends BaseEvent {
 
 // --- Discriminated union ---
 
-export type RlmEvent =
+export type PressEvent =
 	| RunStartEvent
 	| RunEndEvent
 	| InvocationStartEvent
@@ -148,6 +147,6 @@ export type RlmEvent =
 
 // --- Engine-facing sink ---
 
-export interface RlmEventSink {
-	emit(event: RlmEvent): void;
+export interface PressEventSink {
+	emit(event: PressEvent): void;
 }

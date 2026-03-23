@@ -55,10 +55,11 @@ assert(tasks.length === 4, `Generated ${tasks.length} tasks (expected 4)`);
 for (const task of tasks) {
 	assert(task.id.startsWith("sniah-"), `Task ID format: ${task.id}`);
 	assert(task.query.includes("secret code"), `Query contains needle question: ${task.query.slice(0, 60)}`);
-	assert(task.context.length > 1000, `Context has content: ${task.context.length} chars`);
+	const ctxStr = JSON.stringify(task.context);
+	assert(ctxStr.length > 1000, `Context has content: ${ctxStr.length} chars`);
 	assert(task.expected.length > 0, `Has expected answer: ${task.expected}`);
 	// Verify needle is actually in context
-	assert(task.context.includes(task.expected as string), `Needle is in context for ${task.id}`);
+	assert(ctxStr.includes(task.expected as string), `Needle is in context for ${task.id}`);
 }
 
 console.log();
@@ -67,7 +68,7 @@ console.log("Testing type imports...");
 const sampleTask: EvalTask = {
 	id: "test-1",
 	query: "test query",
-	context: "test context",
+	context: { data: "test context" },
 	expected: "test answer",
 };
 assert(sampleTask.id === "test-1", "EvalTask type works");

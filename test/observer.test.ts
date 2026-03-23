@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CallLLM, CallLLMResponse } from "../src/rlm.js";
-import { rlm, RlmMaxIterationsError } from "../src/rlm.js";
-import type { RlmEvent, RlmEventSink } from "../src/events.js";
-import { RlmObserver } from "../src/observer.js";
+import { press, PressMaxIterationsError } from "../src/rlm.js";
+import type { PressEvent, PressEventSink } from "../src/events.js";
+import { PressObserver } from "../src/observer.js";
 
-function collector(): { events: RlmEvent[]; sink: RlmEventSink } {
-	const events: RlmEvent[] = [];
+function collector(): { events: PressEvent[]; sink: PressEventSink } {
+	const events: PressEvent[] = [];
 	return { events, sink: { emit: (e) => events.push(e) } };
 }
 
@@ -31,7 +31,7 @@ describe("observer events", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		const result = await rlm("test query", undefined, {
+		const result = await press("test query", undefined, {
 			callLLM,
 			observer: sink,
 		});
@@ -73,7 +73,7 @@ describe("observer events", () => {
 			tc('return "done"', "t3"),
 		]);
 
-		await rlm("test", undefined, { callLLM, observer: sink });
+		await press("test", undefined, { callLLM, observer: sink });
 
 		const starts = events.filter((e) => e.type === "iteration:start");
 		const ends = events.filter((e) => e.type === "iteration:end");
@@ -93,7 +93,7 @@ describe("observer events", () => {
 		};
 
 		try {
-			await rlm("test", undefined, { callLLM, observer: sink });
+			await press("test", undefined, { callLLM, observer: sink });
 		} catch {
 			// expected
 		}
@@ -128,7 +128,7 @@ describe("observer events", () => {
 		]);
 
 		await expect(
-			rlm("test", undefined, { callLLM, maxIterations: 2, observer: sink }),
+			press("test", undefined, { callLLM, maxIterations: 2, observer: sink }),
 		).rejects.toThrow("max iterations");
 
 		const invEnd = events.find((e) => e.type === "invocation:end");
@@ -139,17 +139,17 @@ describe("observer events", () => {
 		expect(runEnd!.type === "run:end" && runEnd!.answer).toBeNull();
 	});
 
-	it("delegation events fire for child rlm() calls", async () => {
+	it("delegation events fire for child press() calls", async () => {
 		const { events, sink } = collector();
 		const callLLM: CallLLM = async (messages) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "child query") {
 				return tc('return "child answer"', "tc");
 			}
-			return tc('result = await rlm("child query")\nreturn result', "tp");
+			return tc('result = await press("child query")\nreturn result', "tp");
 		};
 
-		const result = await rlm("parent query", undefined, {
+		const result = await press("parent query", undefined, {
 			callLLM,
 			observer: sink,
 		});
@@ -176,7 +176,7 @@ describe("observer events", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		await rlm("test", undefined, { callLLM, observer: sink });
+		await press("test", undefined, { callLLM, observer: sink });
 
 		const snapshots = events.filter((e) => e.type === "sandbox:snapshot");
 		const iterEnds = events.filter((e) => e.type === "iteration:end");
@@ -187,12 +187,12 @@ describe("observer events", () => {
 		expect(snap.type === "sandbox:snapshot" && snap.state).toBeDefined();
 	});
 
-	it("no observer: rlm works normally without events", async () => {
+	it("no observer: press works normally without events", async () => {
 		const callLLM = mockToolCallLLM([
 			tc('return "hello"', "t1"),
 			tc('return "hello"', "t2"),
 		]);
-		const result = await rlm("test", undefined, { callLLM });
+		const result = await press("test", undefined, { callLLM });
 		expect(result.answer).toBe("hello");
 	});
 
@@ -203,7 +203,7 @@ describe("observer events", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		await rlm("test", undefined, { callLLM, observer: sink });
+		await press("test", undefined, { callLLM, observer: sink });
 
 		const requests = events.filter((e) => e.type === "llm:request");
 		expect(requests.length).toBeGreaterThanOrEqual(2);
@@ -223,7 +223,7 @@ describe("observer events", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		await rlm("test", undefined, { callLLM, observer: sink });
+		await press("test", undefined, { callLLM, observer: sink });
 
 		const responses = events.filter((e) => e.type === "llm:response");
 		expect(responses[0].type === "llm:response" && responses[0].reasoning).toBe("Let me think");
@@ -238,7 +238,7 @@ describe("observer events", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		await rlm("test", undefined, { callLLM, observer: sink });
+		await press("test", undefined, { callLLM, observer: sink });
 
 		const iterEnds = events.filter((e) => e.type === "iteration:end");
 		// Last iteration:end should have returned=true
@@ -249,9 +249,9 @@ describe("observer events", () => {
 	});
 });
 
-// --- RlmObserver unit tests ---
+// --- PressObserver unit tests ---
 
-function fakeEvent(overrides: Partial<RlmEvent> & { type: RlmEvent["type"] }): RlmEvent {
+function fakeEvent(overrides: Partial<PressEvent> & { type: PressEvent["type"] }): PressEvent {
 	return {
 		runId: "run-1",
 		timestamp: Date.now(),
@@ -259,12 +259,12 @@ function fakeEvent(overrides: Partial<RlmEvent> & { type: RlmEvent["type"] }): R
 		parentId: null,
 		depth: 0,
 		...overrides,
-	} as RlmEvent;
+	} as PressEvent;
 }
 
-describe("RlmObserver", () => {
+describe("PressObserver", () => {
 	it("getEvents returns all emitted events", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		const e1 = fakeEvent({ type: "run:start", query: "q", maxIterations: 10, maxDepth: 3 });
 		const e2 = fakeEvent({ type: "run:end", answer: "a", error: null, iterations: 1 });
 		obs.emit(e1);
@@ -277,7 +277,7 @@ describe("RlmObserver", () => {
 	});
 
 	it("getEvents returns a copy", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		obs.emit(fakeEvent({ type: "run:start", query: "q", maxIterations: 10, maxDepth: 3 }));
 		const events = obs.getEvents();
 		events.push(fakeEvent({ type: "run:end", answer: "a", error: null, iterations: 1 }));
@@ -285,8 +285,8 @@ describe("RlmObserver", () => {
 	});
 
 	it("on() handlers fire for matching event types", () => {
-		const obs = new RlmObserver();
-		const captured: RlmEvent[] = [];
+		const obs = new PressObserver();
+		const captured: PressEvent[] = [];
 		obs.on("run:start", (e) => captured.push(e));
 
 		obs.emit(fakeEvent({ type: "run:start", query: "q", maxIterations: 10, maxDepth: 3 }));
@@ -299,8 +299,8 @@ describe("RlmObserver", () => {
 	});
 
 	it("on() handlers do not fire for non-matching types", () => {
-		const obs = new RlmObserver();
-		const captured: RlmEvent[] = [];
+		const obs = new PressObserver();
+		const captured: PressEvent[] = [];
 		obs.on("llm:error", (e) => captured.push(e));
 
 		obs.emit(fakeEvent({ type: "run:start", query: "q", maxIterations: 10, maxDepth: 3 }));
@@ -310,7 +310,7 @@ describe("RlmObserver", () => {
 	});
 
 	it("multiple handlers for the same type all fire", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		let count = 0;
 		obs.on("run:start", () => count++);
 		obs.on("run:start", () => count++);
@@ -320,7 +320,7 @@ describe("RlmObserver", () => {
 	});
 
 	it("getEvents filters by invocationId", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		obs.emit(fakeEvent({ type: "iteration:start", invocationId: "root", iteration: 0, budgetRemaining: 10 }));
 		obs.emit(fakeEvent({ type: "iteration:start", invocationId: "child-1", iteration: 0, budgetRemaining: 10 }));
 		obs.emit(fakeEvent({ type: "iteration:start", invocationId: "root", iteration: 1, budgetRemaining: 9 }));
@@ -333,7 +333,7 @@ describe("RlmObserver", () => {
 	});
 
 	it("getEvents filters by runId", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		obs.emit(fakeEvent({ type: "run:start", runId: "run-1", query: "q", maxIterations: 10, maxDepth: 3 }));
 		obs.emit(fakeEvent({ type: "run:start", runId: "run-2", query: "q", maxIterations: 10, maxDepth: 3 }));
 
@@ -342,7 +342,7 @@ describe("RlmObserver", () => {
 	});
 
 	it("getEvents filters by single event type", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		obs.emit(fakeEvent({ type: "run:start", query: "q", maxIterations: 10, maxDepth: 3 }));
 		obs.emit(fakeEvent({ type: "run:end", answer: "a", error: null, iterations: 1 }));
 		obs.emit(fakeEvent({ type: "invocation:start", query: "q", systemPrompt: "s" }));
@@ -351,7 +351,7 @@ describe("RlmObserver", () => {
 	});
 
 	it("getEvents filters by array of event types", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		obs.emit(fakeEvent({ type: "run:start", query: "q", maxIterations: 10, maxDepth: 3 }));
 		obs.emit(fakeEvent({ type: "run:end", answer: "a", error: null, iterations: 1 }));
 		obs.emit(fakeEvent({ type: "invocation:start", query: "q", systemPrompt: "s" }));
@@ -360,7 +360,7 @@ describe("RlmObserver", () => {
 	});
 
 	it("getEvents combines filters with AND logic", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		obs.emit(fakeEvent({ type: "iteration:start", runId: "run-1", invocationId: "root", iteration: 0, budgetRemaining: 10 }));
 		obs.emit(fakeEvent({ type: "iteration:start", runId: "run-1", invocationId: "child-1", iteration: 0, budgetRemaining: 10 }));
 		obs.emit(fakeEvent({ type: "iteration:end", runId: "run-1", invocationId: "root", iteration: 0, code: null, output: "", error: null, returned: false }));
@@ -370,7 +370,7 @@ describe("RlmObserver", () => {
 	});
 
 	it("getTree reconstructs parent-child relationships", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 
 		obs.emit(fakeEvent({ type: "invocation:start", runId: "run-1", invocationId: "root", query: "q", systemPrompt: "s" }));
 		obs.emit(fakeEvent({ type: "delegation:spawn", runId: "run-1", invocationId: "root", childId: "child-1", query: "sub" }));
@@ -389,12 +389,12 @@ describe("RlmObserver", () => {
 	});
 
 	it("getTree returns null for unknown runId", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		expect(obs.getTree("nonexistent")).toBeNull();
 	});
 
 	it("getTree handles multiple children", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		obs.emit(fakeEvent({ type: "invocation:start", runId: "run-1", invocationId: "root", query: "q", systemPrompt: "s" }));
 		obs.emit(fakeEvent({ type: "delegation:spawn", runId: "run-1", invocationId: "root", childId: "child-1", query: "a" }));
 		obs.emit(fakeEvent({ type: "invocation:start", runId: "run-1", invocationId: "child-1", parentId: "root", query: "a", systemPrompt: "s" }));
@@ -408,7 +408,7 @@ describe("RlmObserver", () => {
 	});
 
 	it("getTree ignores events from other runs", () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		obs.emit(fakeEvent({ type: "invocation:start", runId: "run-1", invocationId: "root", query: "q", systemPrompt: "s" }));
 		obs.emit(fakeEvent({ type: "invocation:start", runId: "run-2", invocationId: "root", query: "q2", systemPrompt: "s2" }));
 
@@ -418,17 +418,17 @@ describe("RlmObserver", () => {
 	});
 });
 
-// --- Integration: RlmObserver with rlm() ---
+// --- Integration: PressObserver with press() ---
 
-describe("RlmObserver integration", () => {
-	it("collects events from a real rlm() run", async () => {
-		const obs = new RlmObserver();
+describe("PressObserver integration", () => {
+	it("collects events from a real press() run", async () => {
+		const obs = new PressObserver();
 		const callLLM = mockToolCallLLM([
 			tc('console.log("step 1")', "t1"),
 			tc('return "done"', "t2"),
 		]);
 
-		const result = await rlm("test query", undefined, {
+		const result = await press("test query", undefined, {
 			callLLM,
 			observer: obs,
 		});
@@ -456,16 +456,16 @@ describe("RlmObserver integration", () => {
 	});
 
 	it("tree reflects delegation", async () => {
-		const obs = new RlmObserver();
+		const obs = new PressObserver();
 		const callLLM: CallLLM = async (messages) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "child query") {
 				return tc('return "child answer"', "tc");
 			}
-			return tc('result = await rlm("child query")\nreturn result', "tp");
+			return tc('result = await press("child query")\nreturn result', "tp");
 		};
 
-		await rlm("parent query", undefined, {
+		await press("parent query", undefined, {
 			callLLM,
 			observer: obs,
 		});
@@ -478,8 +478,8 @@ describe("RlmObserver integration", () => {
 		expect(tree!.children.length).toBeGreaterThanOrEqual(1);
 	});
 
-	it("on() fires during real rlm() execution", async () => {
-		const obs = new RlmObserver();
+	it("on() fires during real press() execution", async () => {
+		const obs = new PressObserver();
 		const queries: string[] = [];
 		obs.on("run:start", (e) => queries.push(e.query));
 
@@ -488,7 +488,7 @@ describe("RlmObserver integration", () => {
 			tc('return "done"', "t2"),
 		]);
 
-		await rlm("hello world", undefined, { callLLM, observer: obs });
+		await press("hello world", undefined, { callLLM, observer: obs });
 
 		expect(queries).toEqual(["hello world"]);
 	});

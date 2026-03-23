@@ -1,7 +1,7 @@
 {
-	"name": "node-rlm",
+	"name": "@openprose/press",
 	"version": "0.1.0",
-	"description": "Recursive Language Model agent with persistent JavaScript REPL",
+	"description": "Press — the runtime for Prose programs. Recursive Language Model agent with persistent JavaScript REPL.",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -20,11 +20,10 @@
 		}
 	},
 	"bin": {
-		"node-rlm": "dist/cli.js"
+		"press": "dist/cli.js"
 	},
 	"files": [
 		"dist",
-		"plugins",
 		"README.md"
 	],
 	"scripts": {
@@ -41,13 +40,17 @@
 		"ai",
 		"llm",
 		"repl",
-		"recursive"
+		"recursive",
+		"press",
+		"prose",
+		"openprose"
 	],
 	"author": "Mario Zechner",
 	"license": "MIT",
+	"homepage": "https://github.com/openprose/press",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/openprose/node-rlm.git"
+		"url": "git+https://github.com/openprose/press.git"
 	},
 	"engines": {
 		"node": ">=20.0.0"

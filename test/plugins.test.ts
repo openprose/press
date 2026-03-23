@@ -69,13 +69,6 @@ describe("loadPlugins", () => {
 		expect(result).not.toContain("kind: driver");
 		expect(result).toContain("\n\n---\n\n");
 	});
-
-	it("loads apps", async () => {
-		const result = await loadPlugins(["structured-data-aggregation"], "apps");
-		expect(result).toContain("## Aggregation Protocol");
-		expect(result).not.toContain("name: structured-data-aggregation");
-		expect(result).not.toContain("kind: app");
-	});
 });
 
 describe("loadProfile", () => {
@@ -115,27 +108,13 @@ describe("detectProfile", () => {
 });
 
 describe("loadStack", () => {
-	it("profile + use: drivers then app", async () => {
+	it("profile only: loads drivers", async () => {
 		const result = await loadStack({
 			profile: "gemini-3-flash",
-			use: "structured-data-aggregation",
 		});
 		expect(result).toContain("## Await Discipline");
+		expect(result).toContain("## Return Format");
 		expect(result).toContain("## Verify Before Return");
-		expect(result).toContain("## Aggregation Protocol");
-		const driverPos = result.indexOf("## Await Discipline");
-		const appPos = result.indexOf("## Aggregation Protocol");
-		expect(driverPos).toBeLessThan(appPos);
-	});
-
-	it("profile + app (backwards compat): drivers then app", async () => {
-		const result = await loadStack({
-			profile: "gemini-3-flash",
-			app: "structured-data-aggregation",
-		});
-		expect(result).toContain("## Await Discipline");
-		expect(result).toContain("## Verify Before Return");
-		expect(result).toContain("## Aggregation Protocol");
 	});
 
 	it("model auto-detection", async () => {
@@ -150,35 +129,10 @@ describe("loadStack", () => {
 	it("deduplicates drivers", async () => {
 		const result = await loadStack({
 			profile: "gemini-3-flash",
-			use: "structured-data-aggregation",
 			drivers: ["verify-before-return"],
 		});
 		const matches = result.match(/## Verify Before Return/g);
 		expect(matches).toHaveLength(1);
-	});
-
-	it("use only", async () => {
-		const result = await loadStack({
-			use: "structured-data-aggregation",
-		});
-		expect(result).toContain("## Aggregation Protocol");
-		expect(result).not.toContain("## Await Discipline");
-	});
-
-	it("app only (backwards compat)", async () => {
-		const result = await loadStack({
-			app: "structured-data-aggregation",
-		});
-		expect(result).toContain("## Aggregation Protocol");
-		expect(result).not.toContain("## Await Discipline");
-	});
-
-	it("use wins over app when both provided", async () => {
-		const result = await loadStack({
-			use: "structured-data-aggregation",
-			app: "nonexistent-should-be-ignored",
-		});
-		expect(result).toContain("## Aggregation Protocol");
 	});
 
 	it("empty when nothing specified", async () => {

@@ -1,3 +1,5 @@
+import { isResolvablePath, resolveValue } from "./press-resolver.js";
+
 export const EXECUTE_CODE_TOOL = {
   type: "function" as const,
   function: {
@@ -19,6 +21,14 @@ export const TOOL_CHOICE = {
   function: { name: "execute_code" },
 };
 
+export interface ContextFrameInput {
+  depth: number;
+  data: Record<string, unknown> | string | undefined;
+  label?: string;
+}
+
+export type ContextLayoutMode = "mirror" | "cache-efficient";
+
 export interface BuildSystemPromptOptions {
   canDelegate: boolean;
   invocationId: string;
@@ -31,6 +41,8 @@ export interface BuildSystemPromptOptions {
   globalDocs?: string;
   modelTable?: string;
   availableComponents?: string[];
+  /** Pre-rendered context stack section to include in the prompt. */
+  contextStackContent?: string;
 }
 
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
@@ -46,39 +58,43 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     globalDocs,
     modelTable,
     availableComponents,
+    contextStackContent,
   } = options;
 
   const sections: string[] = [];
 
   // 1. Preamble
-  sections.push(`<rlm-preamble>
-You are an RLM -- a Recursive Language Model. You are a general-purpose computer: a while loop, a language model, and a JavaScript sandbox. You run programs by reading prose and writing code.
+  sections.push(`<press-preamble>
+You are Press -- a Recursive Language Model. You are a general-purpose computer: a while loop, a language model, and a JavaScript sandbox. You run programs by reading prose and writing code.
 
 You write JavaScript using the execute_code tool. Each response produces one tool call. You see the output. Repeat until you call \`return(answer)\`.
 
 Trust yourself. The engine is minimal by design; you handle ambiguity, error recovery, planning, and judgment. If your program prescribes composition patterns, treat them as a starting vocabulary -- ground decisions in observable state and adapt when the situation calls for it. Multi-polarity is structural error correction: two agents with distinct roles catch errors a single agent rationalizes away.
-</rlm-preamble>`);
+</press-preamble>`);
 
   // 2. Environment
-  let envBody = `- \`context\` -- task data from your caller. Each agent has its own.
+  let envBody = `- \`context\` -- task data from your caller (always an object). Each agent has its own.
+  - \`context.__root\` -- the root context data, readable at any depth.
+  - \`context.__stack\` -- read-only array of ancestor context frames (for debugging).
 - \`console.log()\` -- observe results between iterations.
-- \`return(value)\` -- terminate and return your answer. Only call after verifying via console.log.
+- \`return(value)\` -- terminate and return your answer. You may console.log(value) and return(value) in the same iteration.
 - \`require()\` -- Node.js built-in modules only.`;
 
   if (canDelegate) {
     envBody += `
-- \`await rlm(query, context?, options?)\` -- delegate to a child RLM. Options: \`{ systemPrompt?, model?, maxIterations?, use? }\`.
+- \`await press(query, context?, options?)\` -- delegate to a child Press agent. Options: \`{ systemPrompt?, model?, maxIterations?, use? }\`.
   - \`use\` loads a named component for the child. \`model\` selects an alias (see Available Models). \`maxIterations\` caps the child's budget.
   - **Must be awaited.** Unawaited calls are silently lost.
-  - Delegation depth is finite -- check \`__rlm.depth < __rlm.maxDepth\`.`;
+  - Delegation depth is finite -- check \`__press.depth < __press.maxDepth\`.
+  - IMPORTANT: Child press() calls execute in the same JavaScript sandbox. Variables declared by a child (like \`ctx\`, \`result\`) may shadow your own. After a child returns, re-read your variables from \`context\` rather than relying on locals set before the delegation.
+`;
   }
 
   envBody += `
-- \`__rlm\` (read-only) -- delegation metadata: \`{ depth, maxDepth, iteration, maxIterations, lineage, invocationId, parentId }\`
-- \`__ctx.shared.data\` -- the root context, readable at any depth (frozen).
+- \`__press\` (read-only) -- delegation metadata: \`{ depth, maxDepth, iteration, maxIterations, lineage, invocationId, parentId }\`
 - Variables persist across iterations. Code from earlier iterations is still in scope.
 
-The sandbox is persistent and shared. All agents in the delegation tree execute in the same JavaScript VM. Variables set before \`rlm()\` are readable by the child. Variables set by the child are readable after it returns. Convention: prefix shared state with \`__\` (double underscore).`;
+The sandbox is persistent and shared. All agents in the delegation tree execute in the same JavaScript VM. Variables set before \`press()\` are readable by the child. Variables set by the child are readable after it returns. Convention: prefix shared state with \`__\` (double underscore).`;
 
   if (globalDocs) {
     envBody += `\n\n## Sandbox Globals\n\n${globalDocs}`;
@@ -88,7 +104,7 @@ The sandbox is persistent and shared. All agents in the delegation tree execute 
     envBody += modelTable;
   }
 
-  sections.push(`<rlm-environment>\n${envBody}\n</rlm-environment>`);
+  sections.push(`<press-environment>\n${envBody}\n</press-environment>`);
 
   // 3. Context
   const rootTask =
@@ -98,7 +114,7 @@ The sandbox is persistent and shared. All agents in the delegation tree execute 
       ? "You are the root orchestrator."
       : `Parent: "${parentId}". Root task: "${rootTask}"`;
   const delegationDesc = canDelegate
-    ? `You can delegate to child RLMs at depth ${depth + 1}.`
+    ? `You can delegate to child agents at depth ${depth + 1}.`
     : "You are at maximum delegation depth and cannot spawn child agents.";
 
   const remainingDepth = maxDepth - depth - 1;
@@ -113,20 +129,24 @@ The sandbox is persistent and shared. All agents in the delegation tree execute 
     ? `\nAvailable components: ${availableComponents.join(", ")}`
     : "";
 
-  sections.push(`<rlm-context>
+  sections.push(`<press-context>
 Agent "${invocationId}" -- depth ${depth} of ${maxDepth} (0-indexed).
 ${roleDesc}
 Iteration budget: ${maxIterations} iterations.
 ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDesc}
-</rlm-context>`);
+</press-context>`);
+
+  // 3b. Context stack
+  if (contextStackContent) {
+    sections.push(`<press-context-stack>\n${contextStackContent}\n</press-context-stack>`);
+  }
 
   // 4. Rules
   let rulesBody = `- One execute_code tool call per response. Stop and wait for output.
-- \`return(value)\` only after verifying via \`console.log()\`.
-- Always \`await\` rlm() calls -- unawaited calls are silently lost.
+- Verify your answer before returning, but you don't need a separate iteration for verification. You may console.log(value) and return(value) in the same iteration.
+- Always \`await\` press() calls -- unawaited calls are silently lost.
 - Each iteration must produce observable progress. Write code, observe, adapt.
-- Errors are surfaced, not swallowed. Read them and adapt.
-- Never return a value you have not first logged and confirmed in output.`;
+- Errors are surfaced, not swallowed. Read them and adapt.`;
 
   if (canDelegate) {
     rulesBody += `
@@ -136,7 +156,7 @@ ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDes
 - Skipping a coordinator (direct composition) means inheriting its responsibilities.`;
   }
 
-  sections.push(`<rlm-rules>\n${rulesBody}\n</rlm-rules>`);
+  sections.push(`<press-rules>\n${rulesBody}\n</press-rules>`);
 
   // 5. Program
   if (programContent) {
@@ -150,10 +170,122 @@ ${delegationDesc}${depthBudgetDesc ? "\n" + depthBudgetDesc : ""}${componentsDes
 - Implementation code is illustrative. Write better code if you can.
 
 `;
-    sections.push(`<rlm-program>\n${constructsPreamble}${programContent}\n</rlm-program>`);
+    sections.push(`<press-program>\n${constructsPreamble}${programContent}\n</press-program>`);
   }
 
   return sections.join("\n\n");
+}
+
+const MAX_FRAME_CHARS = 5000;
+
+/**
+ * Resolve a single context value for rendering in the system prompt.
+ * If the value is a string that looks like a file path (per isResolvablePath),
+ * read the file and return its content. Otherwise return as-is.
+ */
+function resolveContextValue(value: unknown): unknown {
+  if (typeof value === "string" && isResolvablePath(value)) {
+    try {
+      return resolveValue(value);
+    } catch {
+      return `[file not found: ${value}]`;
+    }
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => {
+      if (typeof v === "string" && isResolvablePath(v)) {
+        try {
+          return resolveValue(v);
+        } catch {
+          return `[file not found: ${v}]`;
+        }
+      }
+      return v;
+    });
+  }
+  return value;
+}
+
+function renderFrameData(data: Record<string, unknown> | string | undefined): string {
+  if (data === undefined) return "(no data)";
+  if (typeof data === "string") {
+    if (data.length > MAX_FRAME_CHARS) {
+      return data.substring(0, MAX_FRAME_CHARS) + `\n[truncated: ${data.length - MAX_FRAME_CHARS} chars omitted]`;
+    }
+    return data;
+  }
+  // Render each key-value pair, auto-resolving file paths
+  const lines: string[] = [];
+  for (const [key, rawValue] of Object.entries(data)) {
+    const value = resolveContextValue(rawValue);
+    if (typeof value === "string") {
+      // If the resolved value is multi-line (e.g. file contents), render it block-style
+      if (value.includes("\n") || value.length > 200) {
+        lines.push(`${key}:\n${value}`);
+      } else {
+        lines.push(`${key}: ${value}`);
+      }
+    } else if (Array.isArray(value)) {
+      const resolvedItems = value.map((v: unknown) =>
+        typeof v === "string" ? v : JSON.stringify(v),
+      );
+      // If any item is multi-line, render block-style
+      if (resolvedItems.some((item: string) => item.includes("\n"))) {
+        lines.push(`${key}:\n${resolvedItems.join("\n---\n")}`);
+      } else {
+        lines.push(`${key}: ${JSON.stringify(resolvedItems)}`);
+      }
+    } else {
+      lines.push(`${key}: ${JSON.stringify(value)}`);
+    }
+  }
+  const rendered = lines.join("\n\n");
+  if (rendered.length > MAX_FRAME_CHARS) {
+    return rendered.substring(0, MAX_FRAME_CHARS) + `\n[truncated: ${rendered.length - MAX_FRAME_CHARS} chars omitted]`;
+  }
+  return rendered;
+}
+
+function renderFrame(frame: ContextFrameInput): string {
+  const labelAttr = frame.label ? ` label="${frame.label}"` : "";
+  return `<context depth="${frame.depth}"${labelAttr}>\n${renderFrameData(frame.data)}\n</context>`;
+}
+
+export function renderContextStack(
+  frames: readonly ContextFrameInput[],
+  layout: ContextLayoutMode = "mirror",
+): string {
+  if (frames.length === 0) return "";
+
+  const sections: string[] = [];
+
+  if (layout === "cache-efficient") {
+    // Oldest first, simple append order
+    for (const frame of frames) {
+      sections.push(renderFrame(frame));
+    }
+  } else {
+    // Mirror mode: current at top, ancestors in middle (deepest first), current at bottom
+    const current = frames[frames.length - 1];
+    const ancestors = frames.slice(0, -1);
+
+    sections.push(renderFrame(current));
+
+    // Ancestors from deepest to shallowest (reverse order)
+    for (let i = ancestors.length - 1; i >= 0; i--) {
+      sections.push(renderFrame(ancestors[i]));
+    }
+
+    // If there are ancestors, repeat them shallowest to deepest, then current again
+    if (ancestors.length > 0) {
+      for (const ancestor of ancestors) {
+        sections.push(renderFrame(ancestor));
+      }
+      sections.push(renderFrame(current));
+    }
+  }
+
+  return sections.join("\n");
 }
 
 export function buildModelTable(
@@ -171,11 +303,11 @@ export function buildModelTable(
 
   return (
     `\n\n## Available Models\n\n` +
-    `When delegating with \`rlm()\`, you can select a model by alias:\n\n` +
+    `When delegating with \`press()\`, you can select a model by alias:\n\n` +
     `| Alias | Tags | Description |\n` +
     `|-------|------|-------------|\n` +
     rows.join("\n") +
-    `\n\nUsage: \`await rlm("query", context, { model: "fast" })\`\n` +
+    `\n\nUsage: \`await press("query", context, { model: "fast" })\`\n` +
     `Default (no model specified): uses the same model as the current agent.`
   );
 }

@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx biome check .
+      - run: npx vitest --run
+
+      - name: Get version
+        id: version
+        run: echo "version=$(node -p 'require(\"./package.json\").version')" >> "$GITHUB_OUTPUT"
+
+      - run: npm run build
+
+      # - name: Publish to npm
+      #   run: npm publish --access public
+      #   env:
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      #   # To enable: add NPM_TOKEN to repository secrets,
+      #   # and add `registry-url: https://registry.npmjs.org` to setup-node above.
+
+      # - name: Create GitHub Release
+      #   run: gh release create "v${{ steps.version.outputs.version }}" --generate-notes
+      #   env:
+      #     GH_TOKEN: ${{ github.token }}

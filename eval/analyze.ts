@@ -3,7 +3,7 @@
 
 import { appendFileSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { RlmEvent, IterationEndEvent, LlmResponseEvent } from "../src/events.js";
+import type { PressEvent, IterationEndEvent, LlmResponseEvent } from "../src/events.js";
 import type { BenchmarkResult, EvalResult } from "./types.js";
 import { formatDuration } from "./utils.js";
 
@@ -25,7 +25,7 @@ interface TaskAnalysis {
 }
 
 function analyzeTask(result: EvalResult): TaskAnalysis {
-	const events: RlmEvent[] = result.events ?? [];
+	const events: PressEvent[] = result.events ?? [];
 	if (events.length === 0 && result.iterations > 0) {
 		console.warn(`[analyze] ${result.taskId}: no events (pre-observability result file), code analysis will be empty`);
 	}
@@ -49,8 +49,8 @@ function analyzeTask(result: EvalResult): TaskAnalysis {
 		totalCodeBlocks++;
 		totalCodeLines += resp.code.split("\n").length;
 
-		const rlmMatches = resp.code.match(/\brlm\s*\(/g);
-		if (rlmMatches) rlmCallCount += rlmMatches.length;
+		const pressMatches = resp.code.match(/\bpress\s*\(/g);
+		if (pressMatches) rlmCallCount += pressMatches.length;
 
 		if (resp.code.includes("console.log(") || resp.code.includes("console.error(")) {
 			hasConsoleLog = true;
@@ -168,7 +168,7 @@ function analyzeFile(filePath: string) {
 		[
 			["eager return (iter 1)", eagerReturnCount, pct(eagerReturnCount, n), `${eagerAndFailed} failed, ${eagerAndSucceeded} succeeded`],
 			["self-corrected", selfCorrectedCount, pct(selfCorrectedCount, n), "score > 0 with iterations > 1"],
-			["used rlm()", rlmUsers, pct(rlmUsers, n), `${analyses.reduce((s, a) => s + a.rlmCallCount, 0)} total calls`],
+			["used press()", rlmUsers, pct(rlmUsers, n), `${analyses.reduce((s, a) => s + a.rlmCallCount, 0)} total calls`],
 			["used console.log", loggers, pct(loggers, n), ""],
 			["used let/const", letConstUsers, pct(letConstUsers, n), "risk of cross-block scoping bugs"],
 			["had errors", withErrors, pct(withErrors, n), `${analyses.reduce((s, a) => s + a.errorCount, 0)} total errors`],
@@ -239,7 +239,7 @@ function printSniahContextGroups(results: EvalResult[], analyses: TaskAnalysis[]
 			(a, b) => parseFloat(a[0]) - parseFloat(b[0]),
 		);
 		printTable(
-			["context", "tasks", "accuracy", "mean iter", "eager return", "rlm() used", "errors"],
+			["context", "tasks", "accuracy", "mean iter", "eager return", "press() used", "errors"],
 			sortedGroups.map(([label, group]) => {
 				const succeeded = group.filter((a) => a.score > 0).length;
 				const eager = group.filter((a) => a.eagerReturn).length;
@@ -308,7 +308,7 @@ function buildMarkdownSummary(data: BenchmarkResult, analyses: TaskAnalysis[]): 
 	lines.push("|---------|-------|------|");
 	lines.push(`| Eager return (iter 1) | ${eagerCount} | ${pct(eagerCount, n)} |`);
 	lines.push(`| Self-corrected | ${selfCorrected} | ${pct(selfCorrected, n)} |`);
-	lines.push(`| Used rlm() | ${rlmUsers} | ${pct(rlmUsers, n)} |`);
+	lines.push(`| Used press() | ${rlmUsers} | ${pct(rlmUsers, n)} |`);
 	lines.push(`| Had errors | ${withErrors} | ${pct(withErrors, n)} |`);
 	lines.push("");
 

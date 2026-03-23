@@ -31,7 +31,7 @@ const PAGE_SIZE = 20;
 const MAX_ROWS = 11000;
 
 // GitHub Release asset download
-const GITHUB_REPO = "openprose/node-rlm";
+const GITHUB_REPO = "openprose/press";
 const RELEASE_TAG = "eval-data-v1";
 const RELEASE_ASSET = "oolong-trec-coarse-validation.jsonl.gz";
 
@@ -335,7 +335,7 @@ function parseArgs(argv: string[]): { dataset: string; maxRows: number; splits: 
 async function main(): Promise<void> {
 	const args = parseArgs(process.argv.slice(2));
 
-	console.log("RLM Eval — Dataset Downloader");
+	console.log("Press Eval — Dataset Downloader");
 	console.log("=============================");
 	console.log();
 

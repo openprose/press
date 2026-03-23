@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { rlm, RlmError, RlmMaxIterationsError } from "../src/rlm.js";
+import { press, PressError, PressMaxIterationsError } from "../src/rlm.js";
 import type { CallLLM, ModelEntry } from "../src/rlm.js";
-import { RlmObserver } from "../src/observer.js";
+import { PressObserver } from "../src/observer.js";
 import type {
 	BenchmarkResult,
 	EvalResult,
@@ -28,8 +28,8 @@ export interface HarnessConfig {
 	concurrency?: number;
 	/** Directory to save results (default: eval/results/). */
 	resultsDir?: string;
-	/** Concatenated plugin bodies to append to the system prompt. */
-	pluginBodies?: string;
+	/** System prompt override for the press() call. */
+	systemPrompt?: string;
 	/** Named model aliases available for child delegation. */
 	models?: Record<string, ModelEntry>;
 	/** Documentation for sandbox globals, included in every agent's system prompt at all depths. */
@@ -40,15 +40,13 @@ export interface HarnessConfig {
 	attempts?: number;
 	/** Pre-loaded component bodies keyed by name, available for child agents via `use` option. */
 	childComponents?: Record<string, string>;
-	/** @deprecated Use childComponents instead. */
-	childApps?: Record<string, string>;
 	/** Reasoning effort level for OpenRouter reasoning tokens. */
 	reasoningEffort?: string;
-	/** Create per-task sandbox globals. Called before rlm() for each task. */
+	/** Create per-task sandbox globals. Called before press() for each task. */
 	setupSandbox?: (task: EvalTask) => Record<string, unknown>;
 	/** Cleanup after each task (success or error). */
 	cleanupTask?: (task: EvalTask) => Promise<void>;
-	/** Return benchmark-specific metadata to attach to the result (e.g. scorecard IDs). Called after rlm() completes, before cleanup. */
+	/** Return benchmark-specific metadata to attach to the result (e.g. scorecard IDs). Called after press() completes, before cleanup. */
 	getResultMetadata?: (task: EvalTask) => Record<string, unknown> | undefined;
 	/** Progress callback, called after each task completes. */
 	onProgress?: (completed: number, total: number, result: EvalResult) => void;
@@ -121,13 +119,13 @@ export async function runEval(
 						scoringFn: config.scoringFn,
 						maxIterations,
 						maxDepth,
-						pluginBodies: config.pluginBodies,
+						systemPrompt: config.systemPrompt,
 						models: config.models,
 						setupSandbox: config.setupSandbox,
 						cleanupTask: config.cleanupTask,
 						getResultMetadata: config.getResultMetadata,
 						globalDocs: config.globalDocs,
-						childComponents: config.childComponents ?? config.childApps,
+						childComponents: config.childComponents,
 						reasoningEffort: config.reasoningEffort,
 					});
 					attemptScores.push(result.score);
@@ -214,7 +212,7 @@ interface SingleTaskConfig {
 	scoringFn: ScoringFunction;
 	maxIterations: number;
 	maxDepth: number;
-	pluginBodies?: string;
+	systemPrompt?: string;
 	models?: Record<string, ModelEntry>;
 	setupSandbox?: (task: EvalTask) => Record<string, unknown>;
 	cleanupTask?: (task: EvalTask) => Promise<void>;
@@ -227,7 +225,7 @@ interface SingleTaskConfig {
 async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 	const {
 		task, callLLM, scoringFn, maxIterations, maxDepth,
-		pluginBodies, models, setupSandbox, cleanupTask,
+		systemPrompt, models, setupSandbox, cleanupTask,
 		getResultMetadata, globalDocs, childComponents,
 		reasoningEffort,
 	} = cfg;
@@ -248,14 +246,14 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 	};
 
 	const sandboxGlobals = setupSandbox?.(task);
-	const observer = new RlmObserver();
+	const observer = new PressObserver();
 
 	try {
-		const result = await rlm(task.query, task.context, {
+		const result = await press(task.query, task.context, {
 			callLLM: wrappedCallLLM,
 			maxIterations,
 			maxDepth,
-			pluginBodies,
+			systemPrompt,
 			models,
 			sandboxGlobals,
 			globalDocs,
@@ -283,7 +281,7 @@ async function runSingleTask(cfg: SingleTaskConfig): Promise<EvalResult> {
 		const wallTimeMs = Date.now() - startTime;
 		const errMsg = err instanceof Error ? err.message : String(err);
 
-		const iterations = err instanceof RlmError ? err.iterations : 0;
+		const iterations = err instanceof PressError ? err.iterations : 0;
 		const metadata = getResultMetadata?.(task);
 
 		return {

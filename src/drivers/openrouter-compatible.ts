@@ -31,6 +31,12 @@ interface ChatCompletionResponse {
 		finish_reason?: string;
 		native_finish_reason?: string;
 	}>;
+	usage?: {
+		prompt_tokens?: number;
+		completion_tokens?: number;
+		cache_read_input_tokens?: number;
+		cache_creation_input_tokens?: number;
+	};
 	error?: { message: string; code?: number };
 }
 
@@ -192,7 +198,7 @@ export function fromOpenRouterCompatible(options: OpenRouterCompatibleOptions): 
 
 				if ((status === 429 || status >= 500) && attempt < maxRetries) {
 					const delay = BASE_DELAY_MS * 2 ** attempt;
-					console.error(`[${model}] HTTP ${status}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+					if (process.env.PRESS_DEBUG) console.error(`[${model}] HTTP ${status}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
 					await sleep(delay);
 					continue;
 				}
@@ -207,7 +213,7 @@ export function fromOpenRouterCompatible(options: OpenRouterCompatibleOptions): 
 				const code = data.error.code ?? 0;
 				if ((code === 429 || code >= 500) && attempt < maxRetries) {
 					const delay = BASE_DELAY_MS * 2 ** attempt;
-					console.error(`[${model}] error ${code}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+					if (process.env.PRESS_DEBUG) console.error(`[${model}] error ${code}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
 					await sleep(delay);
 					continue;
 				}
@@ -239,7 +245,7 @@ export function fromOpenRouterCompatible(options: OpenRouterCompatibleOptions): 
 
 			const elapsed = Date.now() - t0;
 			const outChars = reasoning.length + (code?.length ?? 0);
-			console.error(
+			if (process.env.PRESS_DEBUG) console.error(
 				`[${model} #${callId}] ${elapsed}ms, in=${inputChars}c, out=${outChars}c, finish=${choice.finish_reason}`,
 			);
 
@@ -249,6 +255,14 @@ export function fromOpenRouterCompatible(options: OpenRouterCompatibleOptions): 
 			}
 			if (reasoningDetails) {
 				result.reasoningDetails = reasoningDetails;
+			}
+			if (data.usage) {
+				result.usage = {
+					promptTokens: data.usage.prompt_tokens ?? 0,
+					completionTokens: data.usage.completion_tokens ?? 0,
+					cacheReadTokens: data.usage.cache_read_input_tokens ?? 0,
+					cacheWriteTokens: data.usage.cache_creation_input_tokens ?? 0,
+				};
 			}
 			return result;
 		}

@@ -47,7 +47,7 @@ function loadEnvFile(): void {
 loadEnvFile();
 import type { ProgramDefinition } from "../src/plugins.js";
 import type {
-	RlmEvent,
+	PressEvent,
 	DelegationSpawnEvent,
 	DelegationReturnEvent,
 	DelegationErrorEvent,
@@ -61,7 +61,7 @@ import type {
 	TokenUsage,
 } from "../src/events.js";
 import type { BenchmarkResult, EvalResult } from "./types.js";
-import { rlm } from "../src/rlm.js";
+import { press } from "../src/rlm.js";
 import { fromOpenRouter } from "./drivers/openrouter.js";
 
 // ---------------------------------------------------------------------------
@@ -165,6 +165,7 @@ export interface InvocationDigest {
 	component: string | null;
 	depth: number;
 	role: string | null;
+	system_prompt?: string;
 	iterations: IterationDigest[];
 	prohibited_violations: string[];
 	shape_warnings: string[];
@@ -356,18 +357,18 @@ function truncate(s: string | null | undefined, maxLen: number): string {
 // Event filtering helpers
 // ---------------------------------------------------------------------------
 
-function eventsOfType<T extends RlmEvent["type"]>(
-	events: RlmEvent[],
+function eventsOfType<T extends PressEvent["type"]>(
+	events: PressEvent[],
 	type: T,
-): Extract<RlmEvent, { type: T }>[] {
-	return events.filter((e) => e.type === type) as Extract<RlmEvent, { type: T }>[];
+): Extract<PressEvent, { type: T }>[] {
+	return events.filter((e) => e.type === type) as Extract<PressEvent, { type: T }>[];
 }
 
 // ---------------------------------------------------------------------------
 // Core extraction: RunIdentity
 // ---------------------------------------------------------------------------
 
-function extractRunIdentity(events: RlmEvent[], meta: ResultMeta): RunIdentity {
+function extractRunIdentity(events: PressEvent[], meta: ResultMeta): RunIdentity {
 	const runStarts = eventsOfType(events, "run:start");
 	const maxDepthUsed = events.reduce((max, e) => Math.max(max, e.depth), 0);
 
@@ -397,7 +398,7 @@ function extractRunIdentity(events: RlmEvent[], meta: ResultMeta): RunIdentity {
 // ---------------------------------------------------------------------------
 
 function extractShapeAdherence(
-	events: RlmEvent[],
+	events: PressEvent[],
 	nodeShapes: Map<string, NodeShape>,
 	invocationComponents: Map<string, string>,
 ): ShapeAdherence {
@@ -549,7 +550,7 @@ function findLineContaining(code: string, pattern: string): string {
 // ---------------------------------------------------------------------------
 
 function extractDelegationTree(
-	events: RlmEvent[],
+	events: PressEvent[],
 	invocationComponents: Map<string, string>,
 ): DelegationTree {
 	// Gather all invocation info
@@ -705,7 +706,7 @@ function buildTopologyString(invocations: DelegationTreeNode[]): string {
 // ---------------------------------------------------------------------------
 
 function extractResourceUsage(
-	events: RlmEvent[],
+	events: PressEvent[],
 	invocationComponents: Map<string, string>,
 ): ResourceUsage {
 	const llmResponses = eventsOfType(events, "llm:response");
@@ -811,13 +812,13 @@ function extractResourceUsage(
 // Build invocation->component mapping from delegation:spawn events
 // ---------------------------------------------------------------------------
 
-function buildInvocationComponentMap(events: RlmEvent[]): Map<string, string> {
+function buildInvocationComponentMap(events: PressEvent[]): Map<string, string> {
 	const map = new Map<string, string>();
 
 	// The root invocation gets its component from run:start or the first invocation:start
 	const spawns = eventsOfType(events, "delegation:spawn");
 	for (const spawn of spawns) {
-		const comp = spawn.componentName ?? spawn.appName ?? null;
+		const comp = spawn.componentName ?? spawn.componentName ?? null;
 		if (comp && spawn.childId) {
 			map.set(spawn.childId, comp);
 		}
@@ -831,13 +832,13 @@ function buildInvocationComponentMap(events: RlmEvent[]): Map<string, string> {
 // ---------------------------------------------------------------------------
 
 function buildInvocationDigests(
-	events: RlmEvent[],
+	events: PressEvent[],
 	nodeShapes: Map<string, NodeShape>,
 	invocationComponents: Map<string, string>,
 	shapeAdherence: ShapeAdherence,
 ): InvocationDigest[] {
 	// Group events by invocationId
-	const eventsByInv = new Map<string, RlmEvent[]>();
+	const eventsByInv = new Map<string, PressEvent[]>();
 	for (const ev of events) {
 		const list = eventsByInv.get(ev.invocationId) ?? [];
 		list.push(ev);
@@ -859,6 +860,7 @@ function buildInvocationDigests(
 		const component = invocationComponents.get(invId) ?? null;
 		const parentId = invStart?.parentId ?? null;
 		const depth = invStart?.depth ?? invEvents[0]?.depth ?? 0;
+		const systemPrompt = invStart?.systemPrompt ?? undefined;
 
 		// Determine role from nodeShapes
 		let role: string | null = null;
@@ -904,7 +906,7 @@ function buildInvocationDigests(
 					const ret = delegationReturns.find((r) => r.childId === spawn.childId);
 					const err = delegationErrors.find((e) => e.childId === spawn.childId);
 					return {
-						child_component: spawn.componentName ?? spawn.appName ?? "unknown",
+						child_component: spawn.componentName ?? spawn.componentName ?? "unknown",
 						brief_excerpt: truncate(spawn.query, 300),
 						outcome: (err ? "error" : "returned") as "returned" | "error",
 						child_iterations: ret?.iterations ?? err?.iterations ?? 0,
@@ -913,7 +915,7 @@ function buildInvocationDigests(
 
 			iterations.push({
 				number: iterEnd.iteration,
-				code_summary: truncate(iterEnd.code, 500),
+				code_summary: truncate(iterEnd.code, 2000),
 				delegations: iterDelegations,
 				output_excerpt: truncate(iterEnd.output, 300),
 				error: iterEnd.error,
@@ -937,6 +939,7 @@ function buildInvocationDigests(
 			component,
 			depth,
 			role,
+			system_prompt: systemPrompt,
 			iterations,
 			prohibited_violations: [...new Set(prohibited_violations)],
 			shape_warnings,
@@ -962,7 +965,7 @@ function buildInvocationDigests(
 // Collect warnings about missing data
 // ---------------------------------------------------------------------------
 
-function collectWarnings(events: RlmEvent[], resources: ResourceUsage): string[] {
+function collectWarnings(events: PressEvent[], resources: ResourceUsage): string[] {
 	const warnings: string[] = [];
 
 	if (events.length === 0) {
@@ -972,7 +975,7 @@ function collectWarnings(events: RlmEvent[], resources: ResourceUsage): string[]
 
 	// Check for expected event types
 	const types = new Set(events.map((e) => e.type));
-	const expected: RlmEvent["type"][] = [
+	const expected: PressEvent["type"][] = [
 		"run:start", "run:end", "invocation:start", "invocation:end",
 		"iteration:end", "llm:response",
 	];
@@ -991,7 +994,7 @@ function collectWarnings(events: RlmEvent[], resources: ResourceUsage): string[]
 
 	// Check for delegation events without componentName
 	const spawns = eventsOfType(events, "delegation:spawn");
-	const missingComponent = spawns.filter((s) => !s.componentName && !s.appName).length;
+	const missingComponent = spawns.filter((s) => !s.componentName && !s.componentName).length;
 	if (missingComponent > 0) {
 		warnings.push(`${missingComponent}/${spawns.length} delegation:spawn events missing componentName`);
 	}
@@ -1009,7 +1012,7 @@ function collectWarnings(events: RlmEvent[], resources: ResourceUsage): string[]
 // ---------------------------------------------------------------------------
 
 export function buildTraceDigest(
-	events: RlmEvent[],
+	events: PressEvent[],
 	program: ProgramDefinition,
 	meta: ResultMeta,
 ): TraceDigest {
@@ -1026,7 +1029,7 @@ export function buildTraceDigest(
 }
 
 export function extractMechanicalMetrics(
-	events: RlmEvent[],
+	events: PressEvent[],
 	program: ProgramDefinition,
 	meta: ResultMeta,
 ): MechanicalMetrics {
@@ -1041,7 +1044,7 @@ export function extractMechanicalMetrics(
 }
 
 export function buildAdherenceReport(
-	events: RlmEvent[],
+	events: PressEvent[],
 	program: ProgramDefinition,
 	meta: ResultMeta,
 ): AdherenceReport {
@@ -1249,7 +1252,7 @@ async function runLLMJudge(
 
 	// 6. Build the query for the judge
 	const query = [
-		"Evaluate this RLM execution trace for adherence to its program.",
+		"Evaluate this Press execution trace for adherence to its program.",
 		"",
 		"Read the sandbox globals: __traceDigest, __mechanicalMetrics, __programFiles, __specDocs.",
 		"Cross-reference the trace against the program files.",
@@ -1266,20 +1269,20 @@ async function runLLMJudge(
 		`Warnings: ${report.digest.warnings.length}`,
 	].join("\n");
 
-	// 7. Build pluginBodies: the evaluator IS the root node
-	const pluginBodies = judgeProgram.rootAppBody;
+	// 7. Use the root app body as the system prompt for the judge
+	const judgeSystemPrompt = judgeProgram.rootAppBody;
 
-	// 8. Call rlm()
+	// 8. Call press()
 	console.error("\nRunning LLM judge...");
 	const startTime = Date.now();
 
 	let judgeAnswer: string;
 	try {
-		const result = await rlm(query, undefined, {
+		const result = await press(query, undefined, {
 			callLLM,
 			maxIterations: 15,
 			maxDepth: 1,
-			pluginBodies,
+			systemPrompt: judgeSystemPrompt,
 			sandboxGlobals,
 			globalDocs: judgeProgram.globalDocs,
 			childComponents: judgeProgram.childComponents,

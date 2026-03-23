@@ -1,6 +1,6 @@
 import { JsEnvironment } from "./environment.js";
-import type { RlmEvent, RlmEventSink } from "./events.js";
-import { buildModelTable, buildSystemPrompt } from "./system-prompt.js";
+import type { PressEvent, PressEventSink } from "./events.js";
+import { buildModelTable, buildSystemPrompt, renderContextStack } from "./system-prompt.js";
 
 export interface CallLLMResponse {
 	reasoning: string;
@@ -8,6 +8,8 @@ export interface CallLLMResponse {
 	toolUseId?: string;
 	/** Opaque; round-tripped to the API without inspection. */
 	reasoningDetails?: Array<Record<string, unknown>> | null;
+	/** Token usage from the LLM API response. */
+	usage?: import("./events.js").TokenUsage;
 }
 
 export type CallLLM = (messages: Array<{ role: string; content: string; meta?: Record<string, unknown> }>, systemPrompt: string, options?: CallLLMOptions) => Promise<CallLLMResponse>;
@@ -23,47 +25,48 @@ export interface ModelEntry {
 	description?: string;
 }
 
-export interface RlmOptions {
+export interface PressOptions {
 	callLLM: CallLLM;
 	maxIterations?: number;
 	maxDepth?: number;
-	pluginBodies?: string;
+	/** Replace the default system prompt entirely with this content. */
+	systemPrompt?: string;
 	models?: Record<string, ModelEntry>;
 	sandboxGlobals?: Record<string, unknown>;
 	/** Visible at all depths (root, children, flat). Document sandboxGlobals here. */
 	globalDocs?: string;
-	/** Keyed by name; looked up when a parent calls `rlm(query, ctx, { use: "name" })`. */
+	/** Keyed by name; looked up when a parent calls `press(query, ctx, { use: "name" })`. */
 	childComponents?: Record<string, string>;
-	/** @deprecated Use childComponents instead. */
-	childApps?: Record<string, string>;
 	reasoningEffort?: string;
-	observer?: RlmEventSink;
+	observer?: PressEventSink;
+	/** Layout mode for context stack in child system prompts. Default: "mirror". */
+	contextLayout?: ContextLayout;
 }
 
-export interface RlmResult {
+export interface PressResult {
 	answer: string;
 	iterations: number;
 }
 
-export class RlmError extends Error {
+export class PressError extends Error {
 	readonly iterations: number;
 
 	constructor(message: string, iterations: number) {
 		super(message);
-		this.name = "RlmError";
+		this.name = "PressError";
 		this.iterations = iterations;
 	}
 }
 
 /** Thrown when the iteration limit is reached. */
-export class RlmMaxIterationsError extends RlmError {
+export class PressMaxIterationsError extends PressError {
 	constructor(maxIterations: number) {
-		super(`RLM reached max iterations (${maxIterations}) without returning an answer`, maxIterations);
-		this.name = "RlmMaxIterationsError";
+		super(`Press reached max iterations (${maxIterations}) without returning an answer`, maxIterations);
+		this.name = "PressMaxIterationsError";
 	}
 }
 
-/** Read-only metadata injected into the sandbox as `__rlm`. */
+/** Read-only metadata injected into the sandbox as `__press`. (Name kept for internal compatibility.) */
 export interface DelegationContext {
 	depth: number;
 	maxDepth: number;
@@ -73,6 +76,15 @@ export interface DelegationContext {
 	invocationId: string;
 	parentId: string | null;
 }
+
+/** A single frame in the context stack. */
+export interface ContextFrame {
+	depth: number;
+	data: Record<string, unknown> | undefined;
+	label?: string;
+}
+
+export type ContextLayout = "mirror" | "cache-efficient";
 
 interface LocalStore {
 	[key: string]: unknown;
@@ -90,22 +102,23 @@ const SNAPSHOT_EXCLUDE_KEYS = new Set([
 	'TextEncoder', 'TextDecoder',
 ]);
 
-export async function rlm(query: string, context: string | undefined, options: RlmOptions): Promise<RlmResult> {
-	const components = options.childComponents ?? options.childApps ?? {};
-
+export async function press(query: string, context: Record<string, unknown> | undefined, options: PressOptions): Promise<PressResult> {
+	if (context !== undefined && typeof context === 'string') {
+		throw new Error('press() context must be an object, got string. Use { data: yourString } instead.');
+	}
 	const opts = {
 		callLLM: options.callLLM,
 		maxIterations: options.maxIterations ?? 15,
 		maxDepth: options.maxDepth ?? 3,
-		pluginBodies: options.pluginBodies,
 		models: options.models,
 		sandboxGlobals: options.sandboxGlobals,
 		globalDocs: options.globalDocs,
-		childComponents: components,
+		childComponents: options.childComponents ?? {},
 		reasoningEffort: options.reasoningEffort,
+		contextLayout: options.contextLayout ?? "mirror" as ContextLayout,
 	};
 
-	const emit: ((event: RlmEvent) => void) | undefined = options.observer
+	const emit: ((event: PressEvent) => void) | undefined = options.observer
 		? (event) => options.observer!.emit(event)
 		: undefined;
 	const runId = globalThis.crypto.randomUUID();
@@ -121,9 +134,9 @@ export async function rlm(query: string, context: string | undefined, options: R
 	}
 
 	const snapshotExcludeKeys = new Set(SNAPSHOT_EXCLUDE_KEYS);
-	snapshotExcludeKeys.add('rlm');
-	snapshotExcludeKeys.add('__rlm');
-	snapshotExcludeKeys.add('__ctx');
+	snapshotExcludeKeys.add('press');
+	snapshotExcludeKeys.add('__press');
+	snapshotExcludeKeys.add('__ctxInternal');
 	snapshotExcludeKeys.add('context');
 	if (opts.sandboxGlobals) {
 		for (const key of Object.keys(opts.sandboxGlobals)) {
@@ -143,8 +156,9 @@ export async function rlm(query: string, context: string | undefined, options: R
 
 	let childCounter = 0;
 
-	// Create a Proxy for __ctx.local that routes based on active invocation ID
-	const localProxy = new Proxy({} as Record<string, unknown>, {
+	// Internal context routing proxy — NOT exposed to the sandbox as __ctx.
+	// The sandbox only sees `context` (with __root and __stack getters).
+	const ctxInternalProxy = new Proxy({} as Record<string, unknown>, {
 		get(_target, prop: string) {
 			const activeId = invocationStack[invocationStack.length - 1];
 			if (!activeId) return undefined;
@@ -184,25 +198,28 @@ export async function rlm(query: string, context: string | undefined, options: R
 		},
 	});
 
-	const readLocal = (id: string): Readonly<Record<string, unknown>> => {
-		const store = contextStore.locals.get(id);
-		if (!store) return Object.freeze({});
-		return Object.freeze({ ...store });
-	};
-
 	if (context !== undefined) {
 		contextStore.shared = Object.freeze({ data: context });
 	}
 
-	env.set("__ctx", {
+	// Internal-only: used by context getter to route per-invocation. Not model-facing.
+	env.set("__ctxInternal", {
 		shared: contextStore.shared,
-		local: localProxy,
-		readLocal,
+		local: ctxInternalProxy,
+		getStack() {
+			const activeId = invocationStack[invocationStack.length - 1];
+			if (!activeId) return [];
+			const store = contextStore.locals.get(activeId);
+			return store?.__contextStack ?? [];
+		},
+		getRootData() {
+			return contextStore.shared.data;
+		},
 	});
 
 	async function rlmInternal(
 		query: string,
-		context: string | undefined,
+		context: Record<string, unknown> | undefined,
 		depth: number,
 		lineage: readonly string[],
 		invocationId: string,
@@ -211,7 +228,9 @@ export async function rlm(query: string, context: string | undefined, options: R
 		callLLMOverride?: CallLLM,
 		maxIterationsOverride?: number,
 		reasoningEffortOverride?: string,
-	): Promise<RlmResult> {
+		ancestorFrames?: readonly ContextFrame[],
+		contextLayoutOverride?: ContextLayout,
+	): Promise<PressResult> {
 		const callLLM = callLLMOverride ?? opts.callLLM;
 		const effectiveReasoningEffort = reasoningEffortOverride ?? opts.reasoningEffort;
 
@@ -220,16 +239,31 @@ export async function rlm(query: string, context: string | undefined, options: R
 			: opts.maxIterations;
 
 		const canDelegate = depth < opts.maxDepth;
+		const effectiveContextLayout = contextLayoutOverride ?? opts.contextLayout;
 
-		let programContent: string | undefined;
-		if (customSystemPrompt) {
-			programContent = customSystemPrompt;
-		} else if (depth === 0 && opts.pluginBodies) {
-			programContent = opts.pluginBodies;
-		}
+		// Build the context frame for this invocation
+		const currentFrame: ContextFrame = {
+			depth,
+			data: context,
+			label: query.length > 80 ? query.substring(0, 80) + "..." : query,
+		};
+		const allFrames: readonly ContextFrame[] = ancestorFrames
+			? [...ancestorFrames, currentFrame]
+			: [currentFrame];
 
 		const componentKeys = Object.keys(opts.childComponents);
-		const effectiveSystemPrompt = buildSystemPrompt({
+		const contextStackSection = allFrames.length > 1
+			? renderContextStack(allFrames, effectiveContextLayout)
+			: (context !== undefined
+				? renderContextStack(allFrames, effectiveContextLayout)
+				: undefined);
+
+		// When a custom system prompt is provided, use it directly
+		// (don't wrap it inside buildSystemPrompt's generic preamble).
+		// The custom prompt is self-contained — it has its own preamble and structure.
+		const effectiveSystemPrompt = customSystemPrompt
+			? customSystemPrompt
+			: buildSystemPrompt({
 			canDelegate,
 			invocationId,
 			parentId,
@@ -237,10 +271,10 @@ export async function rlm(query: string, context: string | undefined, options: R
 			maxDepth: opts.maxDepth,
 			maxIterations: effectiveMaxIterations,
 			lineage,
-			programContent,
 			globalDocs: opts.globalDocs,
 			modelTable,
 			...(componentKeys.length > 0 ? { availableComponents: componentKeys } : {}),
+			contextStackContent: contextStackSection,
 		});
 
 		emit?.({
@@ -262,16 +296,38 @@ export async function rlm(query: string, context: string | undefined, options: R
 			contextStore.locals.get(invocationId)!.context = context;
 		}
 
+		// Store frozen context stack for this invocation
+		const frozenStack = Object.freeze(allFrames.map(f => Object.freeze({
+			depth: f.depth,
+			data: typeof f.data === 'object' && f.data !== null ? Object.freeze({ ...f.data as Record<string, unknown> }) : f.data,
+			label: f.label,
+		})));
+		contextStore.locals.get(invocationId)!.__contextStack = frozenStack;
+		contextStore.locals.get(invocationId)!.__contextDepth = depth;
+
 		invocationStack.push(invocationId);
 		try {
 			await env.exec(
 				`Object.defineProperty(globalThis, 'context', {\n` +
 				`  get() {\n` +
-				`    const local = __ctx.local.context;\n` +
-				`    if (local !== undefined) return local;\n` +
-				`    return __ctx.shared.data;\n` +
+				`    let val;\n` +
+				`    const local = __ctxInternal.local.context;\n` +
+				`    if (local !== undefined) { val = local; }\n` +
+				`    else { val = __ctxInternal.shared.data; }\n` +
+				`    // Attach __root and __stack for object contexts\n` +
+				`    if (val && typeof val === 'object' && !Object.isFrozen(val)) {\n` +
+				`      try {\n` +
+				`        if (!Object.prototype.hasOwnProperty.call(val, '__root')) {\n` +
+				`          Object.defineProperty(val, '__root', { get() { return __ctxInternal.getRootData(); }, enumerable: false, configurable: true });\n` +
+				`        }\n` +
+				`        if (!Object.prototype.hasOwnProperty.call(val, '__stack')) {\n` +
+				`          Object.defineProperty(val, '__stack', { get() { return __ctxInternal.getStack(); }, enumerable: false, configurable: true });\n` +
+				`        }\n` +
+				`      } catch(e) {}\n` +
+				`    }\n` +
+				`    return val;\n` +
 				`  },\n` +
-				`  set(v) { __ctx.local.context = v; },\n` +
+				`  set(v) { __ctxInternal.local.context = v; },\n` +
 				`  configurable: true,\n` +
 				`  enumerable: true,\n` +
 				`})`,
@@ -303,7 +359,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 
 		const messages: Array<{ role: string; content: string; meta?: Record<string, unknown> }> = [{ role: "user", content: query }];
 
-		let invocationResult: RlmResult | undefined;
+		let invocationResult: PressResult | undefined;
 		let invocationError: unknown;
 		try {
 		for (let iteration = 0; iteration < effectiveMaxIterations; iteration++) {
@@ -356,7 +412,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 					duration: llmEnd - llmStart,
 				});
 				iterationError = llmError;
-				throw new RlmError(llmError, iteration);
+				throw new PressError(llmError, iteration);
 			}
 
 			const llmEnd = performance.now();
@@ -372,7 +428,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 				reasoning: response.reasoning,
 				code: response.code,
 				hasToolUse: !!response.toolUseId,
-				usage: (response as unknown as Record<string, unknown>).usage as import("./events.js").TokenUsage | undefined,
+				usage: response.usage,
 			});
 
 			const reasoning = response.reasoning;
@@ -388,9 +444,9 @@ export async function rlm(query: string, context: string | undefined, options: R
 			for (const block of codeBlocks) {
 				activeDepth = depth;
 
-				// Inject __rlm delegation context before each exec
+				// Inject __press delegation context before each exec
 				env.set(
-					"__rlm",
+					"__press",
 					Object.freeze({
 						depth,
 						maxDepth: opts.maxDepth,
@@ -416,7 +472,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 				if (output) combinedOutput += (combinedOutput ? "\n" : "") + output;
 				if (error) combinedError = error;
 
-				// Check for unawaited rlm() calls
+				// Check for unawaited press() calls
 				if (pendingRlmCalls.size > 0) {
 					await new Promise((r) => setTimeout(r, 0));
 					if (pendingRlmCalls.size > 0) {
@@ -431,17 +487,17 @@ export async function rlm(query: string, context: string | undefined, options: R
 							count,
 						});
 						const warning =
-							`[ERROR] ${count} rlm() call(s) were NOT awaited. Their results are LOST and the API calls were wasted. ` +
-							`You MUST write: const result = await rlm("query", context). ` +
-							`Never call rlm() without await.`;
+							`[ERROR] ${count} press() call(s) were NOT awaited. Their results are LOST and the API calls were wasted. ` +
+							`You MUST write: const result = await press("query", context). ` +
+							`Never call press() without await.`;
 						combinedOutput += (combinedOutput ? "\n" : "") + warning;
 						pendingRlmCalls.clear();
 					}
 				}
 
 				if (returnValue !== undefined) {
-					if (iteration === 0) {
-						// Force verification: reject first-iteration returns
+					if (iteration === 0 && depth === 0) {
+						// Force verification: reject first-iteration returns (root only)
 						combinedOutput +=
 							(combinedOutput ? "\n" : "") +
 							`[early return intercepted] You returned: ${String(returnValue)}\nVerify this is correct by examining the data before returning.`;
@@ -519,7 +575,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 			}
 		}
 
-		const maxIterErr = new RlmMaxIterationsError(effectiveMaxIterations);
+		const maxIterErr = new PressMaxIterationsError(effectiveMaxIterations);
 		invocationError = maxIterErr;
 		throw maxIterErr;
 
@@ -536,12 +592,13 @@ export async function rlm(query: string, context: string | undefined, options: R
 				depth,
 				answer: invocationResult?.answer ?? null,
 				error: invocationError instanceof Error ? invocationError.message : invocationError ? String(invocationError) : null,
-				iterations: invocationResult?.iterations ?? (invocationError instanceof RlmError ? invocationError.iterations : 0),
+				iterations: invocationResult?.iterations ?? (invocationError instanceof PressError ? invocationError.iterations : 0),
 			});
 		}
 	}
 
-	env.set("rlm", (q: string, c?: string, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; /** @deprecated Use `use` instead. */ app?: string; reasoning?: string }): Promise<string> => {
+	/** The sandbox delegate function, exposed as `press()`. */
+	const pressFn = (q: string, c?: Record<string, unknown>, rlmOpts?: { systemPrompt?: string; model?: string; maxIterations?: number; use?: string; reasoning?: string; contextLayout?: ContextLayout }): Promise<string> => {
 		// Reject delegation at max depth
 		if (activeDepth >= opts.maxDepth) {
 			return Promise.reject(
@@ -549,11 +606,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 			);
 		}
 
-		// Resolve component name: `use` takes precedence over deprecated `app`
-		const componentName = rlmOpts?.use ?? rlmOpts?.app;
-		if (rlmOpts?.app && !rlmOpts?.use) {
-			console.warn('[node-rlm] { app: "..." } is deprecated. Use { use: "..." } instead.');
-		}
+		const componentName = rlmOpts?.use;
 
 		// Resolve component plugin if requested
 		let resolvedSystemPrompt: string | undefined = rlmOpts?.systemPrompt;
@@ -587,9 +640,9 @@ export async function rlm(query: string, context: string | undefined, options: R
 		}
 
 		const savedDepth = activeDepth;
-		const childLineage = [...((env.get("__rlm") as DelegationContext | undefined)?.lineage ?? [q]), q];
-		const callerInvocationId = (env.get("__rlm") as DelegationContext | undefined)?.invocationId ?? "root";
-		const callerParentId = (env.get("__rlm") as DelegationContext | undefined)?.parentId ?? null;
+		const childLineage = [...((env.get("__press") as DelegationContext | undefined)?.lineage ?? [q]), q];
+		const callerInvocationId = (env.get("__press") as DelegationContext | undefined)?.invocationId ?? "root";
+		const callerParentId = (env.get("__press") as DelegationContext | undefined)?.parentId ?? null;
 
 		const childIndex = childCounter++;
 		const childDepthLabel = `d${savedDepth + 1}-c${childIndex}`;
@@ -606,15 +659,21 @@ export async function rlm(query: string, context: string | undefined, options: R
 			depth: savedDepth,
 			childId: childInvocationId,
 			query: q,
+			context: c != null ? JSON.stringify(c).slice(0, 5000) : undefined,
 			modelAlias: rlmOpts?.model,
 			maxIterations: rlmOpts?.maxIterations,
 			componentName,
-			appName: componentName,
 		});
+
+		// Capture the parent's context frames for the child
+		const parentFrames: readonly ContextFrame[] = (() => {
+			const callerLocals = contextStore.locals.get(callerInvocationId);
+			return (callerLocals?.__contextStack as readonly ContextFrame[] | undefined) ?? [];
+		})();
 
 		const promise = (async () => {
 			try {
-				const result = await rlmInternal(q, c, savedDepth + 1, childLineage, childInvocationId, callerInvocationId, resolvedSystemPrompt, modelCallLLM, rlmOpts?.maxIterations, rlmOpts?.reasoning);
+				const result = await rlmInternal(q, c, savedDepth + 1, childLineage, childInvocationId, callerInvocationId, resolvedSystemPrompt, modelCallLLM, rlmOpts?.maxIterations, rlmOpts?.reasoning, parentFrames, rlmOpts?.contextLayout);
 				emit?.({
 					type: "delegation:return",
 					runId,
@@ -637,7 +696,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 					depth: savedDepth,
 					childId: childInvocationId,
 					error: err instanceof Error ? err.message : String(err),
-					iterations: err instanceof RlmError ? err.iterations : 0,
+					iterations: err instanceof PressError ? err.iterations : 0,
 				});
 				throw err;
 			} finally {
@@ -649,7 +708,9 @@ export async function rlm(query: string, context: string | undefined, options: R
 		promise.finally(() => pendingRlmCalls.delete(promise));
 
 		return promise;
-	});
+	};
+
+	env.set("press", pressFn);
 
 	emit?.({
 		type: "run:start",
@@ -663,10 +724,10 @@ export async function rlm(query: string, context: string | undefined, options: R
 		maxDepth: opts.maxDepth,
 	});
 
-	let runResult: RlmResult | undefined;
+	let runResult: PressResult | undefined;
 	let runError: unknown;
 	try {
-		runResult = await rlmInternal(query, context, 0, [query], "root", null);
+		runResult = await rlmInternal(query, context, 0, [query], "root", null, options.systemPrompt, undefined, undefined, undefined, [], undefined);
 		return runResult;
 	} catch (err) {
 		runError = err;
@@ -681,7 +742,7 @@ export async function rlm(query: string, context: string | undefined, options: R
 			depth: 0,
 			answer: runResult?.answer ?? null,
 			error: runError instanceof Error ? runError.message : runError ? String(runError) : null,
-			iterations: runResult?.iterations ?? (runError instanceof RlmError ? runError.iterations : 0),
+			iterations: runResult?.iterations ?? (runError instanceof PressError ? runError.iterations : 0),
 		});
 	}
 }

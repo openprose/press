@@ -11,17 +11,14 @@ dist/
 # Eval data
 eval/data/
 eval/results/
-eval/analyses/*
-!eval/analyses/0*/
-!eval/analyses/README.md
+eval-results/
+eval/analyses/
 
 # OpenProse runtime state
-.prose/runs/
-.prose/agents/
-.prose/.env
+.prose/
 
-# Archive
-.archive/
+# Test fixture trace files
+test/fixtures/**/last-*.json
 
 # External repos
 arcgentica/

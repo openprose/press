@@ -1,6 +1,25 @@
-# RLM Eval
+---
+purpose: Benchmarking suite for Press across OOLONG, ARC-AGI-2, ARC-AGI-3, and S-NIAH — harness, scoring, analysis, drivers, datasets, and results; 18 numbered analysis directories document the full experimental history
+related:
+  - ../README.md
+  - ./analyses/README.md
+  - ./datasets/README.md
+  - ./drivers/README.md
+  - ./results/README.md
+  - ../programs/README.md
+  - ../arc3-docs/README.md
+  - ../../platform/test-harness/README.md
+glossary:
+  OOLONG: Long-context aggregation benchmark (trec_coarse, 50 tasks) — tests multi-document reasoning
+  S-NIAH: Single Needle in a Haystack — synthetic long-context retrieval benchmark
+  ARC-AGI-2: Abstract Reasoning Corpus generation 2 — 120-task abstract visual reasoning benchmark
+  ARC-AGI-3: Interactive games-based reasoning benchmark accessed via REST API
+  pass@N: Evaluation protocol running each task N times and keeping the best score
+---
 
-Benchmarks for measuring RLM performance across models.
+# Press Eval
+
+Benchmarks for measuring Press performance across models.
 
 ## Setup
 
@@ -116,7 +135,7 @@ Results are saved as timestamped JSON files in `eval/results/` (gitignored). Eac
 
 ### Model Aliases
 
-The `rlm()` function accepts a `models` option — a map of named model aliases that child agents can use when delegating. Agents see the available aliases in their system prompt and can select one by name.
+The `press()` function accepts a `models` option — a map of named model aliases that child agents can use when delegating. Agents see the available aliases in their system prompt and can select one by name.
 
 The CLI provides three built-in aliases:
 
@@ -149,7 +168,7 @@ npx tsx eval/analyze.ts eval/results/s-niah_anthropic_claude-sonnet-4_2026-02-08
 The analyzer reports:
 
 - **Iteration and code volume** — iterations per task, code blocks, code lines (mean, p20, median, p80, min, max)
-- **Behavioral patterns** — eager RETURN rate, self-correction rate, recursive `rlm()` usage, `console.log` usage, `let/const` usage, error rate
+- **Behavioral patterns** — eager RETURN rate, self-correction rate, recursive `press()` usage, `console.log` usage, `let/const` usage, error rate
 - **Score and iteration distributions** — histograms with success rates
 - **Context-length breakdown** — for S-NIAH, accuracy and patterns grouped by context size
 
@@ -172,4 +191,4 @@ The analyzer reports:
 | `drivers/openrouter.ts` | OpenRouter `CallLLM` driver |
 | `data/` | Downloaded datasets (gitignored) |
 | `results/` | Benchmark result JSON files (gitignored) |
-| `analyses/` | Per-run analysis documents with hyperparameters, scores, and qualitative notes (gitignored) |
+| `analyses/` | Per-run analysis documents with hyperparameters, scores, and qualitative notes — 18 numbered directories covering OOLONG, ARC-AGI-2, and ARC-AGI-3 (gitignored) |

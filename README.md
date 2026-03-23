@@ -1,16 +1,204 @@
-# node-rlm
+# Press
 
-An LLM in a Node.js REPL loop that can call anything, including itself. The model writes JavaScript that runs in a persistent Node.js sandbox; the loop continues until it calls `return()`. Any invocation can spawn a child via `await rlm(query, context?)` -- same sandbox, separate message history and iteration budget.
+Press executes programs written in Markdown. You define services with input/output contracts, and an LLM wires and runs them -- reading the contracts, building a dependency graph, and spawning child loops to execute each service. Programs get better automatically as models improve, because they declare *what* to produce, not *how* to produce it.
 
-Only runtime dependency is `acorn` (JS parser). Currently supported with OpenRouter. Open to PRs for other APIs.
-
-## Quick Start
-
-Clone the repo and install dependencies:
+Press is an RLM (Recursive Language Model) -- a system where an LLM operates in a persistent REPL loop, writing and executing code until it completes a task. The model can recursively invoke itself via `press()` for subtasks.
 
 ```bash
-git clone https://github.com/openprose/node-rlm.git
-cd node-rlm
+npm install -g @openprose/press
+```
+
+## What Press Can Do: could-haiku
+
+[could-haiku](https://github.com/openprose/programs/tree/main/could-haiku) is a documentation quality measurement instrument. It spawns 4 service types across 14 instances:
+
+1. **scraper** -- fetches and parses the documentation site
+2. **tester** (x9, parallel) -- 3 agents at each of 3 capability tiers (haiku, sonnet, opus) independently attempt to understand and use the tool from its docs alone
+3. **synthesizer** -- cross-references results across tiers to identify clarity, complexity, and ambiguity patterns
+4. **reporter** -- produces a diagnostic with per-section scores and recommendations
+
+The program runs 9 testers in parallel, fans results into a synthesizer, and produces a structured report. Total execution: ~9 minutes, ~2M tokens. No glue code -- just Markdown files with contracts.
+
+## The Simplest Possible Program
+
+Here is the mechanics. A two-service program that uppercases text and reports on it:
+
+**index.md**
+```markdown
+---
+name: trivial-pipeline
+kind: program
+services: [uppercaser, reporter]
+---
+
+requires:
+- text: a piece of text to process
+
+ensures:
+- report: a summary showing the uppercased text and its character count
+```
+
+**uppercaser.md**
+```markdown
+---
+name: uppercaser
+kind: service
+---
+
+requires:
+- text: a piece of text
+
+ensures:
+- uppercased: the text converted to all uppercase
+```
+
+**reporter.md**
+```markdown
+---
+name: reporter
+kind: service
+---
+
+requires:
+- uppercased: uppercased text to report on
+
+ensures:
+- report: a summary showing the uppercased text and its character count
+```
+
+Run it:
+
+```bash
+press run ./my-program/index.md --text "hello world"
+```
+
+Press reads the contracts, wires `uppercaser.ensures.uppercased` to `reporter.requires.uppercased`, spawns each service as an LLM session, and returns the report. No glue code. The model satisfies the contracts.
+
+Prose programs default to declarative contracts -- the model decides how to satisfy them. Authors who need more control can specify explicit wiring (Level 2) or step-by-step execution blocks (Level 3) for determinism.
+
+## Contract Semantics in Action
+
+Contracts aren't just documentation -- they change behavior. Here's a service
+with shape constraints and strategies:
+
+```markdown
+---
+name: researcher
+kind: service
+shape:
+  self: [evaluate sources, score confidence]
+  delegates:
+    summarizer: [compression]
+  prohibited: [direct web scraping]
+---
+
+requires:
+- topic: a research question
+
+ensures:
+- findings: sourced claims from 3+ distinct sources, each with confidence 0-1
+- if sources are unavailable: partial findings from cached data, flagged as stale
+
+strategies:
+- when few sources found: broaden search terms
+- when many low-quality sources: prioritize academic and primary sources
+```
+
+**`shape.prohibited`** prevents the model from scraping -- it must use other
+tools. **`ensures` with a conditional clause** means the service degrades
+gracefully instead of failing. **`strategies`** guide behavior without being
+prescriptive -- the model adapts based on what it observes.
+
+Programs default to declarative contracts (the model decides how). Authors
+who need more control can pin the wiring (Level 2) or write explicit execution
+blocks (Level 3) for full determinism.
+
+## What Press Is For
+
+Press is designed for complex, multi-agent analytical and generative tasks where the overhead of the two-phase pipeline is amortized across many services.
+
+**Good fit:**
+- Documentation analysis with multiple independent evaluators (could-haiku)
+- Research pipelines with scraping, analysis, and synthesis stages
+- Content generation with iterative refinement (worker-critic loops)
+- Any task where you'd otherwise write 200+ lines of LLM orchestration code
+
+**Not a good fit:**
+- Simple, single-step LLM calls (use your model's API directly)
+- Tasks requiring sub-second latency
+- Deterministic pipelines where the output must be identical every run (though explicit execution blocks give you more control)
+
+**Typical costs:**
+- Simple 2-service program: ~50K tokens, ~60 seconds
+- Medium 4-service program: ~100K tokens, ~2 minutes
+- Complex 14-service program (could-haiku): ~2M tokens, ~9 minutes
+
+## How Is This Different?
+
+Most agent frameworks orchestrate LLM calls -- you write code that chains prompts together. Press gives the LLM a sandbox and lets it write programs. The model reads your contracts, decides how to satisfy them, and writes JavaScript to do so.
+
+The key difference: **Press programs improve when you swap in a smarter model, without changing any code.** A more capable model satisfies the same contracts more efficiently. Your programs are assets that appreciate with model capability.
+
+Press also has no tool-calling, no function schemas, no API wrappers. The model's only tool is a JavaScript sandbox with `press()` for recursion and `RETURN()` for completion. One runtime dependency (`acorn`).
+
+## How It Works
+
+Press runs Prose programs in two phases:
+
+1. **Forme (wiring)** -- The LLM reads the program's contracts, builds a dependency graph, and writes a `manifest.md`. This is the Forme container phase: auto-wiring `requires` against `ensures`.
+
+2. **Prose VM (execution)** -- The LLM reads the manifest and walks the execution order. For each service, it calls `press("serviceName", { inputs, workspace })`, which spawns a child REPL loop with the service definition and resolved inputs.
+
+Key design decisions:
+
+- **The model IS the CPU.** Press builds system prompts and runs the sandbox. The LLM reads specs and writes code. Press is the computer; the model is the intelligence.
+- **Services communicate via filesystem.** Each service gets a workspace directory. Outputs are written to files, then copied to the parent's bindings. State is managed on disk, not in memory.
+- **`press()` for delegation, `RETURN()` to complete.** Two primitives. `press("researcher", { inputs })` spawns a child session. `RETURN(value)` ends the current loop. `console.log()` observes. `context` holds input data.
+- **Pass by reference, resolve on entry.** The VM passes file paths to children. Press resolves them to content when building the child's system prompt. Children see values, not paths.
+
+## What Press Does vs What the Model Does
+
+| Action | Who |
+|---|---|
+| Build system prompt for each phase (load specs, wrap in XML) | Press |
+| Run the REPL loop (call LLM, extract code, execute, observe) | Press |
+| Resolve input paths to content for child press() calls | Press |
+| Execute code blocks in sandbox | Press |
+| **Everything below: the model** | |
+| Read service files, parse contracts, wire dependencies | Model |
+| Write manifest with dependency graph | Model |
+| Create directory structure, manage state.md | Model |
+| Decide when to call press() and with what arguments | Model |
+| Decide when to use Promise.all for parallelism | Model |
+| Copy files from workspace to bindings | Model |
+| Evaluate contract satisfaction, handle errors | Model |
+
+## Eval Results
+
+| Program | Model | Status | Time | Tokens |
+|---|---|---|---|---|
+| trivial-pipeline | Sonnet 4.6 | PASS | 64s | 50K |
+| parallel-analysis | Sonnet 4.6 | PASS | 65s | 58K |
+| haiku-refiner | Sonnet 4.6 | PASS | 157s | 89K |
+| bilingual-haiku | Sonnet 4.6 | PASS | 196s | 97K |
+| error-handling | Sonnet 4.6 | PASS | 101s | 68K |
+| could-haiku | Sonnet 4.6 | PASS | 544s | ~2M |
+
+## Quick Start (Use Press)
+
+Requires Node.js >= 20.
+
+```bash
+npm install -g @openprose/press
+export OPENROUTER_API_KEY="your-key"
+press run your-program/index.md --text "hello world"
+```
+
+## Development (Contribute to Press)
+
+```bash
+git clone https://github.com/openprose/press.git
+cd press
 npm install
 ```
 
@@ -21,189 +209,91 @@ cp .env.example .env
 # Edit .env and set OPENROUTER_API_KEY
 ```
 
-Run a query:
-
-```bash
-npx tsx src/cli.ts --query "What is the capital of France?"
-```
-
-Run a quick eval:
-
-```bash
-# S-NIAH (synthetic, no download needed)
-npx tsx eval/run.ts --benchmark s-niah --model anthropic/claude-sonnet-4-20250514 --max-tasks 5
-
-# OOLONG (requires one-time dataset download)
-npx tsx eval/download.ts
-npx tsx eval/run.ts --benchmark oolong --model anthropic/claude-sonnet-4-20250514 --max-tasks 5
-```
-
-See [eval/README.md](eval/README.md) for the full set of eval options, plugin configuration, and result analysis.
-
-## CLI
-
-```bash
-npx node-rlm --query "What is the capital of France?"
-npx node-rlm --query "Summarize this file" --context-file ./data.txt
-npx node-rlm --query "Find all TODO comments" --context-dir ./src/
-npx node-rlm --query "Analyze this data" --model openai/gpt-4o
-npx node-rlm --query "Hello" --model custom/my-model --base-url http://localhost:11434/v1
-```
-
-| Flag                    | Default                                    | Description                                               |
-| ----------------------- | ------------------------------------------ | --------------------------------------------------------- |
-| `--query <text>`        | (required)                                 | The question or task                                      |
-| `--context-file <path>` | --                                         | Load context from a file                                  |
-| `--context-dir <path>`  | --                                         | Load context from a directory (concatenates all files)    |
-| `--model <provider/id>` | `openrouter/google/gemini-3-flash-preview` | Model in `provider/model-id` format                       |
-| `--base-url <url>`      | --                                         | Custom API base URL (for Ollama, vLLM, etc.)              |
-| `--max-iterations <n>`  | 15                                         | Maximum REPL loop iterations (root)                       |
-| `--max-depth <n>`       | 3                                          | Maximum recursion depth; agents at maxDepth cannot call `rlm()` |
-| `--model-alias <spec>`  | --                                         | Add or override a named model alias (repeatable)          |
-
-#### Model aliases
-
-Three default aliases are always available -- no flags needed:
-
-| Alias          | Tags                    | Model              | Description             |
-| -------------- | ----------------------- | ------------------ | ----------------------- |
-| `fast`         | fast, cheap             | Gemini 3 Flash     | Fast and cheap          |
-| `orchestrator` | orchestrator, medium    | Claude Sonnet 4.5  | Balanced orchestration  |
-| `intelligent`  | intelligent, expensive  | Claude Opus 4.6    | Highest capability      |
-
-Use `--model-alias` to add new aliases or override the defaults. Format: `alias=provider/model[:tag1,tag2,...]`
-
-```bash
-# Override the "fast" default and add a new "smart" alias
-npx node-rlm --query "Analyze this dataset" \
-  --model-alias fast=openrouter/openai/gpt-4o-mini:fast,cheap \
-  --model-alias smart=openrouter/anthropic/claude-sonnet-4:intelligent,thorough
-```
-
-The agent sees an "Available Models" table in its system prompt and can delegate with `await rlm("subtask", data, { model: "fast" })` or `await rlm("classify this", item, { model: "fast", maxIterations: 1 })` for cheap one-shot calls.
-
-### Providers
-
-The CLI routes models by the first path segment:
-
-- `openrouter/*` -- OpenRouter API (`OPENROUTER_API_KEY`)
-- `openai/*` -- OpenAI API (`OPENAI_API_KEY`)
-- `custom/*` -- requires `--base-url` and the relevant env var
-
-## Programmatic API
-
-```typescript
-import { rlm, DEFAULT_MODEL_ALIASES } from "node-rlm";
-import { fromProviderModel } from "node-rlm/drivers/openrouter-compatible";
-
-const callLLM = fromProviderModel("openrouter/google/gemini-3-flash-preview");
-const result = await rlm("What is 2 + 2?", undefined, {
-  callLLM,
-  maxIterations: 15,
-  maxDepth: 3,
-});
-
-console.log(result.answer); // "4"
-console.log(result.iterations); // number of REPL turns used
-console.log(result.trace); // { reasoning, code, output, error } per turn
-```
-
-To build a `models` map from the defaults:
-
-```typescript
-const models = Object.fromEntries(
-  Object.entries(DEFAULT_MODEL_ALIASES).map(([alias, def]) => [
-    alias,
-    { callLLM: fromProviderModel(def.modelId), tags: def.tags, description: def.description },
-  ]),
-);
-
-const result = await rlm("Analyze this", data, { callLLM, models });
-```
-
-### `rlm(query, context?, options)`
-
-Returns `RlmResult`: `{ answer, iterations, trace }`.
-
-Throws `RlmMaxIterationsError` if the iteration budget is exhausted (carries partial `trace` for inspection).
-
-### Options
-
-| Option          | Type      | Default    | Description                                                  |
-| --------------- | --------- | ---------- | ------------------------------------------------------------ |
-| `callLLM`       | `CallLLM` | (required) | `(messages, systemPrompt) => Promise<string>`                |
-| `maxIterations` | `number`  | 15         | REPL loop budget for the root agent                          |
-| `maxDepth`      | `number`  | 3          | Recursion depth limit                                        |
-| `pluginBodies`  | `string`  | --         | Extra prompt text appended to the root agent's system prompt |
-| `models`        | `Record<string, ModelEntry>` | -- | Named model aliases for child delegation; build from `DEFAULT_MODEL_ALIASES` or supply your own |
-| `globalDocs`    | `string`  | --         | Documentation appended to every agent's system prompt at every depth (for documenting sandbox globals) |
-
-### Sandbox globals
-
-These are available to the model inside the REPL:
-
-| Symbol                                          | Description                                                                                                             |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `context`                                       | Task data (reads `__ctx.local.context`, falling back to `__ctx.shared.data`).                                           |
-| `console.log()`                                 | Output visible to the model between iterations.                                                                         |
-| `return(value)`                                 | Ends the loop and sets the final answer. First-iteration returns are intercepted for verification.                      |
-| `await rlm(query, context?, { systemPrompt?, model?, maxIterations? })` | Spawn a child RLM. Shared sandbox, own message history. `model` selects an alias (default aliases are pre-configured). `maxIterations` sets the child's iteration budget (omit to inherit parent's budget). Must be awaited. |
-| `__rlm`                                         | Read-only delegation context: `depth`, `maxDepth`, `iteration`, `maxIterations`, `lineage`, `invocationId`, `parentId`. |
-| `__ctx.shared.data`                             | Root context (frozen, readable by all depths).                                                                          |
-| `__ctx.local`                                   | This invocation's writable workspace.                                                                                   |
-| `__ctx.readLocal(id)`                           | Read-only view of another invocation's local store.                                                                     |
-| `require()`                                     | Node.js built-in modules only.                                                                                          |
-
-The sandbox is shared across depths. Children inherit the parent's `maxIterations` by default; the parent can override via the `maxIterations` option on `rlm()`. All agents at every depth are full REPL agents with code execution and iteration loops; agents at `depth >= maxDepth` simply cannot call `rlm()`.
-
-## Plugins
-
-Plugins are markdown files that get concatenated into the root agent's system prompt via `pluginBodies`.
-
-- `lib/drivers/` -- Model-specific reliability patches (e.g., enforce await discipline, verify-before-return). Stack multiple per run.
-- `lib/profiles/` -- Profiles use YAML frontmatter to map model name patterns to a list of drivers. The plugin loader picks the right profile automatically.
-
-```typescript
-import { loadStack } from "node-rlm/plugins"; // or import from source
-const pluginBodies = await loadStack({
-  model: "openrouter/google/gemini-3-flash-preview", // auto-detects profile
-  use: "structured-data-aggregation",
-});
-```
-
-## Project structure
-
-```
-src/
-  rlm.ts              The core REPL loop and delegation logic
-  system-prompt.ts    System prompts and child templates
-  plugins.ts          Plugin loader (loadStack, loadPlugins, loadProfile, detectProfile)
-  environment.ts      vm-based sandbox
-  cli.ts              CLI entry point
-  drivers/
-    openrouter-compatible.ts   CallLLM adapter for OpenAI-compatible APIs
-
-programs/             Domain-specific compositions (multi-file programs)
-lib/
-  drivers/            Model-specific reliability patches
-  profiles/           Model-to-driver mappings
-  composites/         Multi-agent structural patterns (standard library)
-  roles/              Single-agent reusable behaviors (standard library)
-  controls/           Delegation flow patterns (standard library)
-
-eval/                 Benchmark harness (OOLONG, S-NIAH, ARC, ARC-AGI-3) -- see eval/README.md
-test/                 Vitest tests
-```
-
-## Testing
-
-Unit tests (no API key needed):
+Run tests (no API key needed):
 
 ```bash
 npm test
 ```
 
-End-to-end tests run automatically when `OPENROUTER_API_KEY` is set, and are skipped otherwise.
+## Programmatic API
+
+```typescript
+import { pressRun } from "@openprose/press";
+
+const result = await pressRun({
+  callLLM,
+  specDir: "./prose-specs",
+  programPath: "./my-program/index.md",
+  programDir: "./my-program",
+  callerInputs: { text: "hello world" },
+});
+
+console.log(result.answer);
+console.log(result.phaseResults.forme.iterations); // Forme iterations used
+console.log(result.phaseResults.vm.iterations);     // VM iterations used
+```
+
+### Options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `callLLM` | `CallLLM` | (required) | `(messages, systemPrompt) => Promise<string>` |
+| `specDir` | `string` | (required) | Directory containing `prose.md`, `forme.md`, etc. |
+| `programPath` | `string` | (required) | Path to the program entry point (`.md` file) |
+| `programDir` | `string` | (required) | Directory containing the program and service files |
+| `callerInputs` | `Record<string, string>` | (required) | User inputs matching the program's `requires` |
+| `maxIterations` | `number` | 15 | Iteration budget per phase |
+| `maxDepth` | `number` | 3 | Delegation depth limit |
+
+## Prose/Forme Specs
+
+Press needs the Prose and Forme specification files (`prose.md`, `forme.md`,
+`session.md`, `filesystem.md`) to tell the LLM how to wire and execute programs.
+
+**CLI users:** Press resolves specs automatically from the companion
+[openprose/prose](https://github.com/openprose/prose) repository. If you've
+cloned both repos as siblings, it just works. Otherwise, set `--spec-dir` or
+the `PRESS_SPEC_DIR` environment variable.
+
+**Programmatic API users:** Pass `specDir` pointing to the directory containing
+the spec files. Clone the [prose repo](https://github.com/openprose/prose) and
+point to `prose/skills/open-prose/`:
+
+```typescript
+const result = await pressRun({
+  specDir: "./prose/skills/open-prose",
+  // ...
+});
+```
+
+The specs define how the LLM acts as the Forme container (wiring) and the
+Prose VM (execution). They are the "instruction set" of the Press computer.
+
+## Eval Pipeline
+
+Run the eval suite:
+
+```bash
+npx tsx src/eval-pipeline.ts
+```
+
+This runs all programs in the default spec against Sonnet 4.6, tracks tokens and timing, and writes results to `eval-results/`. Use `--concurrency` to control parallelism, `--spec-file` for custom specs.
+
+## Architecture: Relationship to OpenProse
+
+Think of it like the Java ecosystem: **Prose** is the language, **Forme** is Spring (the wiring framework), **Press** is the JVM (the computer that runs it).
+
+- **Press** is the runtime (this repo). MIT licensed.
+- **Prose** is the programming language. Programs are Markdown files with contracts.
+- **Forme** is the wiring framework. It reads contracts and produces a manifest.
+- The language and specs live at [github.com/openprose/prose](https://github.com/openprose/prose).
+
+## See Also
+
+- [LANGUAGE.md](LANGUAGE.md) -- Press runtime documentation
+- [CONTAINER.md](CONTAINER.md) -- Container and execution model
+- [TENETS.md](TENETS.md) -- Design principles
+- [Prose](https://github.com/openprose/prose) -- The programming language Press executes
 
 ## License
 

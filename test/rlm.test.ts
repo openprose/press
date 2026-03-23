@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { type CallLLM, type CallLLMResponse, rlm } from "../src/rlm.js";
+import { type CallLLM, type CallLLMResponse, press } from "../src/rlm.js";
+import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 function mockToolCallLLM(responses: CallLLMResponse[]): CallLLM {
 	let callIndex = 0;
@@ -15,17 +18,17 @@ function tc(code: string, toolUseId = "t"): CallLLMResponse {
 	return { reasoning: "", code, toolUseId };
 }
 
-describe("rlm", () => {
+describe("press", () => {
 	it("simple return", async () => {
 		const callLLM = mockToolCallLLM([tc('return "hello"', "t1"), tc('return "hello"', "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("hello");
 		expect(result.iterations).toBe(2);
 	});
 
 	it("multi-iteration", async () => {
 		const callLLM = mockToolCallLLM([tc('console.log("thinking...")', "t1"), tc('return "done"', "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("done");
 		expect(result.iterations).toBe(2);
 	});
@@ -35,14 +38,14 @@ describe("rlm", () => {
 			{ reasoning: "Let me think about this...", code: null, toolUseId: "t1" },
 			tc('return "answer"', "t2"),
 		]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("answer");
 		expect(result.iterations).toBe(2);
 	});
 
 	it("error recovery", async () => {
 		const callLLM = mockToolCallLLM([tc('throw new Error("oops")', "t1"), tc('return "recovered"', "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("recovered");
 		expect(result.iterations).toBe(2);
 	});
@@ -53,38 +56,45 @@ describe("rlm", () => {
 			tc('console.log("loop 2")', "t2"),
 			tc('console.log("loop 3")', "t3"),
 		]);
-		await expect(rlm("test query", undefined, { callLLM, maxIterations: 3 })).rejects.toThrow("max iterations");
+		await expect(press("test query", undefined, { callLLM, maxIterations: 3 })).rejects.toThrow("max iterations");
 	});
 
 	it("context accessible as variable", async () => {
-		const callLLM = mockToolCallLLM([tc("return context", "t1"), tc("return context", "t2")]);
-		const result = await rlm("test query", "my context data", { callLLM });
+		const callLLM = mockToolCallLLM([tc("return context.data", "t1"), tc("return context.data", "t2")]);
+		const result = await press("test query", { data: "my context data" }, { callLLM });
 		expect(result.answer).toBe("my context data");
+	});
+
+	it("string context throws error", async () => {
+		const callLLM = mockToolCallLLM([tc('return "nope"', "t1")]);
+		await expect(
+			press("test query", "my context data" as unknown as Record<string, unknown>, { callLLM }),
+		).rejects.toThrow("press() context must be an object, got string");
 	});
 
 	it("return stringifies non-strings", async () => {
 		const callLLM = mockToolCallLLM([tc("return 42", "t1"), tc("return 42", "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("42");
 	});
 
 	it("bare assignment persists across iterations", async () => {
 		const callLLM = mockToolCallLLM([tc("x = 42", "t1"), tc("return x", "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("42");
 		expect(result.iterations).toBe(2);
 	});
 
-	it("rlm(): child returns to parent", async () => {
+	it("press(): child returns to parent", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "child query") {
 				return { reasoning: "", code: 'return "child answer"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'result = await rlm("child query")\nreturn result', toolUseId: "tp" };
+			return { reasoning: "", code: 'result = await press("child query")\nreturn result', toolUseId: "tp" };
 		};
 
-		const result = await rlm("parent query", undefined, { callLLM });
+		const result = await press("parent query", undefined, { callLLM });
 		expect(result.answer).toBe("child answer");
 	});
 
@@ -95,7 +105,7 @@ describe("rlm", () => {
 			const userMsg = messages[0]?.content || "";
 
 			if (userMsg === "parent query") {
-				return { reasoning: "", code: 'const r = await rlm("sub query")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("sub query")\nreturn r', toolUseId: "tp" };
 			}
 			if (userMsg === "sub query") {
 				return { reasoning: "", code: 'return "child answer"', toolUseId: "tc" };
@@ -103,7 +113,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "unexpected"', toolUseId: "tx" };
 		};
 
-		const result = await rlm("parent query", undefined, { callLLM, maxDepth: 1 });
+		const result = await press("parent query", undefined, { callLLM, maxDepth: 1 });
 		expect(result.answer).toBe("child answer");
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("console.log");
@@ -111,20 +121,20 @@ describe("rlm", () => {
 		expect(childPrompt).toContain("maximum delegation depth");
 	});
 
-	it("rlm() at max depth rejects", async () => {
+	it("press() at max depth rejects", async () => {
 		const callLLM: CallLLM = async (messages) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "parent query") {
-				return { reasoning: "", code: 'const r = await rlm("sub query")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("sub query")\nreturn r', toolUseId: "tp" };
 			}
 			if (userMsg === "sub query") {
-				return { reasoning: "", code: 'const r = await rlm("grandchild")\nreturn r', toolUseId: "tc" };
+				return { reasoning: "", code: 'const r = await press("grandchild")\nreturn r', toolUseId: "tc" };
 			}
 			return { reasoning: "", code: 'return "unexpected"', toolUseId: "tx" };
 		};
 
 		// maxDepth=1: root(0) can delegate, child(1) cannot
-		await expect(rlm("parent query", undefined, {
+		await expect(press("parent query", undefined, {
 			callLLM,
 			maxDepth: 1,
 			maxIterations: 2,
@@ -133,7 +143,7 @@ describe("rlm", () => {
 
 	it("let/const persists across iterations", async () => {
 		const callLLM = mockToolCallLLM([tc("let x = 42", "t1"), tc("return x", "t2")]);
-		const result = await rlm("test query", undefined, { callLLM });
+		const result = await press("test query", undefined, { callLLM });
 		expect(result.answer).toBe("42");
 		expect(result.iterations).toBe(2);
 	});
@@ -150,7 +160,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
 		};
 
-		await rlm("test query", undefined, { callLLM });
+		await press("test query", undefined, { callLLM });
 
 		expect(secondCallMessages).toBeDefined();
 		const lastMsg = secondCallMessages![secondCallMessages!.length - 1];
@@ -158,19 +168,19 @@ describe("rlm", () => {
 		expect(lastMsg.role).toBe("user");
 	});
 
-	it("__rlm: root depth 0, correct lineage", async () => {
+	it("__press: root depth 0, correct lineage", async () => {
 		let capturedMessages: Array<{ role: string; content: string }> | undefined;
 		let callIndex = 0;
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { reasoning: "", code: 'console.log(JSON.stringify(__rlm))', toolUseId: "t1" };
+				return { reasoning: "", code: 'console.log(JSON.stringify(__press))', toolUseId: "t1" };
 			}
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
 		};
 
-		await rlm("my query", undefined, {
+		await press("my query", undefined, {
 			callLLM,
 			maxDepth: 3,
 			maxIterations: 10,
@@ -184,33 +194,33 @@ describe("rlm", () => {
 		expect(parsed.lineage).toEqual(["my query"]);
 	});
 
-	it("__rlm: child depth 1, parent in lineage", async () => {
+	it("__press: child depth 1, parent in lineage", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "child task") {
-				return { reasoning: "", code: 'console.log(JSON.stringify(__rlm))\nreturn "child done"', toolUseId: "tc" };
+				return { reasoning: "", code: 'console.log(JSON.stringify(__press))\nreturn "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task")\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
 		};
 
-		const result = await rlm("parent task", undefined, { callLLM, maxDepth: 3 });
+		const result = await press("parent task", undefined, { callLLM, maxDepth: 3 });
 
 		expect(result.answer).toBe("child done");
 	});
 
-	it("__rlm: iteration increments", async () => {
+	it("__press: iteration increments", async () => {
 		let lastMessages: Array<{ role: string; content: string }> | undefined;
 		let callIndex = 0;
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			lastMessages = [...messages];
 			if (callIndex <= 2) {
-				return { reasoning: "", code: 'console.log("iter=" + __rlm.iteration)', toolUseId: `t${callIndex}` };
+				return { reasoning: "", code: 'console.log("iter=" + __press.iteration)', toolUseId: `t${callIndex}` };
 			}
-			return { reasoning: "", code: 'console.log("iter=" + __rlm.iteration)\nreturn "done"', toolUseId: `t${callIndex}` };
+			return { reasoning: "", code: 'console.log("iter=" + __press.iteration)\nreturn "done"', toolUseId: `t${callIndex}` };
 		};
 
-		await rlm("test", undefined, { callLLM });
+		await press("test", undefined, { callLLM });
 		const allOutput = lastMessages!
 			.filter(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"))
 			.map(m => m.content)
@@ -219,35 +229,35 @@ describe("rlm", () => {
 		expect(iters).toEqual([0, 1]);
 	});
 
-	it("__rlm: frozen", async () => {
+	it("__press: frozen", async () => {
 		let capturedMessages: Array<{ role: string; content: string }> | undefined;
 		let callIndex = 0;
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { reasoning: "", code: '__rlm.depth = 99\nconsole.log("depth=" + __rlm.depth)', toolUseId: "t1" };
+				return { reasoning: "", code: '__press.depth = 99\nconsole.log("depth=" + __press.depth)', toolUseId: "t1" };
 			}
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
 		};
-		await rlm("test", undefined, { callLLM });
+		await press("test", undefined, { callLLM });
 		const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
 		// In sloppy mode, assignment silently fails; depth stays 0
 		expect(toolResult!.content).toContain("depth=0");
 	});
 
-	it("__rlm: lineage frozen", async () => {
+	it("__press: lineage frozen", async () => {
 		let capturedMessages: Array<{ role: string; content: string }> | undefined;
 		let callIndex = 0;
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { reasoning: "", code: 'try { __rlm.lineage.push("hacked") } catch(e) { console.log("lineage frozen: " + e.message) }', toolUseId: "t1" };
+				return { reasoning: "", code: 'try { __press.lineage.push("hacked") } catch(e) { console.log("lineage frozen: " + e.message) }', toolUseId: "t1" };
 			}
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
 		};
-		await rlm("test", undefined, { callLLM });
+		await press("test", undefined, { callLLM });
 		const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
 		expect(toolResult!.content).toContain("lineage frozen:");
 	});
@@ -256,27 +266,27 @@ describe("rlm", () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "child query") {
-				return { reasoning: "", code: 'console.log("child sees: " + context)\nreturn context', toolUseId: "tc" };
+				return { reasoning: "", code: 'console.log("child sees: " + context.data)\nreturn context.data', toolUseId: "tc" };
 			}
 			// Parent: first call spawns child with different context, second verifies parent context
 			if (messages.length <= 1) {
-				return { reasoning: "", code: 'const childResult = await rlm("child query", "child context")\nconsole.log("parent still sees: " + context)', toolUseId: "tp1" };
+				return { reasoning: "", code: 'const childResult = await press("child query", { data: "child context" })\nconsole.log("parent still sees: " + context.data)', toolUseId: "tp1" };
 			}
-			return { reasoning: "", code: "return context", toolUseId: "tp2" };
+			return { reasoning: "", code: "return context.data", toolUseId: "tp2" };
 		};
 
-		const result = await rlm("parent query", "parent context", { callLLM, maxDepth: 3 });
+		const result = await press("parent query", { data: "parent context" }, { callLLM, maxDepth: 3 });
 		expect(result.answer).toBe("parent context");
 	});
 
-	it("unawaited rlm() auto-awaited", async () => {
+	it("unawaited press() auto-awaited", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "fire and forget") {
 				return { reasoning: "", code: 'return "child"', toolUseId: "tc" };
 			}
 			if (messages.length <= 1) {
-				return { reasoning: "", code: 'rlm("fire and forget")\nconsole.log("continued")', toolUseId: "tp1" };
+				return { reasoning: "", code: 'press("fire and forget")\nconsole.log("continued")', toolUseId: "tp1" };
 			}
 			const lastMsg = messages[messages.length - 1]?.content || "";
 			if (lastMsg.includes("ERROR")) {
@@ -285,11 +295,11 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "no warning"', toolUseId: "tp3" };
 		};
 
-		const result = await rlm("test", undefined, { callLLM, maxDepth: 3 });
+		const result = await press("test", undefined, { callLLM, maxDepth: 3 });
 		expect(result.answer).toBe("no warning");
 	});
 
-	it("parallel rlm() via Promise.all", async () => {
+	it("parallel press() via Promise.all", async () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "task A") {
@@ -298,88 +308,11 @@ describe("rlm", () => {
 			if (userMsg === "task B") {
 				return { reasoning: "", code: 'return "result B"', toolUseId: "tb" };
 			}
-			return { reasoning: "", code: 'const [a, b] = await Promise.all([rlm("task A"), rlm("task B")])\nreturn a + " + " + b', toolUseId: "tp" };
+			return { reasoning: "", code: 'const [a, b] = await Promise.all([press("task A"), press("task B")])\nreturn a + " + " + b', toolUseId: "tp" };
 		};
 
-		const result = await rlm("parent", undefined, { callLLM, maxDepth: 3 });
+		const result = await press("parent", undefined, { callLLM, maxDepth: 3 });
 		expect(result.answer).toBe("result A + result B");
-	});
-
-	it("pluginBodies: in root prompt", async () => {
-		let capturedSystemPrompt = "";
-		const callLLM: CallLLM = async (_messages, systemPrompt) => {
-			capturedSystemPrompt = systemPrompt;
-			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
-		};
-
-		await rlm("test", undefined, {
-			callLLM,
-			pluginBodies: "## My Plugin\nDo special things.",
-		});
-
-		expect(capturedSystemPrompt).toContain("## My Plugin");
-		expect(capturedSystemPrompt).toContain("Do special things.");
-	});
-
-	it("pluginBodies: absent when undefined", async () => {
-		let capturedSystemPrompt = "";
-		const callLLM: CallLLM = async (_messages, systemPrompt) => {
-			capturedSystemPrompt = systemPrompt;
-			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
-		};
-
-		await rlm("test", undefined, { callLLM });
-
-		expect(capturedSystemPrompt).not.toContain("<rlm-program>");
-	});
-
-	it("pluginBodies: not in child prompt", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child task") {
-				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'const r = await rlm("child task")\nreturn r', toolUseId: "tp" };
-		};
-
-		await rlm("parent task", undefined, {
-			callLLM,
-			maxDepth: 3,
-			pluginBodies: "## My Plugin\nDo special things.",
-		});
-
-		expect(systemPrompts[0]).toContain("## My Plugin");
-		const childPrompt = systemPrompts[1];
-		expect(childPrompt).not.toContain("## My Plugin");
-		expect(childPrompt).not.toContain("Do special things.");
-	});
-
-	it("pluginBodies: not in max-depth child", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "parent task") {
-				return { reasoning: "", code: 'const r = await rlm("sub query")\nreturn r', toolUseId: "tp" };
-			}
-			if (userMsg === "sub query") {
-				return { reasoning: "", code: 'return "child answer"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'return "unexpected"', toolUseId: "tx" };
-		};
-
-		await rlm("parent task", undefined, {
-			callLLM,
-			maxDepth: 1,
-			pluginBodies: "## My Plugin\nDo special things.",
-		});
-
-		expect(systemPrompts[0]).toContain("## My Plugin");
-		const childPrompt = systemPrompts[1];
-		expect(childPrompt).not.toContain("## My Plugin");
-		expect(childPrompt).not.toContain("Do special things.");
 	});
 
 	it("model selection: child uses specified model", async () => {
@@ -389,7 +322,7 @@ describe("rlm", () => {
 			if (userMsg === "hello") {
 				return { reasoning: "", code: 'return "FAST_MODEL response"', toolUseId: "td" };
 			}
-			return { reasoning: "", code: 'result = await rlm("hello", undefined, { model: "fast" })\nreturn result', toolUseId: "tp" };
+			return { reasoning: "", code: 'result = await press("hello", undefined, { model: "fast" })\nreturn result', toolUseId: "tp" };
 		};
 
 		const fastCallLLM: CallLLM = async (_messages, _systemPrompt) => {
@@ -397,7 +330,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "FAST_MODEL response"', toolUseId: "tf" };
 		};
 
-		const result = await rlm("parent query", undefined, {
+		const result = await press("parent query", undefined, {
 			callLLM: defaultCallLLM,
 			maxDepth: 3,
 			models: {
@@ -415,13 +348,13 @@ describe("rlm", () => {
 		const defaultCallLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { reasoning: "", code: 'result = await rlm("hello", undefined, { model: "nonexistent" })\nreturn result', toolUseId: "t1" };
+				return { reasoning: "", code: 'result = await press("hello", undefined, { model: "nonexistent" })\nreturn result', toolUseId: "t1" };
 			}
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "saw error"', toolUseId: "t2" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM: defaultCallLLM,
 			maxDepth: 3,
 			models: {
@@ -439,7 +372,7 @@ describe("rlm", () => {
 			tc('return myApi.greet("world")', "t1"),
 			tc('return myApi.greet("world")', "t2"),
 		]);
-		const result = await rlm("test query", undefined, {
+		const result = await press("test query", undefined, {
 			callLLM,
 			sandboxGlobals: { myApi: mockObj },
 		});
@@ -453,7 +386,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM,
 			globalDocs: "The `myApi` global provides X and Y.",
 		});
@@ -470,10 +403,10 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task")\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task")\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			globalDocs: "The `myApi` global provides X and Y.",
@@ -491,10 +424,10 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { systemPrompt: "You are a helper." })\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task", undefined, { systemPrompt: "You are a helper." })\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			globalDocs: "The `myApi` global provides X and Y.",
@@ -502,7 +435,8 @@ describe("rlm", () => {
 
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("You are a helper.");
-		expect(childPrompt).toContain("The `myApi` global provides X and Y.");
+		// With customSystemPrompt, it replaces the default prompt entirely.
+		// globalDocs are NOT included — the custom prompt is self-contained.
 	});
 
 	it("globalDocs: in max-depth child prompt", async () => {
@@ -511,7 +445,7 @@ describe("rlm", () => {
 			systemPrompts.push(systemPrompt);
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "parent task") {
-				return { reasoning: "", code: 'const r = await rlm("sub query")\nreturn r', toolUseId: "tp" };
+				return { reasoning: "", code: 'const r = await press("sub query")\nreturn r', toolUseId: "tp" };
 			}
 			if (userMsg === "sub query") {
 				return { reasoning: "", code: 'return "child answer"', toolUseId: "tc" };
@@ -519,7 +453,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "unexpected"', toolUseId: "tx" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 1,
 			globalDocs: "The `myApi` global provides X and Y.",
@@ -535,16 +469,15 @@ describe("rlm", () => {
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
 			const userMsg = messages[0]?.content || "";
 			if (userMsg === "greet world") {
-				// Child agent -- verify globalDocs is in prompt and use the global
 				if (!systemPrompt.includes("myApi.greet")) {
 					return { reasoning: "", code: 'return "FAIL: no globalDocs"', toolUseId: "tc" };
 				}
 				return { reasoning: "", code: 'return myApi.greet("world")', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("greet world")\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("greet world")\nreturn r', toolUseId: "tp" };
 		};
 
-		const result = await rlm("parent task", undefined, {
+		const result = await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			sandboxGlobals: { myApi: mockApi },
@@ -561,7 +494,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, { callLLM });
+		await press("test", undefined, { callLLM });
 
 		expect(capturedSystemPrompt).not.toContain("## Sandbox Globals");
 	});
@@ -574,10 +507,10 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "test-component" })\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "test-component" })\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			childComponents: { "test-component": "You are a test component.\n\nDo test things." },
@@ -586,30 +519,8 @@ describe("rlm", () => {
 		const childPrompt = systemPrompts[1];
 		expect(childPrompt).toContain("You are a test component.");
 		expect(childPrompt).toContain("Do test things.");
-		expect(childPrompt).toContain("<rlm-environment>");
-	});
-
-	it("app: child receives component prompt (backwards compat)", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child task") {
-				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { app: "test-app" })\nreturn r', toolUseId: "tp" };
-		};
-
-		await rlm("parent task", undefined, {
-			callLLM,
-			maxDepth: 3,
-			childComponents: { "test-app": "You are a test app.\n\nDo test things." },
-		});
-
-		const childPrompt = systemPrompts[1];
-		expect(childPrompt).toContain("You are a test app.");
-		expect(childPrompt).toContain("Do test things.");
-		expect(childPrompt).toContain("<rlm-environment>");
+		// With customSystemPrompt (from `use`), the component IS the full prompt.
+		// No generic <press-environment> wrapping.
 	});
 
 	it("use: unknown name errors with list", async () => {
@@ -618,13 +529,13 @@ describe("rlm", () => {
 		const callLLM: CallLLM = async (messages, _systemPrompt) => {
 			callIndex++;
 			if (callIndex === 1) {
-				return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "nonexistent" })\nreturn r', toolUseId: "t1" };
+				return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "nonexistent" })\nreturn r', toolUseId: "t1" };
 			}
 			capturedMessages = [...messages];
 			return { reasoning: "", code: 'return "saw error"', toolUseId: "t2" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM,
 			maxDepth: 3,
 			childComponents: { "test-component": "body1", "other-component": "body2" },
@@ -636,30 +547,6 @@ describe("rlm", () => {
 		expect(toolResult!.content).toContain("other-component");
 	});
 
-	it("app: unknown name errors with list (backwards compat)", async () => {
-		let capturedMessages: Array<{ role: string; content: string }> | undefined;
-		let callIndex = 0;
-		const callLLM: CallLLM = async (messages, _systemPrompt) => {
-			callIndex++;
-			if (callIndex === 1) {
-				return { reasoning: "", code: 'const r = await rlm("child task", undefined, { app: "nonexistent" })\nreturn r', toolUseId: "t1" };
-			}
-			capturedMessages = [...messages];
-			return { reasoning: "", code: 'return "saw error"', toolUseId: "t2" };
-		};
-
-		await rlm("test", undefined, {
-			callLLM,
-			maxDepth: 3,
-			childComponents: { "test-app": "body1", "other-app": "body2" },
-		});
-
-		const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
-		expect(toolResult!.content).toContain("Unknown component");
-		expect(toolResult!.content).toContain("test-app");
-		expect(toolResult!.content).toContain("other-app");
-	});
-
 	it("use + systemPrompt concatenated", async () => {
 		const systemPrompts: string[] = [];
 		const callLLM: CallLLM = async (messages, systemPrompt) => {
@@ -668,10 +555,10 @@ describe("rlm", () => {
 			if (userMsg === "child task") {
 				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
 			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "test-component", systemPrompt: "Extra instructions." })\nreturn r', toolUseId: "tp" };
+			return { reasoning: "", code: 'const r = await press("child task", undefined, { use: "test-component", systemPrompt: "Extra instructions." })\nreturn r', toolUseId: "tp" };
 		};
 
-		await rlm("parent task", undefined, {
+		await press("parent task", undefined, {
 			callLLM,
 			maxDepth: 3,
 			childComponents: { "test-component": "You are a test component.\n\nDo test things." },
@@ -683,49 +570,6 @@ describe("rlm", () => {
 		expect(childPrompt).toContain("Extra instructions.");
 	});
 
-	it("use wins over app when both provided", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child task") {
-				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "correct-component", app: "wrong-component" })\nreturn r', toolUseId: "tp" };
-		};
-
-		await rlm("parent task", undefined, {
-			callLLM,
-			maxDepth: 3,
-			childComponents: { "correct-component": "Correct body.", "wrong-component": "Wrong body." },
-		});
-
-		const childPrompt = systemPrompts[1];
-		expect(childPrompt).toContain("Correct body.");
-		expect(childPrompt).not.toContain("Wrong body.");
-	});
-
-	it("childApps backwards compat: populates childComponents", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child task") {
-				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'const r = await rlm("child task", undefined, { use: "legacy-app" })\nreturn r', toolUseId: "tp" };
-		};
-
-		await rlm("parent task", undefined, {
-			callLLM,
-			maxDepth: 3,
-			childApps: { "legacy-app": "Legacy body." },
-		});
-
-		const childPrompt = systemPrompts[1];
-		expect(childPrompt).toContain("Legacy body.");
-	});
-
 	it("availableComponents wired from childComponents keys", async () => {
 		let capturedSystemPrompt = "";
 		const callLLM: CallLLM = async (_messages, systemPrompt) => {
@@ -733,7 +577,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM,
 			childComponents: { "level-solver": "body1", "oha": "body2" },
 		});
@@ -748,7 +592,7 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, { callLLM });
+		await press("test", undefined, { callLLM });
 
 		expect(capturedSystemPrompt).not.toContain("Available components:");
 	});
@@ -760,38 +604,13 @@ describe("rlm", () => {
 			return { reasoning: "", code: 'return "done"', toolUseId: "t" };
 		};
 
-		await rlm("test", undefined, {
+		await press("test", undefined, {
 			callLLM,
 			childComponents: { "test-component": "You are a test component.\n\nDo test things." },
 		});
 
 		expect(capturedSystemPrompt).not.toContain("You are a test component.");
 		expect(capturedSystemPrompt).not.toContain("Do test things.");
-	});
-
-	it("pluginBodies root-only, globalDocs everywhere", async () => {
-		const systemPrompts: string[] = [];
-		const callLLM: CallLLM = async (messages, systemPrompt) => {
-			systemPrompts.push(systemPrompt);
-			const userMsg = messages[0]?.content || "";
-			if (userMsg === "child task") {
-				return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
-			}
-			return { reasoning: "", code: 'const r = await rlm("child task")\nreturn r', toolUseId: "tp" };
-		};
-
-		await rlm("parent task", undefined, {
-			callLLM,
-			maxDepth: 3,
-			pluginBodies: "## My Plugin\nRoot-only strategy.",
-			globalDocs: "The `myApi` global provides X.",
-		});
-
-		expect(systemPrompts[0]).toContain("## My Plugin");
-		expect(systemPrompts[0]).toContain("The `myApi` global provides X.");
-
-		expect(systemPrompts[1]).not.toContain("## My Plugin");
-		expect(systemPrompts[1]).toContain("The `myApi` global provides X.");
 	});
 
 	describe("tool-call specifics", () => {
@@ -807,7 +626,7 @@ describe("rlm", () => {
 				return { reasoning: "Now returning.", code: 'return "done"', toolUseId: "t2" };
 			};
 
-			await rlm("test query", undefined, { callLLM });
+			await press("test query", undefined, { callLLM });
 
 			expect(secondCallMessages).toBeDefined();
 			const lastMsg = secondCallMessages![secondCallMessages!.length - 1];
@@ -826,7 +645,7 @@ describe("rlm", () => {
 				return { reasoning: "Done.", code: 'return "done"', toolUseId: "tool-456" };
 			};
 
-			await rlm("test query", undefined, { callLLM });
+			await press("test query", undefined, { callLLM });
 
 			expect(secondCallMessages).toBeDefined();
 			const assistantMsg = secondCallMessages!.find(m => m.role === "assistant" && m.content.startsWith("__TOOL_CALL__"));
@@ -848,7 +667,7 @@ describe("rlm", () => {
 				{ reasoning: "Step 2.", code: 'console.log("loop 2")', toolUseId: "t2" },
 				{ reasoning: "Step 3.", code: 'console.log("loop 3")', toolUseId: "t3" },
 			]);
-			await expect(rlm("test query", undefined, { callLLM, maxIterations: 3 })).rejects.toThrow("max iterations");
+			await expect(press("test query", undefined, { callLLM, maxIterations: 3 })).rejects.toThrow("max iterations");
 		});
 	});
 
@@ -874,10 +693,9 @@ describe("rlm", () => {
 				return { reasoning: "Done.", code: 'return "done"', toolUseId: "t2" };
 			};
 
-			await rlm("test query", undefined, { callLLM });
+			await press("test query", undefined, { callLLM });
 
 			expect(secondCallMessages).toBeDefined();
-			// Find the assistant message with __TOOL_CALL__ marker
 			const assistantMsg = secondCallMessages!.find(
 				(m) => m.role === "assistant" && m.content.startsWith("__TOOL_CALL__"),
 			);
@@ -899,7 +717,7 @@ describe("rlm", () => {
 				return { reasoning: "Done.", code: 'return "done"', toolUseId: "t2" };
 			};
 
-			await rlm("test query", undefined, { callLLM });
+			await press("test query", undefined, { callLLM });
 
 			expect(secondCallMessages).toBeDefined();
 			const assistantMsg = secondCallMessages!.find(
@@ -907,6 +725,249 @@ describe("rlm", () => {
 			);
 			expect(assistantMsg).toBeDefined();
 			expect(assistantMsg!.meta).toBeUndefined();
+		});
+	});
+
+	describe("context stack", () => {
+		it("context.__stack exists on object context", async () => {
+			let capturedMessages: Array<{ role: string; content: string }> | undefined;
+			let callIndex = 0;
+			const callLLM: CallLLM = async (messages, _systemPrompt) => {
+				callIndex++;
+				if (callIndex === 1) {
+					return { reasoning: "", code: 'console.log("hasStack=" + (context.__stack !== undefined))\nconsole.log("frames=" + context.__stack.length)', toolUseId: "t1" };
+				}
+				if (callIndex === 2) capturedMessages = [...messages];
+				return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
+			};
+
+			await press("test", { key: "value" }, { callLLM });
+
+			const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
+			expect(toolResult!.content).toContain("hasStack=true");
+			expect(toolResult!.content).toContain("frames=1");
+		});
+
+		it("context.__root returns root context", async () => {
+			const callLLM: CallLLM = async (messages, _systemPrompt) => {
+				const userMsg = messages[0]?.content || "";
+				if (userMsg === "child task") {
+					return { reasoning: "", code: 'console.log("rootKey=" + context.__root.key)\nreturn "child done"', toolUseId: "tc" };
+				}
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
+			};
+
+			const result = await press("root task", { key: "rootValue" }, { callLLM, maxDepth: 3 });
+			expect(result.answer).toBe("child done");
+		});
+
+		it("__ctx is NOT accessible as sandbox global", async () => {
+			let capturedMessages: Array<{ role: string; content: string }> | undefined;
+			let callIndex = 0;
+			const callLLM: CallLLM = async (messages, _systemPrompt) => {
+				callIndex++;
+				if (callIndex === 1) {
+					return { reasoning: "", code: 'console.log("ctxType=" + typeof __ctx)', toolUseId: "t1" };
+				}
+				capturedMessages = [...messages];
+				return { reasoning: "", code: 'return "done"', toolUseId: "t2" };
+			};
+
+			await press("root query", { data: "root data" }, { callLLM });
+
+			const toolResult = capturedMessages!.find(m => m.role === "user" && m.content.includes("__TOOL_RESULT__"));
+			expect(toolResult!.content).toContain("ctxType=undefined");
+		});
+
+		it("child sees ancestor frames via context.__stack", async () => {
+			const callLLM: CallLLM = async (messages, _systemPrompt) => {
+				const userMsg = messages[0]?.content || "";
+				if (userMsg === "child task") {
+					return { reasoning: "", code: 'const frames = context.__stack\nconsole.log("childFrameCount=" + frames.length)\nconsole.log("rootData=" + JSON.stringify(frames[0].data))\nreturn "child done"', toolUseId: "tc" };
+				}
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
+			};
+
+			const result = await press("parent task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3 });
+			expect(result.answer).toBe("child done");
+		});
+
+		it("depth-2 grandchild reads depth-0 grandparent context", async () => {
+			const callLLM: CallLLM = async (messages, _systemPrompt) => {
+				const userMsg = messages[0]?.content || "";
+				if (userMsg === "grandchild task") {
+					return { reasoning: "", code: 'const frames = context.__stack\nconsole.log("grandchildFrames=" + frames.length)\nconsole.log("rootLabel=" + frames[0].label)\nconsole.log("grandparentData=" + JSON.stringify(frames[0].data))\nreturn "grandchild done"', toolUseId: "tg" };
+				}
+				if (userMsg === "child task") {
+					return { reasoning: "", code: 'const r = await press("grandchild task", { gcKey: "gcVal" })\nreturn r', toolUseId: "tc" };
+				}
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
+			};
+
+			const result = await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3 });
+			expect(result.answer).toBe("grandchild done");
+		});
+
+		it("mirror layout: current frame appears twice in system prompt", async () => {
+			const systemPrompts: string[] = [];
+			const callLLM: CallLLM = async (messages, systemPrompt) => {
+				systemPrompts.push(systemPrompt);
+				const userMsg = messages[0]?.content || "";
+				if (userMsg === "child task") {
+					return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
+				}
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
+			};
+
+			await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3, contextLayout: "mirror" });
+
+			const childPrompt = systemPrompts[1];
+			expect(childPrompt).toContain("<press-context-stack>");
+			const matches = childPrompt.match(/<context depth="1"/g);
+			expect(matches).not.toBeNull();
+			expect(matches!.length).toBe(2);
+		});
+
+		it("cache-efficient layout: frames in depth order", async () => {
+			const systemPrompts: string[] = [];
+			const callLLM: CallLLM = async (messages, systemPrompt) => {
+				systemPrompts.push(systemPrompt);
+				const userMsg = messages[0]?.content || "";
+				if (userMsg === "child task") {
+					return { reasoning: "", code: 'return "child done"', toolUseId: "tc" };
+				}
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
+			};
+
+			await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3, contextLayout: "cache-efficient" });
+
+			const childPrompt = systemPrompts[1];
+			expect(childPrompt).toContain("<press-context-stack>");
+			const depth0Pos = childPrompt.indexOf('<context depth="0"');
+			const depth1Pos = childPrompt.indexOf('<context depth="1"');
+			expect(depth0Pos).toBeLessThan(depth1Pos);
+			const matches0 = childPrompt.match(/<context depth="0"/g);
+			const matches1 = childPrompt.match(/<context depth="1"/g);
+			expect(matches0!.length).toBe(1);
+			expect(matches1!.length).toBe(1);
+		});
+
+		it("child stack is read-only (frozen)", async () => {
+			const callLLM: CallLLM = async (messages, _systemPrompt) => {
+				const userMsg = messages[0]?.content || "";
+				if (userMsg === "child task") {
+					return { reasoning: "", code: 'try { context.__stack.push({}) } catch(e) { console.log("frozen:" + e.message) }\nreturn "child done"', toolUseId: "tc" };
+				}
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
+			};
+
+			const result = await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3 });
+			expect(result.answer).toBe("child done");
+		});
+
+		it("contextLayout propagates to children by default", async () => {
+			const systemPrompts: string[] = [];
+			const callLLM: CallLLM = async (messages, systemPrompt) => {
+				systemPrompts.push(systemPrompt);
+				const userMsg = messages[0]?.content || "";
+				if (userMsg === "grandchild") {
+					return { reasoning: "", code: 'return "gc done"', toolUseId: "tg" };
+				}
+				if (userMsg === "child task") {
+					return { reasoning: "", code: 'const r = await press("grandchild", { gcKey: "gcVal" })\nreturn r', toolUseId: "tc" };
+				}
+				return { reasoning: "", code: 'const r = await press("child task", { childKey: "childVal" })\nreturn r', toolUseId: "tp" };
+			};
+
+			await press("root task", { rootKey: "rootVal" }, { callLLM, maxDepth: 3, contextLayout: "cache-efficient" });
+
+			const grandchildPrompt = systemPrompts[2];
+			expect(grandchildPrompt).toContain("<press-context-stack>");
+			const depth0Pos = grandchildPrompt.indexOf('<context depth="0"');
+			const depth2Pos = grandchildPrompt.indexOf('<context depth="2"');
+			expect(depth0Pos).toBeLessThan(depth2Pos);
+		});
+	});
+
+	describe("auto-resolve file paths in context", () => {
+		it("resolves .md file paths to content in system prompt", async () => {
+			const tempDir = join(tmpdir(), "press-test-resolve-" + Date.now());
+			mkdirSync(tempDir, { recursive: true });
+			const testFilePath = join(tempDir, "spec.md");
+			writeFileSync(testFilePath, "# Test Spec\n\nThis is the spec content.", "utf8");
+
+			let capturedSystemPrompt = "";
+			const callLLM: CallLLM = async (_messages, systemPrompt) => {
+				capturedSystemPrompt = systemPrompt;
+				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+			};
+
+			try {
+				await press("test", { forme_spec: testFilePath, tier: "haiku" }, { callLLM });
+
+				expect(capturedSystemPrompt).toContain("# Test Spec");
+				expect(capturedSystemPrompt).toContain("This is the spec content.");
+				expect(capturedSystemPrompt).not.toContain(testFilePath);
+				expect(capturedSystemPrompt).toContain("tier: haiku");
+			} finally {
+				rmSync(tempDir, { recursive: true, force: true });
+			}
+		});
+
+		it("handles missing file gracefully", async () => {
+			let capturedSystemPrompt = "";
+			const callLLM: CallLLM = async (_messages, systemPrompt) => {
+				capturedSystemPrompt = systemPrompt;
+				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+			};
+
+			await press("test", { spec: "/nonexistent/path/to/file.md" }, { callLLM });
+
+			expect(capturedSystemPrompt).toContain("[file not found: /nonexistent/path/to/file.md]");
+		});
+
+		it("leaves non-path strings unchanged", async () => {
+			let capturedSystemPrompt = "";
+			const callLLM: CallLLM = async (_messages, systemPrompt) => {
+				capturedSystemPrompt = systemPrompt;
+				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+			};
+
+			await press("test", { program_dir: "/path/to/fixtures", tier: "haiku", run_dir: ".prose/runs/test" }, { callLLM });
+
+			expect(capturedSystemPrompt).toContain("program_dir: /path/to/fixtures");
+			expect(capturedSystemPrompt).toContain("tier: haiku");
+			expect(capturedSystemPrompt).toContain("run_dir: .prose/runs/test");
+		});
+	});
+
+	describe("system prompt documents simplified context API", () => {
+		it("documents context.__root and context.__stack", async () => {
+			let capturedSystemPrompt = "";
+			const callLLM: CallLLM = async (_messages, systemPrompt) => {
+				capturedSystemPrompt = systemPrompt;
+				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+			};
+
+			await press("test", undefined, { callLLM });
+
+			expect(capturedSystemPrompt).toContain("context.__root");
+			expect(capturedSystemPrompt).toContain("context.__stack");
+		});
+
+		it("does NOT document __ctx.shared.data or __ctx.stack", async () => {
+			let capturedSystemPrompt = "";
+			const callLLM: CallLLM = async (_messages, systemPrompt) => {
+				capturedSystemPrompt = systemPrompt;
+				return { reasoning: "", code: 'return "done"', toolUseId: "t" };
+			};
+
+			await press("test", undefined, { callLLM });
+
+			expect(capturedSystemPrompt).not.toContain("__ctx.shared.data");
+			expect(capturedSystemPrompt).not.toContain("__ctx.stack.frames");
+			expect(capturedSystemPrompt).not.toContain("__ctx.stack.depth");
+			expect(capturedSystemPrompt).not.toContain("__ctx.local");
 		});
 	});
 });

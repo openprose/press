@@ -34,7 +34,7 @@ export async function loadArc3Tasks(
 	return gameIds.map((gameId) => ({
 		id: `arc3-${gameId}`,
 		query: `Play the ARC-AGI-3 game '${gameId}'. The \`arc3\` sandbox global provides the game API. Minimize actions — you are scored on efficiency. When done, return the scorecard JSON.`,
-		context: "",
+		context: {},
 		expected: "interactive",
 		metadata: { gameId },
 	}));

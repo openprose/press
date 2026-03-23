@@ -1,12 +1,17 @@
+// Plugin loading for drivers, profiles, composites, roles, and controls from lib/.
+// Programs are loaded from programs/ (used by eval harness and judge).
+//
+// Prose/Forme specs are loaded by press-prompt.ts from the openprose/prose
+// repository, not by this module.
+
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEFAULT_LIB_DIR = resolve(fileURLToPath(import.meta.url), "../../lib");
 const DEFAULT_PROGRAMS_DIR = resolve(fileURLToPath(import.meta.url), "../../programs");
-const DEFAULT_ARCHIVE_DIR = resolve(fileURLToPath(import.meta.url), "../../archive");
 
-export function parseFrontmatter(content: string): { frontmatter: Record<string, any>; body: string } {
+export function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
 	const trimmed = content.trimStart();
 	if (!trimmed.startsWith("---")) {
 		return { frontmatter: {}, body: content };
@@ -21,7 +26,7 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
 	const body = trimmed.slice(endIndex + 4).replace(/^\r?\n/, "");
 
 	// Simple YAML parser for flat key-value pairs and arrays
-	const frontmatter: Record<string, any> = {};
+	const frontmatter: Record<string, unknown> = {};
 	const lines = yamlBlock.split("\n");
 	let currentKey: string | null = null;
 	let currentArray: string[] | null = null;
@@ -79,10 +84,10 @@ export function parseFrontmatter(content: string): { frontmatter: Record<string,
 
 export async function loadPlugins(
 	names: string[],
-	subdir: "drivers" | "apps",
+	subdir: string,
 	baseDir?: string,
 ): Promise<string> {
-	const dir = baseDir ?? (subdir === "drivers" ? DEFAULT_LIB_DIR : DEFAULT_ARCHIVE_DIR);
+	const dir = baseDir ?? DEFAULT_LIB_DIR;
 
 	const bodies = await Promise.all(
 		names.map(async (name) => {
@@ -145,7 +150,7 @@ export async function detectProfile(
 
 		const models: string[] = Array.isArray(frontmatter.models) ? frontmatter.models : [];
 		const drivers: string[] = Array.isArray(frontmatter.drivers) ? frontmatter.drivers : [];
-		const profileName: string = frontmatter.name ?? file.replace(/\.md$/, "");
+		const profileName: string = (frontmatter.name as string) ?? file.replace(/\.md$/, "");
 
 		for (const pattern of models) {
 			const regex = globToRegExp(pattern);
@@ -165,8 +170,6 @@ export interface ProgramDefinition {
 	rootApp: string;
 	rootAppBody: string;
 	childComponents: Record<string, string>;
-	/** @deprecated Use childComponents instead. */
-	childApps: Record<string, string>;
 }
 
 // Nodes include frontmatter in the agent prompt (role, delegates, api, prohibited).
@@ -215,19 +218,15 @@ export async function loadProgram(
 		throw new Error(`Program "${name}" has no orchestrator node (role: orchestrator)`);
 	}
 
-	return { globalDocs, rootApp, rootAppBody, childComponents, childApps: childComponents };
+	return { globalDocs, rootApp, rootAppBody, childComponents };
 }
 
 export async function loadStack(options: {
 	drivers?: string[];
-	/** @deprecated Use `use` instead. */
-	app?: string;
-	use?: string;
 	profile?: string;
 	model?: string;
 	libDir?: string;
 }): Promise<string> {
-	const app = options.use ?? options.app;
 	const { drivers: extraDrivers, profile, model, libDir } = options;
 
 	let profileDrivers: string[] = [];
@@ -251,17 +250,9 @@ export async function loadStack(options: {
 		}
 	}
 
-	const parts: string[] = [];
-
 	if (allDrivers.length > 0) {
-		const driverBodies = await loadPlugins(allDrivers, "drivers");
-		parts.push(driverBodies);
+		return loadPlugins(allDrivers, "drivers");
 	}
 
-	if (app) {
-		const appBody = await loadPlugins([app], "apps");
-		parts.push(appBody);
-	}
-
-	return parts.join("\n\n---\n\n");
+	return "";
 }
