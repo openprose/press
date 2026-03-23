@@ -1,5 +1,5 @@
 ---
-purpose: Multi-agent RLM topology patterns — 7 named architectures describing how multiple RLM instances collaborate to solve problems; the structural building blocks for programs/ compositions
+purpose: Multi-agent RLM topology patterns — 13 named architectures describing how multiple RLM instances collaborate to solve problems; the structural building blocks for programs/ compositions
 related:
   - ../README.md
   - ../controls/README.md
@@ -26,3 +26,9 @@ Named multi-agent topology patterns for RLM programs.
 - `witness.md` — Meta-observer composite for recording and reflecting on agent behavior
 - `dialectic.md` — Two-agent debate structure producing a synthesized conclusion
 - `proposer-adversary.md` — Adversarial proposal testing: proposer generates, adversary stress-tests
+- `assumption-miner.md` — Surfaces implicit assumptions in a solution for explicit evaluation
+- `blind-review.md` — Independent evaluation without exposure to other agents' assessments
+- `contrastive-probe.md` — Generates contrasting solutions to expose decision boundaries
+- `drift-detector.md` — Monitors agent behavior over iterations to detect drift from objectives
+- `stochastic-probe.md` — Introduces controlled randomness to test solution robustness
+- `synchronization-probe.md` — Tests coordination quality between collaborating agents

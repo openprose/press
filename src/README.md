@@ -24,8 +24,13 @@ Core implementation of the Press runtime.
 - `environment.ts` — Sandbox environment setup; installs plugins and acorn into the REPL context
 - `plugins.ts` — Plugin registry and loader; each plugin extends the RLM's available tools
 - `system-prompt.ts` — System prompt construction; assembles per-delegation prompts from role, plugins, and context
+- `press-boot.ts` — Press boot sequence; initializes the Forme container and loads program specs
+- `press-prompt.ts` — Press prompt construction; builds system prompts for Forme and VM phases
+- `press-resolver.ts` — Press dependency resolver; wires service requires/ensures into a manifest
 - `events.ts` — Event emission types for observability (turn start/end, tool calls, delegation)
+- `eval-pipeline.ts` — Eval pipeline runner; executes Press programs against models and collects results
 - `observer.ts` — Runtime observer; collects structured trajectory data for analysis
 - `models.ts` — Model provider abstraction; wraps OpenRouter API calls
-- `openrouter-compatible.ts` — OpenRouter API client compatible with Anthropic SDK interface
+- `utils.ts` — Shared utility functions
 - `index.ts` — Public exports for the src package
+- `drivers/` — Low-level model driver implementations (OpenRouter-compatible adapter)

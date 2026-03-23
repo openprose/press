@@ -292,7 +292,10 @@ Think of it like the Java ecosystem: **Prose** is the language, **Forme** is Spr
 
 - [LANGUAGE.md](LANGUAGE.md) -- Press runtime documentation
 - [CONTAINER.md](CONTAINER.md) -- Container and execution model
+- [STDLIB.md](STDLIB.md) -- Standard library reference (composites, controls, roles, drivers)
+- [OBSERVABILITY.md](OBSERVABILITY.md) -- Observability and tracing
 - [TENETS.md](TENETS.md) -- Design principles
+- [CHANGELOG.md](CHANGELOG.md) -- Release history
 - [Prose](https://github.com/openprose/prose) -- The programming language Press executes
 
 ## License

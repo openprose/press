@@ -4,6 +4,7 @@ related:
   - ../README.md
   - ./arc2-compound/README.md
   - ./arc3/README.md
+  - ./could-haiku/
   - ./judge/README.md
   - ./s-niah/README.md
   - ../eval/README.md
@@ -22,5 +23,6 @@ RLM program definitions used as `--app` plugins in benchmark evaluations.
 
 - `arc2-compound/` — Compound learning orchestrator for ARC-AGI-2; runs all tasks in one session with cross-task learning
 - `arc3/` — Multi-agent solver for ARC-AGI-3 interactive games
+- `could-haiku/` — Documentation quality measurement instrument; spawns scrapers, tiered testers, synthesizer, and reporter
 - `judge/` — LLM-as-judge evaluator for scoring RLM outputs
 - `s-niah/` — Single Needle in a Haystack solver architecture

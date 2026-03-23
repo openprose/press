@@ -188,7 +188,14 @@ The analyzer reports:
 | `datasets/arc3.ts` | ARC-AGI-3 task loader (API-based) |
 | `arc3-client.ts` | ARC-AGI-3 REST API client |
 | `arc-compound-global-docs.md` | ARC-AGI-2 compound sandbox API docs (injected at all depths) |
+| `arc3-global-docs.md` | ARC-AGI-3 global sandbox API docs (injected at all depths) |
+| `judge.ts` | LLM-as-judge evaluation for scoring open-ended outputs |
+| `verify.ts` | Result verification and validation utilities |
+| `rate-limiter.ts` | API rate limiting for concurrent eval runs |
+| `utils.ts` | Shared eval utility functions |
+| `viewer.html` | Browser-based result viewer for eval output inspection |
 | `drivers/openrouter.ts` | OpenRouter `CallLLM` driver |
 | `data/` | Downloaded datasets (gitignored) |
 | `results/` | Benchmark result JSON files (gitignored) |
 | `analyses/` | Per-run analysis documents with hyperparameters, scores, and qualitative notes — 18 numbered directories covering OOLONG, ARC-AGI-2, and ARC-AGI-3 (gitignored) |
+| `todo/` | Eval-specific task tracking (meta-review-eval-loop) |

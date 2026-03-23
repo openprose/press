@@ -1,7 +1,8 @@
 ---
-purpose: Reusable RLM composition patterns, control flows, role guides, and model driver profiles — a markdown-encoded standard library of building blocks for constructing multi-agent RLM programs
+purpose: Reusable RLM composition patterns, control flows, role guides, boot specs, and model driver profiles — a markdown-encoded standard library of building blocks for constructing multi-agent RLM programs
 related:
   - ../README.md
+  - ./boot/
   - ./composites/README.md
   - ./controls/README.md
   - ./drivers/README.md
@@ -24,9 +25,10 @@ Library of reusable RLM patterns organized by abstraction level. All entries are
 
 ## Subdirectories
 
-- `composites/` — Multi-agent topologies: 7 named patterns for how multiple RLM instances collaborate (OAA, ensemble-synthesizer, worker-critic, ratchet, witness, dialectic, proposer-adversary)
+- `boot/` — Bootstrap specifications for initializing RLM sessions (prose-via-forme)
+- `composites/` — Multi-agent topologies: 13 named patterns for how multiple RLM instances collaborate (OAA, ensemble-synthesizer, worker-critic, ratchet, witness, dialectic, proposer-adversary, assumption-miner, blind-review, contrastive-probe, drift-detector, stochastic-probe, synchronization-probe)
 - `controls/` — Flow control patterns: 5 patterns for sequencing and distributing work (pipeline, map-reduce, gate, progressive-refinement, retry-with-learning)
-- `drivers/` — Model-specific driver guides and behavioral integration notes (currently: gemini-3-flash)
+- `drivers/` — Model-specific driver guides and reliability patches: 22 drivers covering behavioral discipline, ARC-specific strategies, and model quirk compensation
 - `profiles/` — Model configuration profiles mapping model name patterns to driver stacks; auto-detected by the CLI from `--model`
 - `roles/` — Single-agent role guides: 5 discrete cognitive functions (classifier, critic, extractor, summarizer, verifier)
 
