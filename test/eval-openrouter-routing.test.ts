@@ -36,7 +36,7 @@ describe("eval/drivers/openrouter — universal tool-call driver", () => {
 	beforeEach(() => {
 		originalFetch = globalThis.fetch;
 		mockFetch = vi.fn();
-		globalThis.fetch = mockFetch;
+		globalThis.fetch = mockFetch as unknown as typeof globalThis.fetch;
 	});
 
 	afterEach(() => {
